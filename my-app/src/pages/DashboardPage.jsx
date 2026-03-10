@@ -16,7 +16,6 @@ import ShieldIcon from "@mui/icons-material/Shield";
 import PeopleIcon from "@mui/icons-material/People";
 import ArticleIcon from "@mui/icons-material/Article";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import LockIcon from "@mui/icons-material/Lock";
 import { supabase } from "../supabaseClient";
 import { useAuth } from "../AuthContext";
 
@@ -86,7 +85,7 @@ function EmptySection({ icon, title, description }) {
   );
 }
 
-// --- Access Denied screen ---
+// --- Access Denied screen (disguised as 404) ---
 function AccessDenied() {
   const navigate = useNavigate();
   return (
@@ -97,20 +96,23 @@ function AccessDenied() {
       <Paper
         elevation={0}
         sx={{
-          p: 5, borderRadius: 3, textAlign: "center", maxWidth: 400,
-          border: "1.5px solid #ecdcdc",
+          p: 4, pt: 0, borderRadius: 3, textAlign: "center", maxWidth: 380,
+          border: "1.5px solid #ecdcdc", overflow: "visible",
         }}
       >
-        <Box sx={{
-          width: 64, height: 64, borderRadius: "50%", mx: "auto", mb: 2.5,
-          background: "#fdf0f0", display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          <LockIcon sx={{ fontSize: 32, color: "#A84D48" }} />
-        </Box>
-        <Typography variant="h4" fontWeight={900} sx={{ mb: 1 }}>
+        <Box
+          component="img"
+          src="/404Image.png"
+          alt="Lost husky"
+          sx={{
+            width: "100%", maxWidth: 260, mx: "auto", display: "block",
+            mt: -6, mb: -2,
+          }}
+        />
+        <Typography variant="h3" fontWeight={900} sx={{ mb: 0.5, color: "#3d2020" }}>
           404
         </Typography>
-        <Typography variant="h6" fontWeight={700} sx={{ mb: 1 }}>
+        <Typography variant="h6" fontWeight={700} sx={{ mb: 1, color: "#3d2020" }}>
           Page not found
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
@@ -121,10 +123,10 @@ function AccessDenied() {
           onClick={() => navigate("/")}
           sx={{
             background: "#A84D48", "&:hover": { background: "#8f3e3a" },
-            fontWeight: 700, borderRadius: 2,
+            fontWeight: 700, borderRadius: 2, px: 4,
           }}
         >
-          Go Home
+          GO HOME
         </Button>
       </Paper>
     </Box>
@@ -366,7 +368,10 @@ export default function DashboardPage() {
   const userReports = reports.filter((r) => !!r.reported_user_id).length;
 
   // --- Guard: block non-moderators (must be after all hooks) ---
-  if (profile && !profile.is_moderator) {
+  if (!profile) {
+    return null;
+  }
+  if (!profile.is_moderator) {
     return <AccessDenied />;
   }
 

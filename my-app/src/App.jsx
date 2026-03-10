@@ -8,6 +8,7 @@ import MapPage from "./pages/MapPage";
 import MessagePage from "./pages/MessagePage";
 import SettingsPage from "./pages/SettingsPage";
 import DashboardPage from "./pages/DashboardPage";
+import NotFoundPage from "./pages/NotFoundPage";
 import { AppBar, Toolbar, Button, Typography, Container, Box, Paper } from '@mui/material';
 import HomeIcon from '@mui/icons-material/Home';
 import FeedIcon from "@mui/icons-material/DynamicFeed";
@@ -117,6 +118,7 @@ export default function App() {
           <Route path = "/messages" element = {<MessagePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/moderation" element={<DashboardPage />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </Box>
 
