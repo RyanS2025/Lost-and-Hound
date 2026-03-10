@@ -4,7 +4,7 @@ import { supabase } from "./supabaseClient";
 const AuthContext = createContext();
 
 // --- useAuth: Custom hook to access AuthContext ---
-export function useAuth() { // added shortcut instead of useAuth(AuthContext)
+export function useAuth() {
   return useContext(AuthContext);
 }
 
@@ -40,7 +40,7 @@ export function AuthProvider({ children }) {
       }
       const { data, error } = await supabase
         .from('profiles')
-        .select('first_name, last_name')
+        .select('first_name, last_name, default_campus, is_moderator')
         .eq('id', user.id)
         .single();
 
@@ -55,10 +55,10 @@ export function AuthProvider({ children }) {
         const { data: created, error: upsertErr } = await supabase
           .from('profiles')
           .upsert(
-            { id: user.id, first_name: meta.first_name, last_name: meta.last_name },
+            { id: user.id, first_name: meta.first_name, last_name: meta.last_name, default_campus: 'boston' },
             { onConflict: 'id' }
           )
-          .select('first_name, last_name')
+          .select('first_name, last_name, default_campus, is_moderator')
           .single();
         if (!upsertErr && created) {
           setProfile(created);
@@ -81,10 +81,15 @@ export function AuthProvider({ children }) {
     return supabase.auth.resetPasswordForEmail(email);
   };
 
+  // Allow components to update profile fields in memory (e.g. after settings save)
+  const updateProfile = (fields) => {
+    setProfile((prev) => ({ ...prev, ...fields }));
+  };
+
   if (loading) return <div>Loading...</div>;
 
   return (
-    <AuthContext.Provider value={{ user, profile, logout, forgotPassword }}>
+    <AuthContext.Provider value={{ user, profile, updateProfile, logout, forgotPassword }}>
       {children}
     </AuthContext.Provider>
   );

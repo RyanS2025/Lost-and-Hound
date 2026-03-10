@@ -11,6 +11,8 @@ import FilterAltIcon from "@mui/icons-material/FilterAlt";
 import CloseIcon from "@mui/icons-material/Close";
 import ListIcon from "@mui/icons-material/ViewList";
 import SearchIcon from "@mui/icons-material/Search";
+import FlagIcon from "@mui/icons-material/Flag";
+import ReportModal from "../components/ReportModal";
 import { supabase } from "../supabaseClient";
 import { CAMPUSES } from "../constants/campuses";
 import { removeExpiredUnresolvedListings } from "../utils/listingExpiry";
@@ -30,8 +32,6 @@ const RADIUS_MARKS = [
   { value: 500, label: "500ft" },
 ];
 
-
-
 // --- Hide outside noise ---
 const CLEAN_STYLES = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
@@ -40,9 +40,6 @@ const CLEAN_STYLES = [
   { featureType: "administrative", elementType: "labels", stylers: [{ visibility: "off" }] },
 ];
 
-/**
- * Parse coordinate strings like "42.3391° N 71.0898° W" into { lat, lng }.
- */
 function parseCoordinates(coordStr) {
   if (!coordStr || typeof coordStr !== "string") return null;
   const match = coordStr.match(/([\d.]+)°?\s*([NS])\s+([\d.]+)°?\s*([EW])/i);
@@ -60,18 +57,13 @@ function parseCoordinates(coordStr) {
   return { lat, lng };
 }
 
-/** Haversine distance in feet */
 function haversine(a, b) {
-  const R = 20902231; // Earth radius in feet
+  const R = 20902231;
   const dLat = ((b.lat - a.lat) * Math.PI) / 180;
   const dLng = ((b.lng - a.lng) * Math.PI) / 180;
   const sinLat = Math.sin(dLat / 2);
   const sinLng = Math.sin(dLng / 2);
-  const h =
-    sinLat * sinLat +
-    Math.cos((a.lat * Math.PI) / 180) *
-      Math.cos((b.lat * Math.PI) / 180) *
-      sinLng * sinLng;
+  const h = sinLat * sinLat + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * sinLng * sinLng;
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
@@ -82,11 +74,12 @@ function formatDate(d) {
   return `${diff}d ago`;
 }
 
-// --- DetailModal: Full listing detail view (same as FeedPage) ---
+// --- DetailModal ---
 function DetailModal({ item, onClose, onClaim }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [claimed, setClaimed] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   if (!item) return null;
   return (
     <Modal open={!!item} onClose={onClose}>
@@ -102,7 +95,13 @@ function DetailModal({ item, onClose, onClaim }) {
               Posted by {item.poster_name} · {formatDate(item.date)}
             </Typography>
           </Box>
-          <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+            <Box sx={{ display: "flex", gap: 0.5 }}>
+              <IconButton onClick={() => setReportOpen(true)} size="small" sx={{ color: "#999", "&:hover": { color: "#A84D48" } }}>
+                <FlagIcon fontSize="small" />
+              </IconButton>
+              <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+            </Box>
+
         </Box>
 
         {item.image_url
@@ -130,13 +129,7 @@ function DetailModal({ item, onClose, onClaim }) {
         </Box>
 
         {!item.resolved && (
-          <Box
-            sx={{
-              display: "flex", alignItems: "center", gap: 0.75,
-              px: 1.25, py: 0.75, mb: 1.5, borderRadius: 1.5,
-              background: "#fff3cd", border: "1px solid #ffc107",
-            }}
-          >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, px: 1.25, py: 0.75, mb: 1.5, borderRadius: 1.5, background: "#fff3cd", border: "1px solid #ffc107" }}>
             <Typography variant="caption" sx={{ color: "#7d4e00", fontWeight: 600, lineHeight: 1.4 }}>
               ⚠️ Falsely claiming an item violates the Northeastern Code of Student Conduct and may result in disciplinary action.
             </Typography>
@@ -144,13 +137,8 @@ function DetailModal({ item, onClose, onClaim }) {
         )}
         <Box sx={{ display: "flex", gap: 1.5 }}>
           <Button
-            variant="contained"
-            fullWidth
-            disabled={item.resolved}
-            onClick={async () => {
-              setClaimed(true);
-              await onClaim(item.item_id);
-            }}
+            variant="contained" fullWidth disabled={item.resolved}
+            onClick={async () => { setClaimed(true); await onClaim(item.item_id); }}
             sx={{ background: claimed ? "#16a34a" : "#A84D48", "&:hover": { background: claimed ? "#15803d" : "#8f3e3a" }, fontWeight: 800, borderRadius: 2 }}
           >
             {item.resolved ? "Already Resolved" : claimed ? "Marked as Found!" : "This is Mine!"}
@@ -159,37 +147,42 @@ function DetailModal({ item, onClose, onClaim }) {
             variant="outlined"
             sx={{ borderColor: "#ecdcdc", color: "#A84D48", fontWeight: 800, borderRadius: 2, flexShrink: 0 }}
             onClick={async () => {
-              const { data } = await supabase
-                .from("conversations")
-                .select("id")
-                .eq("listing_id", item.item_id)
-                .eq("participant_1", user.id)
-                .maybeSingle();
-
-              if (data != null) {
-                navigate(`/messages?conversation=${data.id}`);
-                return;
-              }
-
-              const { data: created } = await supabase
-                .from("conversations")
-                .insert({ listing_id: item.item_id, participant_1: user.id, participant_2: item.poster_id })
-                .select("id")
-                .single();
-
+              const { data } = await supabase.from("conversations").select("id").eq("listing_id", item.item_id).eq("participant_1", user.id).maybeSingle();
+              if (data != null) { navigate(`/messages?conversation=${data.id}`); return; }
+              const { data: created } = await supabase.from("conversations").insert({ listing_id: item.item_id, participant_1: user.id, participant_2: item.poster_id }).select("id").single();
               if (created) navigate(`/messages?conversation=${created.id}`);
             }}
           >
             Message
           </Button>
         </Box>
+        <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} type="post" targetId={item.item_id} targetLabel={item.title}/>
       </Box>
     </Modal>
   );
 }
 
+// --- Helper: build campus center marker DOM element ---
+function buildCampusMarkerEl(campusName) {
+  const el = document.createElement("div");
+  el.style.cssText = "display:flex;flex-direction:column;align-items:center;";
+  el.innerHTML = `
+    <svg width="18" height="18" viewBox="0 0 18 18">
+      <circle cx="9" cy="9" r="8" fill="#CC0000" stroke="#fff" stroke-width="2"/>
+    </svg>
+    <span style="
+      margin-top:3px;background:rgba(204,0,0,0.85);color:#fff;
+      font-size:10px;font-weight:800;font-family:sans-serif;
+      padding:1px 5px;border-radius:4px;white-space:nowrap;
+      letter-spacing:0.3px;box-shadow:0 1px 3px rgba(0,0,0,0.35);
+    ">${campusName}</span>
+  `;
+  return el;
+}
+
 // --- MapPage ---
 export default function MapPage() {
+  const { profile } = useAuth();
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const searchPinRef = useRef(null);
@@ -198,21 +191,23 @@ export default function MapPage() {
   const infoWindowRef = useRef(null);
   const campusCenterMarkerRef = useRef(null);
 
-  const [selectedCampus, setSelectedCampus] = useState("boston");
+  // Read default campus from profile, fall back to "boston"
+  const initialCampus = profile?.default_campus || "boston";
+
+  const [selectedCampus, setSelectedCampus] = useState(initialCampus);
   const [campusBuildings, setCampusBuildings] = useState([]);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchPin, setSearchPin] = useState(null);        // { lat, lng }
-  const [radius, setRadius] = useState(150);               // feet
+  const [searchPin, setSearchPin] = useState(null);
+  const [radius, setRadius] = useState(150);
   const [nearbyItems, setNearbyItems] = useState([]);
   const [showPanel, setShowPanel] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
 
-  // Derived: active campus object
   const activeCampus = CAMPUSES.find((c) => c.id === selectedCampus) ?? CAMPUSES[0];
 
-  // ---- Fetch buildings for active campus from Supabase ----
+  // ---- Fetch buildings for active campus ----
   useEffect(() => {
     supabase
       .from("locations")
@@ -232,7 +227,7 @@ export default function MapPage() {
       });
   }, [selectedCampus]);
 
-  // ---- Fetch all listings with coordinates ----
+  // ---- Fetch all listings ----
   const fetchItems = useCallback(async () => {
     setLoading(true);
     await removeExpiredUnresolvedListings();
@@ -262,7 +257,6 @@ export default function MapPage() {
   const handleRefresh = async () => {
     setRefreshing(true);
     await fetchItems();
-    // Reset map to active campus center
     if (mapInstanceRef.current) {
       mapInstanceRef.current.panTo(activeCampus.center);
       mapInstanceRef.current.setZoom(activeCampus.zoom);
@@ -271,7 +265,6 @@ export default function MapPage() {
     setTimeout(() => setRefreshing(false), 600);
   };
 
-  // Pan to campus when selection changes
   const handleCampusChange = (campusId) => {
     setSelectedCampus(campusId);
     setCampusBuildings([]);
@@ -283,14 +276,13 @@ export default function MapPage() {
     }
   };
 
-  // ---- Claim handler ----
   const handleClaim = async (item_id) => {
     await supabase.from("listings").update({ resolved: true }).eq("item_id", item_id);
     setItems(prev => prev.map(i => i.item_id === item_id ? { ...i, resolved: true } : i));
     if (selectedItem?.item_id === item_id) setSelectedItem(prev => ({ ...prev, resolved: true }));
   };
 
-  // ---- Initialize Google Map ----
+  // ---- Initialize Google Map + place initial campus marker ----
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -298,9 +290,12 @@ export default function MapPage() {
       const { AdvancedMarkerElement } = await importLibrary("marker");
       if (cancelled || !mapRef.current) return;
 
+      // Use the user's default campus for initial center
+      const campus = CAMPUSES.find((c) => c.id === initialCampus) ?? CAMPUSES[0];
+
       const map = new Map(mapRef.current, {
-        center: CAMPUSES[0].center,
-        zoom: CAMPUSES[0].zoom,
+        center: campus.center,
+        zoom: campus.zoom,
         disableDefaultUI: true,
         zoomControl: true,
         gestureHandling: "greedy",
@@ -310,17 +305,24 @@ export default function MapPage() {
 
       mapInstanceRef.current = map;
 
-      // Click to place search pin
+      // Place the initial campus center marker right away (no race condition)
+      campusCenterMarkerRef.current = new AdvancedMarkerElement({
+        map,
+        position: campus.center,
+        content: buildCampusMarkerEl(campus.name),
+        title: campus.name,
+        zIndex: 1000,
+      });
+
       map.addListener("click", (e) => {
         const pos = { lat: e.latLng.lat(), lng: e.latLng.lng() };
         setSearchPin(pos);
         setShowPanel(true);
       });
-
     })();
 
     return () => { cancelled = true; };
-  }, []);
+  }, [initialCampus]);
 
   // ---- Place / move the search pin + radius circle ----
   useEffect(() => {
@@ -336,18 +338,13 @@ export default function MapPage() {
         return;
       }
 
-      // Search pin marker (red)
       if (searchPinRef.current) {
         searchPinRef.current.position = searchPin;
       } else {
         const pinEl = document.createElement("div");
         pinEl.innerHTML = `<svg width="32" height="42" viewBox="0 0 32 42" fill="none"><path d="M16 0C7.16 0 0 7.16 0 16c0 12 16 26 16 26s16-14 16-26C32 7.16 24.84 0 16 0z" fill="#A84D48"/><circle cx="16" cy="16" r="7" fill="#fff"/></svg>`;
         const marker = new AdvancedMarkerElement({
-          map,
-          position: searchPin,
-          gmpDraggable: true,
-          content: pinEl,
-          zIndex: 999,
+          map, position: searchPin, gmpDraggable: true, content: pinEl, zIndex: 999,
         });
         marker.addListener("dragend", () => {
           const p = marker.position;
@@ -356,46 +353,35 @@ export default function MapPage() {
         searchPinRef.current = marker;
       }
 
-      // Radius circle
-      const radiusMeters = radius * 0.3048; // feet to meters
+      const radiusMeters = radius * 0.3048;
       if (circleRef.current) {
         circleRef.current.setCenter(searchPin);
         circleRef.current.setRadius(radiusMeters);
       } else {
-        const { Circle } = await importLibrary("maps");
-
-        // google.maps.Circle may already be available via the maps library
+        await importLibrary("maps");
         const circle = new google.maps.Circle({
-          map,
-          center: searchPin,
-          radius: radiusMeters,
-          fillColor: "#A84D48",
-          fillOpacity: 0.10,
-          strokeColor: "#A84D48",
-          strokeOpacity: 0.45,
-          strokeWeight: 2,
+          map, center: searchPin, radius: radiusMeters,
+          fillColor: "#A84D48", fillOpacity: 0.10,
+          strokeColor: "#A84D48", strokeOpacity: 0.45, strokeWeight: 2,
         });
         circleRef.current = circle;
       }
     })();
   }, [searchPin, radius]);
 
-  // ---- Render item markers (only after search pin is placed) ----
+  // ---- Render item markers ----
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
 
-    // Clear old markers
     markersRef.current.forEach((m) => (m.map = null));
     markersRef.current = [];
 
-    // Don't show any item markers until the user places a search pin
     if (!searchPin) return;
 
     (async () => {
       const { AdvancedMarkerElement } = await importLibrary("marker");
 
-      // Only show items that are within the radius
       nearbyItems.forEach((item, index) => {
         if (item._lat == null || item._lng == null) return;
         const color = item.resolved ? "#94a3b8" : (IMPORTANCE_COLORS[item.importance] || "#666");
@@ -403,11 +389,9 @@ export default function MapPage() {
         const el = document.createElement("div");
         el.style.transition = "opacity 0.3s";
         el.style.cursor = "pointer";
-        // Drop-bounce animation staggered by index
         el.style.animation = `markerDrop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) ${index * 0.05}s both`;
         el.innerHTML = `<svg width="24" height="32" viewBox="0 0 24 32" fill="none"><path d="M12 0C5.37 0 0 5.37 0 12c0 9 12 20 12 20s12-11 12-20C24 5.37 18.63 0 12 0z" fill="${color}"/><circle cx="12" cy="12" r="5" fill="#fff" opacity="0.9"/></svg>`;
 
-        // Inject keyframes if not already present
         if (!document.getElementById("marker-drop-style")) {
           const style = document.createElement("style");
           style.id = "marker-drop-style";
@@ -423,12 +407,9 @@ export default function MapPage() {
         }
 
         const marker = new AdvancedMarkerElement({
-          map,
-          position: { lat: item._lat, lng: item._lng },
-          content: el,
+          map, position: { lat: item._lat, lng: item._lng }, content: el,
         });
 
-        // Click marker → zoom in and open detail modal
         marker.addListener("click", () => {
           if (mapInstanceRef.current && item._lat && item._lng) {
             mapInstanceRef.current.panTo({ lat: item._lat, lng: item._lng });
@@ -440,71 +421,36 @@ export default function MapPage() {
         markersRef.current.push(marker);
       });
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchPin, nearbyItems]);
 
-  // ---- Campus center marker (red dot + label) ----
+  // ---- Update campus center marker when user switches campus ----
+  // (Initial marker is placed in map init effect — this only handles subsequent changes)
   useEffect(() => {
+    if (!mapInstanceRef.current) return;
+
     const campus = CAMPUSES.find((c) => c.id === selectedCampus) ?? CAMPUSES[0];
 
-    // Wait for map to be ready, then place/move the marker
-    const place = async () => {
-      // Poll until the map instance is available
-      let attempts = 0;
-      while (!mapInstanceRef.current && attempts < 30) {
-        await new Promise((r) => setTimeout(r, 200));
-        attempts++;
-      }
-      if (!mapInstanceRef.current) return;
-
+    (async () => {
       const { AdvancedMarkerElement } = await importLibrary("marker");
 
-      // Remove old campus center marker
       if (campusCenterMarkerRef.current) {
         campusCenterMarkerRef.current.map = null;
         campusCenterMarkerRef.current = null;
       }
 
-      // Build the visual element: red circle + name label
-      const el = document.createElement("div");
-      el.style.cssText = "display:flex;flex-direction:column;align-items:center;";
-      el.innerHTML = `
-        <svg width="18" height="18" viewBox="0 0 18 18">
-          <circle cx="9" cy="9" r="8" fill="#CC0000" stroke="#fff" stroke-width="2"/>
-        </svg>
-        <span style="
-          margin-top:3px;
-          background:rgba(204,0,0,0.85);
-          color:#fff;
-          font-size:10px;
-          font-weight:800;
-          font-family:sans-serif;
-          padding:1px 5px;
-          border-radius:4px;
-          white-space:nowrap;
-          letter-spacing:0.3px;
-          box-shadow:0 1px 3px rgba(0,0,0,0.35);
-        ">${campus.name}</span>
-      `;
-
       campusCenterMarkerRef.current = new AdvancedMarkerElement({
         map: mapInstanceRef.current,
         position: campus.center,
-        content: el,
+        content: buildCampusMarkerEl(campus.name),
         title: campus.name,
         zIndex: 1000,
       });
-    };
-
-    place();
+    })();
   }, [selectedCampus]);
 
-  // ---- Filter nearby items when pin or radius changes ----
+  // ---- Filter nearby items ----
   useEffect(() => {
-    if (!searchPin) {
-      setNearbyItems([]);
-      return;
-    }
+    if (!searchPin) { setNearbyItems([]); return; }
     const nearby = items.filter((i) => {
       if (i._lat == null || i._lng == null) return false;
       return haversine(searchPin, { lat: i._lat, lng: i._lng }) <= radius;
@@ -512,7 +458,6 @@ export default function MapPage() {
     setNearbyItems(nearby);
   }, [searchPin, radius, items]);
 
-  // ---- Clear search pin ----
   const clearSearch = () => {
     setSearchPin(null);
     setShowPanel(false);
@@ -537,11 +482,7 @@ export default function MapPage() {
               onClick={() => handleCampusChange(campus.id)}
               variant={selectedCampus === campus.id ? "filled" : "outlined"}
               sx={{
-                fontWeight: 700,
-                fontSize: 11,
-                height: 26,
-                cursor: "pointer",
-                flexShrink: 1,
+                fontWeight: 700, fontSize: 11, height: 26, cursor: "pointer", flexShrink: 1,
                 "& .MuiChip-label": { px: 1 },
                 borderColor: selectedCampus === campus.id ? "#A84D48" : "#e0d0d0",
                 background: selectedCampus === campus.id ? "#A84D48" : "transparent",
@@ -558,24 +499,15 @@ export default function MapPage() {
 
         {/* Header */}
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-          <Typography variant="h4" fontWeight={900}>
-            Campus Map
-          </Typography>
+          <Typography variant="h4" fontWeight={900}>Campus Map</Typography>
           <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
             {searchPin && (
-              <Button
-                size="small"
-                onClick={clearSearch}
-                startIcon={<CloseIcon />}
-                sx={{ color: "#A84D48", fontWeight: 700 }}
-              >
+              <Button size="small" onClick={clearSearch} startIcon={<CloseIcon />} sx={{ color: "#A84D48", fontWeight: 700 }}>
                 Clear Pin
               </Button>
             )}
             <Button
-              variant="outlined"
-              onClick={handleRefresh}
-              disabled={refreshing}
+              variant="outlined" onClick={handleRefresh} disabled={refreshing}
               sx={{
                 borderColor: "#ecdcdc", color: "#A84D48", fontWeight: 800,
                 borderRadius: 2, minWidth: 0, px: 1.5, fontSize: 18,
@@ -596,12 +528,8 @@ export default function MapPage() {
           <Paper
             elevation={3}
             sx={{
-              flex: 1,
-              height: { xs: "50vh", md: "calc(100vh - 270px)" },
-              minHeight: 400,
-              overflow: "hidden",
-              borderRadius: 3,
-              position: "relative",
+              flex: 1, height: { xs: "50vh", md: "calc(100vh - 270px)" },
+              minHeight: 400, overflow: "hidden", borderRadius: 3, position: "relative",
             }}
           >
             {loading && (
@@ -611,16 +539,11 @@ export default function MapPage() {
             )}
             <Box ref={mapRef} sx={{ width: "100%", height: "100%" }} />
 
-            {/* Building search — filtered to the selected campus */}
             <Autocomplete
               key={selectedCampus}
               options={campusBuildings}
               getOptionLabel={(o) => o.name}
-              noOptionsText={
-                campusBuildings.length === 0
-                  ? "No buildings yet — add CSV to Supabase"
-                  : "No match"
-              }
+              noOptionsText={campusBuildings.length === 0 ? "No buildings yet — add CSV to Supabase" : "No match"}
               onChange={(_, val) => {
                 if (val && mapInstanceRef.current) {
                   mapInstanceRef.current.panTo({ lat: val.lat, lng: val.lng });
@@ -638,11 +561,8 @@ export default function MapPage() {
                   }}
                   sx={{
                     "& .MuiOutlinedInput-root": {
-                      background: "rgba(255,255,255,0.95)",
-                      backdropFilter: "blur(8px)",
-                      borderRadius: 2,
-                      fontWeight: 700,
-                      fontSize: 13,
+                      background: "rgba(255,255,255,0.95)", backdropFilter: "blur(8px)",
+                      borderRadius: 2, fontWeight: 700, fontSize: 13,
                       "& fieldset": { borderColor: "#ecdcdc" },
                       "&:hover fieldset": { borderColor: "#A84D48" },
                       "&.Mui-focused fieldset": { borderColor: "#A84D48" },
@@ -653,7 +573,6 @@ export default function MapPage() {
               sx={{ position: "absolute", top: 12, left: 12, width: 270, zIndex: 10 }}
             />
 
-            {/* Instruction overlay */}
             {!searchPin && !loading && (
               <Paper
                 elevation={0}
@@ -673,37 +592,27 @@ export default function MapPage() {
             )}
           </Paper>
 
-          {/* Side panel — radius controls + nearby list */}
+          {/* Side panel */}
           <Collapse in={showPanel && !!searchPin} orientation="horizontal" sx={{ minWidth: showPanel ? 320 : 0 }}>
             <Paper
               elevation={2}
               sx={{
                 width: 320, p: 2.5, borderRadius: 3,
                 height: { xs: "auto", md: "calc(100vh - 270px)" },
-                overflowY: "auto",
-                border: "1.5px solid #ecdcdc",
+                overflowY: "auto", border: "1.5px solid #ecdcdc",
               }}
             >
-              {/* Radius slider */}
               <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
                 <FilterAltIcon sx={{ color: "#A84D48", fontSize: 20 }} />
-                <Typography fontWeight={800} fontSize={15}>
-                  Search Radius
-                </Typography>
+                <Typography fontWeight={800} fontSize={15}>Search Radius</Typography>
               </Box>
               <Slider
-                value={radius}
-                min={25}
-                max={500}
-                step={25}
+                value={radius} min={25} max={500} step={25}
                 onChange={(_, v) => setRadius(v)}
-                valueLabelDisplay="auto"
-                valueLabelFormat={(v) => `${v} ft`}
-                marks={RADIUS_MARKS}
-                sx={{ color: "#A84D48", mb: 2 }}
+                valueLabelDisplay="auto" valueLabelFormat={(v) => `${v} ft`}
+                marks={RADIUS_MARKS} sx={{ color: "#A84D48", mb: 2 }}
               />
 
-              {/* Nearby items */}
               <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5 }}>
                 <ListIcon sx={{ color: "#a07070", fontSize: 18 }} />
                 <Typography variant="body2" fontWeight={800} color="text.secondary">
@@ -719,8 +628,7 @@ export default function MapPage() {
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
                   {nearbyItems.map((item) => (
                     <Paper
-                      key={item.item_id}
-                      variant="outlined"
+                      key={item.item_id} variant="outlined"
                       sx={{
                         p: 1.5, borderRadius: 2, borderColor: "#ecdcdc",
                         cursor: "pointer", transition: "box-shadow 0.15s",
@@ -728,7 +636,6 @@ export default function MapPage() {
                         "&:hover": { boxShadow: "0 2px 12px rgba(168,77,72,0.12)" },
                       }}
                       onClick={() => {
-                        // Pan + zoom to item, then open detail modal
                         if (mapInstanceRef.current && item._lat && item._lng) {
                           mapInstanceRef.current.panTo({ lat: item._lat, lng: item._lng });
                           mapInstanceRef.current.setZoom(20);
@@ -737,7 +644,6 @@ export default function MapPage() {
                       }}
                     >
                       <Box sx={{ display: "flex", gap: 1.5, alignItems: "center" }}>
-                        {/* Thumbnail */}
                         <Box sx={{
                           width: 44, height: 44, borderRadius: 1.5, flexShrink: 0,
                           overflow: "hidden", background: "#f0eded",
@@ -756,8 +662,7 @@ export default function MapPage() {
                           </Typography>
                         </Box>
                         <Chip
-                          label={IMPORTANCE_LABELS[item.importance]}
-                          size="small"
+                          label={IMPORTANCE_LABELS[item.importance]} size="small"
                           sx={{
                             background: IMPORTANCE_COLORS[item.importance] + "22",
                             color: IMPORTANCE_COLORS[item.importance],
@@ -774,12 +679,7 @@ export default function MapPage() {
         </Box>
       </Box>
 
-      {/* Detail modal — opens on marker click or sidebar item click */}
-      <DetailModal
-        item={selectedItem}
-        onClose={() => setSelectedItem(null)}
-        onClaim={handleClaim}
-      />
+      <DetailModal item={selectedItem} onClose={() => setSelectedItem(null)} onClaim={handleClaim} />
     </Box>
   );
 }
