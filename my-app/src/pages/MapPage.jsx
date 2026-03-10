@@ -15,6 +15,7 @@ import FlagIcon from "@mui/icons-material/Flag";
 import ReportModal from "../components/ReportModal";
 import { supabase } from "../supabaseClient";
 import { CAMPUSES } from "../constants/campuses";
+import { removeExpiredUnresolvedListings } from "../utils/listingExpiry";
 
 setOptions({
   key: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
@@ -229,6 +230,8 @@ export default function MapPage() {
   // ---- Fetch all listings ----
   const fetchItems = useCallback(async () => {
     setLoading(true);
+    await removeExpiredUnresolvedListings();
+
     const { data, error } = await supabase
       .from("listings")
       .select("*, locations(name, coordinates)")

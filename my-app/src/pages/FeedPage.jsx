@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Box, Typography, Paper, TextField, Button, Select, MenuItem,
@@ -16,6 +16,7 @@ import { supabase } from "../supabaseClient";
 import { useAuth } from "../AuthContext";
 import MapPinPicker from "../components/MapPinPicker";
 import { CAMPUSES } from "../constants/campuses";
+import { removeExpiredUnresolvedListings } from "../utils/listingExpiry";
 
 // --- Constants ---
 const CATEGORIES = ["All", "Husky Card", "Jacket", "Wallet/Purse", "Bag", "Keys", "Electronics", "Other"];
@@ -541,19 +542,22 @@ export default function FeedPage() {
   const [showResolved, setShowResolved] = useState(false);
   const [selectedCampus, setSelectedCampus] = useState(profile?.default_campus || "boston");
 
-  const fetchItems = async () => {
+  const fetchItems = useCallback(async () => {
     setLoading(true);
+    await removeExpiredUnresolvedListings();
+
     const { data, error } = await supabase
       .from("listings")
       .select(`*, locations(name, coordinates, campus)`)
       .order("date", { ascending: false });
+
     if (!error) setItems(data ?? []);
     setLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
     fetchItems();
-  }, []);
+  }, [fetchItems]);
 
   const handleClaim = async (item_id) => {
     await supabase.from("listings").update({ resolved: true }).eq("item_id", item_id);
@@ -588,16 +592,9 @@ export default function FeedPage() {
               onClick={() => {
                 const btn = document.getElementById("feed-refresh-icon");
                 if (btn) btn.style.transform = "rotate(360deg)";
-                setLoading(true);
-                supabase
-                  .from("listings")
-                  .select(`*, locations(name, coordinates, campus)`)
-                  .order("date", { ascending: false })
-                  .then(({ data, error }) => {
-                    if (!error) setItems(data ?? []);
-                    setLoading(false);
-                    setTimeout(() => { if (btn) btn.style.transform = "rotate(0deg)"; }, 600);
-                  });
+                fetchItems().finally(() => {
+                  setTimeout(() => { if (btn) btn.style.transform = "rotate(0deg)"; }, 600);
+                });
               }}
               sx={{
                 borderColor: "#ecdcdc", color: "#A84D48", fontWeight: 800,
