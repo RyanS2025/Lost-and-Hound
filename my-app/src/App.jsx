@@ -7,6 +7,7 @@ import FeedPage from './pages/FeedPage';
 import MapPage from "./pages/MapPage";
 import MessagePage from "./pages/MessagePage";
 import SettingsPage from "./pages/SettingsPage";
+import DashboardPage from "./pages/DashboardPage";
 import { AppBar, Toolbar, Button, Typography, Container, Box, Paper } from '@mui/material';
 import HomeIcon from '@mui/icons-material/Home';
 import FeedIcon from "@mui/icons-material/DynamicFeed";
@@ -14,6 +15,7 @@ import MapIcon from '@mui/icons-material/Map';
 import SettingsIcon from '@mui/icons-material/Settings';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MessageIcon from '@mui/icons-material/Message';
+import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
 import { useState } from 'react';
 
 // --- App: Main application component with routing and navigation ---
@@ -74,6 +76,16 @@ export default function App() {
             Messages
           </Button>
           <Box sx={{ flexGrow: 1 }} />
+          {profile?.is_moderator && (
+            <Button
+              color="inherit"
+              component={Link}
+              to="/moderation"
+              sx={{ minWidth: 0, mr: 0.5 }}
+            >
+              <SupervisorAccountIcon />
+            </Button>
+          )}
           <Typography variant="body1" sx={{ mr: 2 }}>
             {profile?.first_name && profile?.last_name
               ? profile.first_name + " " + profile.last_name
@@ -104,6 +116,7 @@ export default function App() {
           <Route path="/map" element={<MapPage />} />
           <Route path = "/messages" element = {<MessagePage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/moderation" element={<DashboardPage />} />
         </Routes>
       </Box>
 

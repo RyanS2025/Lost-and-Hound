@@ -11,6 +11,8 @@ import FilterAltIcon from "@mui/icons-material/FilterAlt";
 import CloseIcon from "@mui/icons-material/Close";
 import ListIcon from "@mui/icons-material/ViewList";
 import SearchIcon from "@mui/icons-material/Search";
+import FlagIcon from "@mui/icons-material/Flag";
+import ReportModal from "../components/ReportModal";
 import { supabase } from "../supabaseClient";
 import { CAMPUSES } from "../constants/campuses";
 
@@ -76,6 +78,7 @@ function DetailModal({ item, onClose, onClaim }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [claimed, setClaimed] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   if (!item) return null;
   return (
     <Modal open={!!item} onClose={onClose}>
@@ -91,7 +94,13 @@ function DetailModal({ item, onClose, onClaim }) {
               Posted by {item.poster_name} · {formatDate(item.date)}
             </Typography>
           </Box>
-          <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+            <Box sx={{ display: "flex", gap: 0.5 }}>
+              <IconButton onClick={() => setReportOpen(true)} size="small" sx={{ color: "#999", "&:hover": { color: "#A84D48" } }}>
+                <FlagIcon fontSize="small" />
+              </IconButton>
+              <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+            </Box>
+
         </Box>
 
         {item.image_url
@@ -146,6 +155,7 @@ function DetailModal({ item, onClose, onClaim }) {
             Message
           </Button>
         </Box>
+        <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} type="post" targetId={item.item_id} targetLabel={item.title}/>
       </Box>
     </Modal>
   );

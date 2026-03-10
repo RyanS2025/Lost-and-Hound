@@ -40,7 +40,7 @@ export function AuthProvider({ children }) {
       }
       const { data, error } = await supabase
         .from('profiles')
-        .select('first_name, last_name, default_campus')
+        .select('first_name, last_name, default_campus, is_moderator')
         .eq('id', user.id)
         .single();
 
@@ -58,7 +58,7 @@ export function AuthProvider({ children }) {
             { id: user.id, first_name: meta.first_name, last_name: meta.last_name, default_campus: 'boston' },
             { onConflict: 'id' }
           )
-          .select('first_name, last_name, default_campus')
+          .select('first_name, last_name, default_campus, is_moderator')
           .single();
         if (!upsertErr && created) {
           setProfile(created);

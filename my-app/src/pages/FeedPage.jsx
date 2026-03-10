@@ -10,6 +10,8 @@ import AddIcon from "@mui/icons-material/Add";
 import CloseIcon from "@mui/icons-material/Close";
 import UploadIcon from "@mui/icons-material/UploadFile";
 import MapIcon from "@mui/icons-material/PinDrop";
+import FlagIcon from "@mui/icons-material/Flag";
+import ReportModal from "../components/ReportModal";
 import { supabase } from "../supabaseClient";
 import { useAuth } from "../AuthContext";
 import MapPinPicker from "../components/MapPinPicker";
@@ -153,6 +155,7 @@ function DetailModal({ item, onClose, onClaim }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [claimed, setClaimed] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   if (!item) return null;
   const pinCoords = (item.lat && item.lng)
@@ -173,7 +176,13 @@ function DetailModal({ item, onClose, onClaim }) {
               Posted by {item.poster_name} · {formatDate(item.date)}
             </Typography>
           </Box>
-          <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+          <Box sx={{ display: "flex", gap: 0.5 }}>
+            <IconButton onClick={() => setReportOpen(true)} size="small" sx={{ color: "#999", "&:hover": { color: "#A84D48" } }}>
+              <FlagIcon fontSize="small" />
+            </IconButton>
+            <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+          </Box>
+
         </Box>
 
         {item.image_url
@@ -273,6 +282,7 @@ function DetailModal({ item, onClose, onClaim }) {
             Message
           </Button>
         </Box>
+        <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} type="post" targetId={item.item_id} targetLabel={item.title}/>
       </Box>
     </Modal>
   );
