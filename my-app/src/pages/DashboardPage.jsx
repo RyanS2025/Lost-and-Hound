@@ -18,6 +18,7 @@ import ArticleIcon from "@mui/icons-material/Article";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import GavelIcon from "@mui/icons-material/Gavel";
+import UndoIcon from "@mui/icons-material/Undo";
 import { supabase } from "../supabaseClient";
 import { useAuth } from "../AuthContext";
 
@@ -399,8 +400,137 @@ function DecisionPanel({ report, onDecision, processing, isDark = false }) {
   );
 }
 
+// --- Reverse Ban Panel ---
+function ReverseBanPanel({ report, onReverseBan, processing, isDark = false }) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [banInfo, setBanInfo] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const isPost = !!report.reported_listing_id;
+  const banUserId = isPost
+    ? report.reportedListing?.poster_id
+    : report.reported_user_id;
+
+  useEffect(() => {
+    if (!banUserId) { setLoading(false); return; }
+    const fetchBanInfo = async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("id, first_name, last_name, banned_until, ban_reason")
+        .eq("id", banUserId)
+        .single();
+      setBanInfo(data);
+      setLoading(false);
+    };
+    fetchBanInfo();
+  }, [banUserId]);
+
+  if (loading) {
+    return <Box sx={{ display: "flex", justifyContent: "center", p: 2 }}><CircularProgress size={18} sx={{ color: "#A84D48" }} /></Box>;
+  }
+
+  // Only show if user is actually banned
+  if (!banInfo?.banned_until) return null;
+
+  const isPermanent = banInfo.banned_until === "9999-12-31T23:59:59+00:00" || banInfo.banned_until === "9999-12-31T23:59:59Z";
+  const banExpired = !isPermanent && new Date(banInfo.banned_until) < new Date();
+
+  const banLabel = isPermanent
+    ? "Permanently banned"
+    : banExpired
+      ? "Ban expired"
+      : `Banned until ${formatDate(banInfo.banned_until)}`;
+
+  return (
+    <>
+      <Paper variant="outlined" sx={{
+        p: 2, borderRadius: 2,
+        borderColor: isDark ? "rgba(245,158,11,0.4)" : "#fbbf24",
+        background: isDark ? "#2a2520" : "#fffbeb",
+      }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
+          <UndoIcon sx={{ color: "#d97706", fontSize: 20 }} />
+          <Typography fontWeight={800} fontSize={14} sx={{ color: isDark ? "#fbbf24" : "#92400e" }}>
+            Ban Status
+          </Typography>
+        </Box>
+
+        <Box sx={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap" }}>
+          <Box sx={{ flex: 1, minWidth: 200 }}>
+            <Typography variant="body2" fontWeight={700}>
+              {banInfo.first_name} {banInfo.last_name}
+            </Typography>
+            <Typography variant="caption" sx={{ color: isPermanent ? "#dc2626" : "#d97706", fontWeight: 700 }}>
+              {banLabel}
+            </Typography>
+            {banInfo.ban_reason && (
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.25 }}>
+                Reason: {banInfo.ban_reason}
+              </Typography>
+            )}
+          </Box>
+
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={processing ? <CircularProgress size={14} color="inherit" /> : <UndoIcon sx={{ fontSize: 16 }} />}
+            disabled={processing}
+            onClick={() => setConfirmOpen(true)}
+            sx={{
+              color: "#d97706",
+              borderColor: "#d97706",
+              fontWeight: 700,
+              fontSize: 12,
+              borderRadius: 2,
+              "&:hover": { background: "rgba(217,119,6,0.08)", borderColor: "#b45309" },
+              "&.Mui-disabled": { borderColor: isDark ? "#3A3A3C" : "#e0e0e0" },
+            }}
+          >
+            Reverse Ban
+          </Button>
+        </Box>
+      </Paper>
+
+      {/* Confirmation dialog */}
+      <Dialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        PaperProps={{ sx: { background: isDark ? "#1A1A1B" : "#fff", border: isDark ? "1px solid rgba(255,255,255,0.16)" : "none", color: isDark ? "#D7DADC" : "inherit" } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Reverse Ban?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will remove the ban on <strong>{banInfo.first_name} {banInfo.last_name}</strong> and
+            move this report back to <strong>Pending</strong> for re-evaluation.
+            The user will immediately regain access to the platform.
+          </DialogContentText>
+          {banInfo.ban_reason && (
+            <Box sx={{ mt: 2, p: 1.5, background: isDark ? "#232324" : "#fdf7f7", borderRadius: 1.5, border: isDark ? "1px solid rgba(255,255,255,0.14)" : "1px solid #ecdcdc" }}>
+              <Typography variant="caption" fontWeight={700} color="text.secondary">Original ban reason:</Typography>
+              <Typography variant="body2" sx={{ mt: 0.5 }}>{banInfo.ban_reason}</Typography>
+            </Box>
+          )}
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1.5, display: "block" }}>
+            Note: Deleted content (posts or messages) will not be restored.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setConfirmOpen(false)} sx={{ color: "text.secondary" }}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={() => { setConfirmOpen(false); onReverseBan(report); }}
+            sx={{ fontWeight: 600, background: "#d97706", "&:hover": { background: "#b45309" } }}
+          >
+            Confirm Unban
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
+  );
+}
+
 // --- Report Card ---
-function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision, processing, isDark = false }) {
+function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision, onReverseBan, processing, isDark = false }) {
   const [expanded, setExpanded] = useState(false);
   const isPost = !!report.reported_listing_id;
   const statusStyle = isDark
@@ -466,6 +596,11 @@ function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision,
             {/* Decision panel — only for pending reports */}
             {report.status === "pending" && (
               <DecisionPanel report={report} onDecision={onDecision} processing={processing} isDark={isDark} />
+            )}
+
+            {/* Reverse ban panel — only for reviewed reports */}
+            {report.status === "reviewed" && (
+              <ReverseBanPanel report={report} onReverseBan={onReverseBan} processing={processing} isDark={isDark} />
             )}
           </Box>
         </Collapse>
@@ -671,6 +806,40 @@ export default function DashboardPage({ effectiveTheme = "light" }) {
     setProcessing(false);
   };
 
+  // --- Reverse ban handler ---
+  const handleReverseBan = async (report) => {
+    setProcessing(true);
+    setActionError("");
+
+    const isPost = !!report.reported_listing_id;
+    const banUserId = isPost
+      ? report.reportedListing?.poster_id
+      : report.reported_user_id;
+
+    if (!banUserId) {
+      setActionError("Cannot determine which user to unban.");
+      setProcessing(false);
+      return;
+    }
+
+    // 1. Clear the ban on the user's profile
+    const { error: unbanError } = await supabase
+      .from("profiles")
+      .update({ banned_until: null, ban_reason: null })
+      .eq("id", banUserId);
+
+    if (unbanError) {
+      setActionError("Failed to reverse ban. Please try again.");
+      setProcessing(false);
+      return;
+    }
+
+    // 2. Move the report back to pending so it can be re-evaluated
+    await updateStatus(report.id, "pending");
+    setReportTab("pending");
+    setProcessing(false);
+  };
+
   // --- Derived ---
   const counts = {
     pending: reports.filter((r) => r.status === "pending").length,
@@ -744,7 +913,8 @@ export default function DashboardPage({ effectiveTheme = "light" }) {
                     key={report.id} report={report}
                     fullListing={fullListings[report.reported_listing_id] || null}
                     onUpdateStatus={updateStatus} onDelete={setDeleteTarget}
-                    onDecision={handleDecision} processing={processing} isDark={isDark}
+                    onDecision={handleDecision} onReverseBan={handleReverseBan}
+                    processing={processing} isDark={isDark}
                   />
                 ))}
               </Box>

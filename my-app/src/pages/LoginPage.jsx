@@ -97,7 +97,12 @@ function ConfettiCanvas({ active }) {
 /* ───────────────────────────────────────────
    Login page
    ─────────────────────────────────────────── */
-export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
+export default function LoginPage({
+  loginTransition = false,
+  onLoginSuccess,
+  effectiveTheme = "light",
+}) {
+  const isDark = effectiveTheme === "dark";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -106,38 +111,87 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
+  // Refs to read Chrome's autofilled DOM values (Chrome bypasses onChange)
+  const emailRef = useRef(null);
+  const passwordRef = useRef(null);
+
+  // Sync Chrome autofill into React state on mount.
+  // Chrome fills the DOM directly without firing onChange, so React state
+  // stays "". When user backspaces to empty, React re-renders with value=""
+  // and Chrome re-fills — creating an un-clearable loop. Reading the DOM
+  // value into state on mount breaks that cycle.
+  useEffect(() => {
+    const sync = () => {
+      const eInput = emailRef.current?.querySelector("input");
+      const pInput = passwordRef.current?.querySelector("input");
+      if (eInput?.value && !email) setEmail(eInput.value);
+      if (pInput?.value && !password) setPassword(pInput.value);
+    };
+    // Chrome autofills at unpredictable times, so poll a few times
+    const t1 = setTimeout(sync, 100);
+    const t2 = setTimeout(sync, 500);
+    const t3 = setTimeout(sync, 1000);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+
   // Fade-out starts slightly after confetti
   const [fadeOut, setFadeOut] = useState(false);
 
+  const BRAND = {
+    accent: isDark ? "#FF4500" : "#A84D48",
+    accentHover: isDark ? "#E03D00" : "#8f3e3a",
+    bg: isDark ? "#030303" : "#f5f0f0",
+    dot: isDark ? "rgba(255,255,255,0.12)" : "#c9a6a6",
+    paper: isDark ? "#1A1A1B" : "#fff",
+    border: isDark ? "rgba(255,255,255,0.14)" : "#ecdcdc",
+    title: isDark ? "#D7DADC" : "#3d2020",
+    inputBg: isDark ? "#2D2D2E" : "#fff",
+    inputBorder: isDark ? "rgba(255,255,255,0.2)" : "#d8c8c8",
+    inputBorderHover: isDark ? "rgba(255,255,255,0.35)" : "#caa8a8",
+    inputText: isDark ? "#D7DADC" : "#2d2d2d",
+    autofillBg: isDark ? "#3b312b" : "#fff8f7",
+    leftPanelGradient: isDark
+      ? "linear-gradient(160deg, #1f252b 0%, #141619 100%)"
+      : "linear-gradient(160deg, #A84D48 0%, #7a2929 100%)",
+    leftPanelBody: isDark ? "rgba(215,218,220,0.74)" : "rgba(255,255,255,0.7)",
+    leftPanelCaption: isDark ? "rgba(215,218,220,0.45)" : "rgba(255,255,255,0.4)",
+  };
+
   const autofillTextFieldSx = {
     "& .MuiOutlinedInput-root": {
-      backgroundColor: "#fff",
+      backgroundColor: BRAND.inputBg,
+      color: BRAND.inputText,
       "& .MuiOutlinedInput-notchedOutline": {
-        borderColor: "#d8c8c8",
+        borderColor: BRAND.inputBorder,
       },
       "&:hover .MuiOutlinedInput-notchedOutline": {
-        borderColor: "#caa8a8",
+        borderColor: BRAND.inputBorderHover,
       },
       "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-        borderColor: "#A84D48",
+        borderColor: BRAND.accent,
         borderWidth: "1px",
       },
       "& input:-webkit-autofill": {
-        WebkitBoxShadow: "0 0 0 1000px #fff8f7 inset",
-        WebkitTextFillColor: "#2d2d2d",
-        caretColor: "#2d2d2d",
+        WebkitBoxShadow: `0 0 0 1000px ${BRAND.autofillBg} inset`,
+        WebkitTextFillColor: BRAND.inputText,
+        caretColor: BRAND.inputText,
         borderRadius: "inherit",
-        transition: "background-color 9999s ease-out 0s",
       },
       "& input:-webkit-autofill:hover": {
-        WebkitBoxShadow: "0 0 0 1000px #fff8f7 inset",
+        WebkitBoxShadow: `0 0 0 1000px ${BRAND.autofillBg} inset`,
       },
       "& input:-webkit-autofill:focus": {
-        WebkitBoxShadow: "0 0 0 1000px #fff8f7 inset",
+        WebkitBoxShadow: `0 0 0 1000px ${BRAND.autofillBg} inset`,
       },
       "& input:-webkit-autofill:active": {
-        WebkitBoxShadow: "0 0 0 1000px #fff8f7 inset",
+        WebkitBoxShadow: `0 0 0 1000px ${BRAND.autofillBg} inset`,
       },
+    },
+    "& .MuiInputLabel-root": {
+      color: isDark ? "#A9AAAB" : "inherit",
+    },
+    "& .MuiInputLabel-root.Mui-focused": {
+      color: BRAND.accent,
     },
   };
 
@@ -191,8 +245,6 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
         setFirstName("");
         setLastName("");
       } else {
-        // Tell App.jsx to hold the login screen BEFORE signing in
-        // This way even if auth state fires instantly, App keeps us mounted
         onLoginSuccess?.();
 
         const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -201,9 +253,6 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
         });
 
         if (signInError) {
-          // Auth failed — we need to cancel the transition
-          // The timeout in App.jsx will still expire naturally,
-          // but we should show the error right away
           throw signInError;
         }
       }
@@ -239,9 +288,9 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
           alignItems: "center",
           justifyContent: "center",
           background: `
-            radial-gradient(circle, #d4b5b5 1px, transparent 1px)
+            radial-gradient(circle, ${BRAND.dot} 1px, transparent 1px)
           `,
-          backgroundColor: "#f5f0f0",
+          backgroundColor: BRAND.bg,
           backgroundSize: "24px 24px",
           p: { xs: 2, md: 4 },
           transition: "opacity 0.8s ease, filter 0.8s ease",
@@ -260,15 +309,19 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
             width: "100%",
             borderRadius: 4,
             overflow: "hidden",
-            background: "#fff",
-            border: "1.5px solid #ecdcdc",
+            background: BRAND.paper,
+            border: `1.5px solid ${BRAND.border}`,
             boxShadow:
-              "0 12px 48px rgba(168, 77, 72, 0.28), 0 4px 16px rgba(0,0,0,0.1)",
+              isDark
+                ? "0 12px 48px rgba(0,0,0,0.55), 0 4px 16px rgba(0,0,0,0.35)"
+                : "0 12px 48px rgba(168, 77, 72, 0.28), 0 4px 16px rgba(0,0,0,0.1)",
             transition: "transform 0.7s cubic-bezier(.4,0,.2,1), box-shadow 0.7s ease",
             ...(loginTransition && {
               transform: "scale(1.02)",
               boxShadow:
-                "0 16px 64px rgba(168, 77, 72, 0.25), 0 4px 16px rgba(0,0,0,0.08)",
+                isDark
+                  ? "0 16px 64px rgba(0,0,0,0.58), 0 4px 16px rgba(0,0,0,0.35)"
+                  : "0 16px 64px rgba(168, 77, 72, 0.25), 0 4px 16px rgba(0,0,0,0.08)",
             }),
           }}
         >
@@ -280,13 +333,12 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
               display: "flex",
               flexDirection: "column",
               justifyContent: "space-between",
-              background: "linear-gradient(160deg, #A84D48 0%, #7a2929 100%)",
+              background: BRAND.leftPanelGradient,
               position: "relative",
               overflow: "hidden",
               minHeight: { xs: 200, md: "auto" },
             }}
           >
-            {/* Decorative glows */}
             <Box
               sx={{
                 position: "absolute",
@@ -314,7 +366,6 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
               }}
             />
 
-            {/* Logo */}
             <Box
               sx={{
                 position: "relative",
@@ -340,7 +391,6 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
               />
             </Box>
 
-            {/* Tagline */}
             <Box sx={{ position: "relative", zIndex: 1 }}>
               <Typography
                 sx={{
@@ -357,17 +407,16 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
               </Typography>
               <Typography
                 variant="body2"
-                sx={{ color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}
+                sx={{ color: BRAND.leftPanelBody, lineHeight: 1.6 }}
               >
                 Northeastern's community-powered lost & found platform.
               </Typography>
             </Box>
 
-            {/* Footer */}
             <Typography
               variant="caption"
               sx={{
-                color: "rgba(255,255,255,0.4)",
+                color: BRAND.leftPanelCaption,
                 mt: 4,
                 position: "relative",
                 zIndex: 1,
@@ -387,7 +436,6 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
               justifyContent: "center",
             }}
           >
-            {/* Success overlay while transition is active */}
             {loginTransition ? (
               <Box
                 sx={{
@@ -413,7 +461,7 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
                 <Typography
                   variant="h5"
                   fontWeight={800}
-                  sx={{ color: "#3d2020", mb: 0.5 }}
+                  sx={{ color: BRAND.title, mb: 0.5 }}
                 >
                   Welcome back!
                 </Typography>
@@ -426,7 +474,7 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
                 <Typography
                   variant="h5"
                   fontWeight={800}
-                  sx={{ color: "#3d2020", mb: 0.5 }}
+                  sx={{ color: BRAND.title, mb: 0.5 }}
                 >
                   {isSignUp ? "Create an account" : "Sign in"}
                 </Typography>
@@ -449,7 +497,7 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
                     }}
                     sx={{
                       cursor: "pointer",
-                      color: "#A84D48",
+                      color: BRAND.accent,
                       fontWeight: 700,
                       textDecoration: "none",
                       "&:hover": { textDecoration: "underline" },
@@ -484,6 +532,7 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
                   )}
 
                   <TextField
+                    ref={emailRef}
                     required
                     fullWidth
                     size="small"
@@ -497,6 +546,7 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
                   />
 
                   <TextField
+                    ref={passwordRef}
                     required
                     fullWidth
                     size="small"
@@ -516,8 +566,8 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
                     variant="contained"
                     sx={{
                       py: 1.25,
-                      background: "#A84D48",
-                      "&:hover": { background: "#8f3e3a" },
+                      background: BRAND.accent,
+                      "&:hover": { background: BRAND.accentHover },
                       fontWeight: 700,
                       borderRadius: 2,
                       fontSize: 15,
@@ -535,7 +585,7 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
                     onClick={handleForgotPassword}
                     sx={{
                       cursor: "pointer",
-                      color: "#A84D48",
+                      color: BRAND.accent,
                       fontWeight: 600,
                       display: "block",
                       mt: 2,

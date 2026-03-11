@@ -184,6 +184,8 @@ function buildCampusMarkerEl(campusName) {
 // --- MapPage ---
 export default function MapPage({ effectiveTheme = "light" }) {
   const isDark = effectiveTheme === "dark";
+  const pageBg = isDark ? "#101214" : "#f9f5f4";
+  const pageDot = isDark ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
   const { profile } = useAuth();
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -467,7 +469,18 @@ export default function MapPage({ effectiveTheme = "light" }) {
   };
 
   return (
-    <Box sx={{ display: "flex", justifyContent: "center", width: "100%", p: 3, color: isDark ? "#D7DADC" : "inherit" }}>
+    <>
+      <Box
+        sx={{
+          position: "fixed",
+          inset: 0,
+          zIndex: -1,
+          backgroundColor: pageBg,
+          backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`,
+          backgroundSize: "24px 24px",
+        }}
+      />
+      <Box sx={{ display: "flex", justifyContent: "center", width: "100%", p: 3, color: isDark ? "#D7DADC" : "inherit" }}>
       <Box sx={{ width: "100%", maxWidth: 1200 }}>
         {/* Campus selector */}
         <Box
@@ -487,7 +500,7 @@ export default function MapPage({ effectiveTheme = "light" }) {
                 fontWeight: 700, fontSize: 11, height: 26, cursor: "pointer", flexShrink: 1,
                 "& .MuiChip-label": { px: 1 },
                 borderColor: selectedCampus === campus.id ? "#A84D48" : isDark ? "rgba(255,255,255,0.2)" : "#e0d0d0",
-                background: selectedCampus === campus.id ? "#A84D48" : "transparent",
+                background: selectedCampus === campus.id ? "#A84D48" : isDark ? "#1A1A1B" : "#fff",
                 color: selectedCampus === campus.id ? "#fff" : isDark ? "#B8BABD" : "#7a5050",
                 "&:hover": {
                   background: selectedCampus === campus.id ? "#8f3e3a" : isDark ? "#2D2D2E" : "#fdf0f0",
@@ -504,7 +517,7 @@ export default function MapPage({ effectiveTheme = "light" }) {
           <Typography variant="h4" fontWeight={900}>Campus Map</Typography>
           <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
             {searchPin && (
-              <Button size="small" onClick={clearSearch} startIcon={<CloseIcon />} sx={{ color: "#A84D48", fontWeight: 700 }}>
+              <Button size="small" onClick={clearSearch} startIcon={<CloseIcon />} sx={{ color: "#A84D48", fontWeight: 700, background: isDark ? "#1A1A1B" : "#fff", borderRadius: 2, px: 1.25 }}>
                 Clear Pin
               </Button>
             )}
@@ -513,6 +526,7 @@ export default function MapPage({ effectiveTheme = "light" }) {
               sx={{
                 borderColor: isDark ? "rgba(255,255,255,0.24)" : "#ecdcdc", color: "#A84D48", fontWeight: 800,
                 borderRadius: 2, minWidth: 0, px: 1.5, fontSize: 18,
+                background: isDark ? "#1A1A1B" : "#fff",
                 "& .refresh-icon": {
                   display: "inline-block",
                   transition: "transform 0.6s cubic-bezier(0.4,0,0.2,1)",
@@ -565,7 +579,7 @@ export default function MapPage({ effectiveTheme = "light" }) {
                   }}
                   sx={{
                     "& .MuiOutlinedInput-root": {
-                      background: isDark ? "rgba(36,29,29,0.95)" : "rgba(255,255,255,0.95)", backdropFilter: "blur(8px)",
+                      background: isDark ? "#232324" : "#fff", backdropFilter: "blur(8px)",
                       color: isDark ? "#D7DADC" : "inherit",
                       borderRadius: 2, fontWeight: 700, fontSize: 13,
                       "& fieldset": { borderColor: isDark ? "rgba(255,255,255,0.16)" : "#ecdcdc" },
@@ -687,6 +701,7 @@ export default function MapPage({ effectiveTheme = "light" }) {
       </Box>
 
       <DetailModal item={selectedItem} onClose={() => setSelectedItem(null)} onClaim={handleClaim} isDark={isDark} />
-    </Box>
+      </Box>
+    </>
   );
 }

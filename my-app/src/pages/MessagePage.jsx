@@ -12,6 +12,8 @@ import { useAuth } from "../AuthContext";
 
 export default function MessagesPage({ effectiveTheme = "light" }) {
   const isDark = effectiveTheme === "dark";
+  const pageBg = isDark ? "#101214" : "#f9f5f4";
+  const pageDot = isDark ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
   const secondaryTextColor = isDark ? "#B8BABD" : "text.secondary";
   const mutedTextColor = isDark ? "#818384" : "text.disabled";
   const { user, profile } = useAuth();
@@ -220,7 +222,18 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
   };
 
   return (
-    <Box sx={{ display: "flex", justifyContent: "center", width: "100%", p: 3, boxSizing: "border-box", height: "calc(100vh - 64px - 36px)", overflow: "hidden", color: isDark ? "#D7DADC" : "inherit" }}>
+    <>
+      <Box
+        sx={{
+          position: "fixed",
+          inset: 0,
+          zIndex: -1,
+          backgroundColor: pageBg,
+          backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`,
+          backgroundSize: "24px 24px",
+        }}
+      />
+      <Box sx={{ display: "flex", justifyContent: "center", width: "100%", p: 3, boxSizing: "border-box", height: "calc(100vh - 64px - 36px)", overflow: "hidden", color: isDark ? "#D7DADC" : "inherit" }}>
       <Box sx={{ width: "100%", maxWidth: 900, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <Typography variant="h4" fontWeight={900} sx={{ mb: 2.5 }}>
           Messages
@@ -408,6 +421,7 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
         targetId={reportTarget?.id}
         targetLabel={reportTarget?.name}
       />
-    </Box>
+      </Box>
+    </>
   );
 }
