@@ -10,7 +10,10 @@ import ReportModal from "../components/ReportModal";
 import { supabase } from "../supabaseClient";
 import { useAuth } from "../AuthContext";
 
-export default function MessagesPage() {
+export default function MessagesPage({ effectiveTheme = "light" }) {
+  const isDark = effectiveTheme === "dark";
+  const secondaryTextColor = isDark ? "#B8BABD" : "text.secondary";
+  const mutedTextColor = isDark ? "#818384" : "text.disabled";
   const { user, profile } = useAuth();
 
   const [conversations, setConversations] = useState([]);
@@ -217,7 +220,7 @@ export default function MessagesPage() {
   };
 
   return (
-    <Box sx={{ display: "flex", justifyContent: "center", width: "100%", p: 3, boxSizing: "border-box", height: "calc(100vh - 64px - 36px)", overflow: "hidden" }}>
+    <Box sx={{ display: "flex", justifyContent: "center", width: "100%", p: 3, boxSizing: "border-box", height: "calc(100vh - 64px - 36px)", overflow: "hidden", color: isDark ? "#D7DADC" : "inherit" }}>
       <Box sx={{ width: "100%", maxWidth: 900, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <Typography variant="h4" fontWeight={900} sx={{ mb: 2.5 }}>
           Messages
@@ -227,15 +230,16 @@ export default function MessagesPage() {
           elevation={2}
           sx={{
             flex: 1, minHeight: 0, borderRadius: 3,
-            border: "1.5px solid #ecdcdc", overflow: "hidden",
+            border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc", overflow: "hidden",
+            background: isDark ? "#1A1A1B" : "#fff",
           }}
         >
           <Box sx={{ display: "flex", flexDirection: "row", height: "100%" }}>
 
             {/* Left sidebar */}
-            <Box sx={{ width: "30%", borderRight: "1.5px solid #ecdcdc", overflowY: "auto" }}>
+            <Box sx={{ width: "30%", borderRight: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", overflowY: "auto" }}>
               {conversations.length === 0 ? (
-                <Typography variant="caption" color="text.disabled" fontWeight={700} sx={{ p: 2, display: "block" }}>
+                <Typography variant="caption" color={mutedTextColor} fontWeight={700} sx={{ p: 2, display: "block" }}>
                   No conversations yet
                 </Typography>
               ) : (
@@ -245,10 +249,10 @@ export default function MessagesPage() {
                     onClick={() => setSelectedConversation(convo)}
                     sx={{
                       p: 2, cursor: "pointer",
-                      background: selectedConversation?.id === convo.id ? "#fdf0f0" : "transparent",
-                      borderBottom: "1px solid #f5eded",
+                      background: selectedConversation?.id === convo.id ? (isDark ? "#2D2D2E" : "#fdf0f0") : "transparent",
+                      borderBottom: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid #f5eded",
                       display: "flex", alignItems: "center", justifyContent: "space-between",
-                      "&:hover": { background: "#fdf7f7", "& .delete-btn": { opacity: 1 } },
+                      "&:hover": { background: isDark ? "#343536" : "#fdf7f7", "& .delete-btn": { opacity: 1 } },
                     }}
                   >
                     {(() => {
@@ -260,7 +264,7 @@ export default function MessagesPage() {
                           <Typography fontWeight={700} fontSize={13} noWrap>
                             {listing ? listing.title : "Unknown Listing"}
                           </Typography>
-                          <Typography variant="caption" color="text.secondary" noWrap>
+                          <Typography variant="caption" color={secondaryTextColor} noWrap>
                             {other ? `${other.first_name} ${other.last_name}` : "Loading..."}
                           </Typography>
                         </Box>
@@ -270,7 +274,7 @@ export default function MessagesPage() {
                       className="delete-btn"
                       size="small"
                       onClick={(e) => hideConversation(convo, e)}
-                      sx={{ opacity: 0, transition: "opacity 0.15s", color: "#bbb", "&:hover": { color: "#A84D48" }, ml: 1, flexShrink: 0 }}
+                      sx={{ opacity: 0, transition: "opacity 0.15s", color: isDark ? "#818384" : "#bbb", "&:hover": { color: "#A84D48" }, ml: 1, flexShrink: 0 }}
                     >
                       <DeleteIcon fontSize="small" />
                     </IconButton>
@@ -283,7 +287,7 @@ export default function MessagesPage() {
             <Box sx={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
               {!selectedConversation ? (
                 <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Typography fontWeight={700} color="text.disabled">Select a conversation</Typography>
+                  <Typography fontWeight={700} color={mutedTextColor}>Select a conversation</Typography>
                 </Box>
               ) : (
                 <Box sx={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
@@ -292,12 +296,12 @@ export default function MessagesPage() {
                     sx={{
                       display: "flex", alignItems: "center", justifyContent: "space-between",
                       gap: 1, px: 2, py: 1,
-                      background: "#fff8e1", borderBottom: "1px solid #ffe082",
+                      background: isDark ? "#3a2f22" : "#fff8e1", borderBottom: isDark ? "1px solid rgba(255,193,7,0.35)" : "1px solid #ffe082",
                     }}
                   >
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1, minWidth: 0 }}>
                       <WarningAmberIcon sx={{ color: "#f59e0b", fontSize: 18, flexShrink: 0 }} />
-                      <Typography variant="caption" sx={{ color: "#92400e", fontWeight: 600, lineHeight: 1.4 }}>
+                      <Typography variant="caption" sx={{ color: isDark ? "#f6c66a" : "#92400e", fontWeight: 600, lineHeight: 1.4 }}>
                         Safety reminder: Never share personal information and always meet in a public place.
                       </Typography>
                     </Box>
@@ -309,9 +313,9 @@ export default function MessagesPage() {
                           startIcon={<FlagIcon sx={{ fontSize: 14 }} />}
                           onClick={() => setReportTarget({ id: other.id, name: other.name })}
                           sx={{
-                            color: "#92400e", fontSize: 11, fontWeight: 700,
+                            color: isDark ? "#f2c27a" : "#92400e", fontSize: 11, fontWeight: 700,
                             textTransform: "none", whiteSpace: "nowrap", flexShrink: 0,
-                            "&:hover": { color: "#A84D48", background: "rgba(168,77,72,0.08)" },
+                            "&:hover": { color: "#A84D48", background: isDark ? "rgba(255,255,255,0.1)" : "rgba(168,77,72,0.08)" },
                           }}
                         >
                           Report
@@ -330,7 +334,7 @@ export default function MessagesPage() {
                               variant="caption"
                               sx={{
                                 px: 2, py: 0.5, borderRadius: 99,
-                                background: "#f0e8e8", color: "#999",
+                                background: isDark ? "#2D2D2E" : "#f0e8e8", color: isDark ? "#818384" : "#999",
                                 display: "block", textAlign: "center",
                               }}
                             >
@@ -345,13 +349,13 @@ export default function MessagesPage() {
                         <Box key={msg.id} sx={{ alignSelf: isOwn ? "flex-end" : "flex-start", maxWidth: "70%" }}>
                           <Box sx={{
                             p: "10px 14px", borderRadius: 3,
-                            background: isOwn ? "#A84D48" : "#f5eded",
-                            color: isOwn ? "#fff" : "#333",
+                            background: isOwn ? "#A84D48" : isDark ? "#2D2D2E" : "#f5eded",
+                            color: isOwn ? "#fff" : isDark ? "#D7DADC" : "#333",
                           }}>
                             <Typography fontSize={14}>{msg.content}</Typography>
                           </Box>
                           <Typography
-                            variant="caption" color="text.disabled"
+                            variant="caption" color={mutedTextColor}
                             sx={{ display: "block", mt: 0.5, textAlign: isOwn ? "right" : "left" }}
                           >
                             {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -364,18 +368,24 @@ export default function MessagesPage() {
 
                   {/* Input */}
                   {isClosed ? (
-                    <Box sx={{ p: 2, borderTop: "1.5px solid #ecdcdc", textAlign: "center" }}>
-                      <Typography variant="caption" fontWeight={700} color="text.disabled">
+                    <Box sx={{ p: 2, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", textAlign: "center" }}>
+                      <Typography variant="caption" fontWeight={700} color={mutedTextColor}>
                         This conversation has been closed.
                       </Typography>
                     </Box>
                   ) : (
-                    <Box sx={{ display: "flex", alignItems: "center", p: 1.5, borderTop: "1.5px solid #ecdcdc", gap: 1 }}>
+                    <Box sx={{ display: "flex", alignItems: "center", p: 1.5, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", gap: 1 }}>
                       <TextField
                         fullWidth size="small" placeholder="Type a message..."
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                        sx={{
+                          "& .MuiOutlinedInput-root": {
+                            background: isDark ? "#2D2D2E" : "#fff",
+                            color: isDark ? "#D7DADC" : "inherit",
+                          },
+                        }}
                       />
                       <IconButton onClick={sendMessage} disabled={!newMessage.trim()} sx={{ color: "#A84D48" }}>
                         <SendIcon />

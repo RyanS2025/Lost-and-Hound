@@ -109,6 +109,38 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
   // Fade-out starts slightly after confetti
   const [fadeOut, setFadeOut] = useState(false);
 
+  const autofillTextFieldSx = {
+    "& .MuiOutlinedInput-root": {
+      backgroundColor: "#fff",
+      "& .MuiOutlinedInput-notchedOutline": {
+        borderColor: "#d8c8c8",
+      },
+      "&:hover .MuiOutlinedInput-notchedOutline": {
+        borderColor: "#caa8a8",
+      },
+      "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+        borderColor: "#A84D48",
+        borderWidth: "1px",
+      },
+      "& input:-webkit-autofill": {
+        WebkitBoxShadow: "0 0 0 1000px #fff8f7 inset",
+        WebkitTextFillColor: "#2d2d2d",
+        caretColor: "#2d2d2d",
+        borderRadius: "inherit",
+        transition: "background-color 9999s ease-out 0s",
+      },
+      "& input:-webkit-autofill:hover": {
+        WebkitBoxShadow: "0 0 0 1000px #fff8f7 inset",
+      },
+      "& input:-webkit-autofill:focus": {
+        WebkitBoxShadow: "0 0 0 1000px #fff8f7 inset",
+      },
+      "& input:-webkit-autofill:active": {
+        WebkitBoxShadow: "0 0 0 1000px #fff8f7 inset",
+      },
+    },
+  };
+
   // When App tells us the transition is active (even on remount), start the fade
   useEffect(() => {
     if (loginTransition) {
@@ -437,6 +469,7 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
                         label="First Name"
                         value={firstName}
                         onChange={(e) => setFirstName(e.target.value)}
+                        sx={autofillTextFieldSx}
                       />
                       <TextField
                         required
@@ -445,6 +478,7 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
                         label="Last Name"
                         value={lastName}
                         onChange={(e) => setLastName(e.target.value)}
+                        sx={autofillTextFieldSx}
                       />
                     </Box>
                   )}
@@ -459,7 +493,7 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
                     onChange={(e) => setEmail(e.target.value)}
                     autoComplete="email"
                     autoFocus
-                    sx={{ mb: 1.5 }}
+                    sx={{ ...autofillTextFieldSx, mb: 1.5 }}
                   />
 
                   <TextField
@@ -473,7 +507,7 @@ export default function LoginPage({ loginTransition = false, onLoginSuccess }) {
                     onChange={(e) => setPassword(e.target.value)}
                     autoComplete="current-password"
                     inputProps={{ minLength: 6 }}
-                    sx={{ mb: 3 }}
+                    sx={{ ...autofillTextFieldSx, mb: 3 }}
                   />
 
                   <Button

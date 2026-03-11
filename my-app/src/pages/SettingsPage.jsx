@@ -27,22 +27,30 @@ import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
+import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import { CAMPUSES } from "../constants/campuses";
 
-// Brand palette — derived from the Lost & Hound login / 404 pages
-const BRAND = {
-  maroon: "#7a2929",
-  maroonDark: "#5e1f1f",
-  maroonLight: "#a04040",
-  maroonFaint: "rgba(122,41,41,0.06)",
-  maroonFaintHover: "rgba(122,41,41,0.10)",
-  cardBorder: "rgba(122,41,41,0.12)",
-  textPrimary: "#2d2d2d",
-  textSecondary: "#6b6b6b",
-  bg: "#f9f5f4", // warm off-white to match the dotted login background
-};
+export default function SettingsPage({
+  themeMode = "auto",
+  setThemeMode = () => {},
+  effectiveTheme = "light",
+}) {
+  const isDark = effectiveTheme === "dark";
+  const BRAND = {
+    maroon: isDark ? "#FF4500" : "#7a2929",
+    maroonDark: isDark ? "#E03D00" : "#5e1f1f",
+    maroonLight: isDark ? "#FF6A33" : "#a04040",
+    maroonFaint: isDark ? "rgba(255,69,0,0.14)" : "rgba(122,41,41,0.06)",
+    maroonFaintHover: isDark ? "rgba(255,69,0,0.22)" : "rgba(122,41,41,0.10)",
+    cardBorder: isDark ? "rgba(255,255,255,0.14)" : "rgba(122,41,41,0.12)",
+    textPrimary: isDark ? "#D7DADC" : "#2d2d2d",
+    textSecondary: isDark ? "#818384" : "#6b6b6b",
+    bg: isDark ? "#030303" : "#f9f5f4",
+    dot: isDark ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)",
+    surface: isDark ? "#1A1A1B" : "#fff",
+    inputBg: isDark ? "#2D2D2E" : "#fff",
+  };
 
-export default function SettingsPage() {
   const { user, profile, updateProfile, logout, forgotPassword } = useAuth();
   const [message, setMessage] = useState("");
 
@@ -173,9 +181,17 @@ export default function SettingsPage() {
   const textFieldSx = {
     "& .MuiOutlinedInput-root": {
       borderRadius: 2,
+      bgcolor: BRAND.inputBg,
+      color: BRAND.textPrimary,
       "&.Mui-focused fieldset": {
         borderColor: BRAND.maroon,
       },
+      "& fieldset": {
+        borderColor: BRAND.cardBorder,
+      },
+    },
+    "& .MuiInputLabel-root": {
+      color: BRAND.textSecondary,
     },
     "& .MuiInputLabel-root.Mui-focused": {
       color: BRAND.maroon,
@@ -192,7 +208,7 @@ export default function SettingsPage() {
           zIndex: -1,
           backgroundColor: BRAND.bg,
           backgroundImage:
-            "radial-gradient(circle, rgba(122,41,41,0.18) 1px, transparent 1px)",
+            `radial-gradient(circle, ${BRAND.dot} 1px, transparent 1px)`,
           backgroundSize: "24px 24px",
         }}
       />
@@ -215,7 +231,7 @@ export default function SettingsPage() {
               p: { xs: 3, sm: 4, md: 5 },
               width: "100%",
               borderRadius: 3,
-              backgroundColor: "#fff",
+              backgroundColor: BRAND.surface,
               border: `1px solid ${BRAND.cardBorder}`,
               boxShadow: "0 10px 40px rgba(0,0,0,0.12), 0 2px 10px rgba(0,0,0,0.06)",
             }}
@@ -317,14 +333,14 @@ export default function SettingsPage() {
                           value={firstName}
                           onChange={(e) => setFirstName(e.target.value)}
                           size="small"
-                          sx={{ flex: 1, bgcolor: "#fff", borderRadius: 2, ...textFieldSx }}
+                          sx={{ flex: 1, borderRadius: 2, ...textFieldSx }}
                         />
                         <TextField
                           label="Last Name"
                           value={lastName}
                           onChange={(e) => setLastName(e.target.value)}
                           size="small"
-                          sx={{ flex: 1, bgcolor: "#fff", borderRadius: 2, ...textFieldSx }}
+                          sx={{ flex: 1, borderRadius: 2, ...textFieldSx }}
                         />
                       </Box>
                       <Box sx={{ display: "flex", gap: 1 }}>
@@ -412,6 +428,63 @@ export default function SettingsPage() {
 
               {/* === RIGHT COLUMN: Preferences, Session, Danger Zone === */}
               <Box sx={{ display: "flex", flexDirection: "column" }}>
+                {/* -- Appearance -- */}
+                <SectionLabel icon={DarkModeOutlinedIcon}>Appearance</SectionLabel>
+                <Box
+                  sx={{
+                    bgcolor: BRAND.maroonFaint,
+                    borderRadius: 2,
+                    px: 2,
+                    py: 1.5,
+                    mb: 2.5,
+                  }}
+                >
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: BRAND.textSecondary,
+                      fontWeight: 500,
+                      mb: 0.75,
+                      display: "block",
+                    }}
+                  >
+                    Theme
+                  </Typography>
+                  <FormControl size="small" fullWidth>
+                    <Select
+                      value={themeMode}
+                      onChange={(e) => setThemeMode(e.target.value)}
+                      sx={{
+                        bgcolor: BRAND.inputBg,
+                        color: BRAND.textPrimary,
+                        borderRadius: 2,
+                        "& .MuiOutlinedInput-notchedOutline": {
+                          borderColor: BRAND.cardBorder,
+                        },
+                        "&:hover .MuiOutlinedInput-notchedOutline": {
+                          borderColor: BRAND.maroon,
+                        },
+                        "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                          borderColor: BRAND.maroon,
+                        },
+                        "& .MuiSvgIcon-root": {
+                          color: BRAND.textSecondary,
+                        },
+                      }}
+                    >
+                      <MenuItem value="auto">Device auto</MenuItem>
+                      <MenuItem value="light">Light</MenuItem>
+                      <MenuItem value="dark">Dark</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: BRAND.textSecondary, mt: 1, display: "block" }}
+                  >
+                    Currently using {effectiveTheme} mode.
+                  </Typography>
+                </Box>
+
                 {/* -- Preferences -- */}
                 <SectionLabel icon={LocationOnOutlinedIcon}>
                   Preferences
@@ -442,7 +515,8 @@ export default function SettingsPage() {
                       onChange={(e) => handleSaveCampus(e.target.value)}
                       displayEmpty
                       sx={{
-                        bgcolor: "#fff",
+                        bgcolor: BRAND.inputBg,
+                        color: BRAND.textPrimary,
                         borderRadius: 2,
                         "& .MuiOutlinedInput-notchedOutline": {
                           borderColor: BRAND.cardBorder,
@@ -452,6 +526,9 @@ export default function SettingsPage() {
                         },
                         "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
                           borderColor: BRAND.maroon,
+                        },
+                        "& .MuiSvgIcon-root": {
+                          color: BRAND.textSecondary,
                         },
                       }}
                     >

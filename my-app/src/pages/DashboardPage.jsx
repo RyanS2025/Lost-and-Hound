@@ -28,6 +28,12 @@ const STATUS_CONFIG = {
   dismissed: { bg: "#f1f5f9", color: "#64748b", border: "#cbd5e1" },
 };
 
+const STATUS_CONFIG_DARK = {
+  pending: { bg: "#3a2f22", color: "#f6c66a", border: "rgba(245,158,11,0.5)" },
+  reviewed: { bg: "#1f3527", color: "#6ee7b7", border: "rgba(110,231,183,0.42)" },
+  dismissed: { bg: "#2c3138", color: "#cbd5e1", border: "rgba(148,163,184,0.45)" },
+};
+
 const IMPORTANCE_LABELS = { 3: "High", 2: "Medium", 1: "Low" };
 const IMPORTANCE_COLORS = { 3: "#b91c1c", 2: "#a16207", 1: "#1d4ed8" };
 
@@ -54,10 +60,11 @@ function formatShortDate(d) {
 }
 
 // --- Stat Card ---
-function StatCard({ icon, label, value, color }) {
+function StatCard({ icon, label, value, color, isDark = false }) {
   return (
     <Paper variant="outlined" sx={{
-      p: 2.5, borderRadius: 2.5, borderColor: "#ecdcdc",
+      p: 2.5, borderRadius: 2.5, borderColor: isDark ? "rgba(255,255,255,0.16)" : "#ecdcdc",
+      background: isDark ? "#1A1A1B" : "#fff",
       display: "flex", alignItems: "center", gap: 2, flex: 1, minWidth: 0,
     }}>
       <Box sx={{
@@ -75,15 +82,16 @@ function StatCard({ icon, label, value, color }) {
 }
 
 // --- Empty State ---
-function EmptySection({ icon, title, description }) {
+function EmptySection({ icon, title, description, isDark = false }) {
   return (
     <Paper variant="outlined" sx={{
-      p: 5, borderRadius: 2.5, borderColor: "#ecdcdc", borderStyle: "dashed",
+      p: 5, borderRadius: 2.5, borderColor: isDark ? "rgba(255,255,255,0.16)" : "#ecdcdc", borderStyle: "dashed",
+      background: isDark ? "#1A1A1B" : "#fff",
       display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center",
     }}>
       <Box sx={{
         width: 56, height: 56, borderRadius: "50%", mb: 2,
-        background: "#f5eded", display: "flex", alignItems: "center", justifyContent: "center",
+        background: isDark ? "#2D2D2E" : "#f5eded", display: "flex", alignItems: "center", justifyContent: "center",
       }}>
         {icon}
       </Box>
@@ -94,14 +102,14 @@ function EmptySection({ icon, title, description }) {
 }
 
 // --- 404 ---
-function AccessDenied() {
+function AccessDenied({ isDark = false }) {
   const navigate = useNavigate();
   return (
     <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "calc(100vh - 140px)", p: 3 }}>
-      <Paper elevation={0} sx={{ p: 4, pt: 0, borderRadius: 3, textAlign: "center", maxWidth: 380, border: "1.5px solid #ecdcdc", overflow: "visible" }}>
+      <Paper elevation={0} sx={{ p: 4, pt: 0, borderRadius: 3, textAlign: "center", maxWidth: 380, border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc", overflow: "visible", background: isDark ? "#1A1A1B" : "#fff" }}>
         <Box component="img" src="/404Image.png" alt="Lost husky" sx={{ width: "100%", maxWidth: 260, mx: "auto", display: "block", mt: -6, mb: -2 }} />
-        <Typography variant="h3" fontWeight={900} sx={{ mb: 0.5, color: "#3d2020" }}>404</Typography>
-        <Typography variant="h6" fontWeight={700} sx={{ mb: 1, color: "#3d2020" }}>Page not found</Typography>
+        <Typography variant="h3" fontWeight={900} sx={{ mb: 0.5, color: isDark ? "#D7DADC" : "#3d2020" }}>404</Typography>
+        <Typography variant="h6" fontWeight={700} sx={{ mb: 1, color: isDark ? "#D7DADC" : "#3d2020" }}>Page not found</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>The page you're looking for doesn't exist or has been moved.</Typography>
         <Button variant="contained" onClick={() => navigate("/")} sx={{ background: "#A84D48", "&:hover": { background: "#8f3e3a" }, fontWeight: 700, borderRadius: 2, px: 4 }}>GO HOME</Button>
       </Paper>
@@ -110,16 +118,16 @@ function AccessDenied() {
 }
 
 // --- Post Detail Panel ---
-function PostDetail({ listing }) {
+function PostDetail({ listing, isDark = false }) {
   if (!listing) {
     return (
-      <Box sx={{ p: 3, background: "#faf8f8", borderRadius: 2, border: "1px dashed #e0d6d6", textAlign: "center" }}>
+      <Box sx={{ p: 3, background: isDark ? "#232324" : "#faf8f8", borderRadius: 2, border: isDark ? "1px dashed rgba(255,255,255,0.16)" : "1px dashed #e0d6d6", textAlign: "center" }}>
         <Typography variant="body2" color="text.disabled" fontWeight={600}>This listing has been deleted.</Typography>
       </Box>
     );
   }
   return (
-    <Paper variant="outlined" sx={{ borderRadius: 2, borderColor: "#ecdcdc", background: "#fdf7f7", overflow: "hidden" }}>
+    <Paper variant="outlined" sx={{ borderRadius: 2, borderColor: isDark ? "rgba(255,255,255,0.16)" : "#ecdcdc", background: isDark ? "#232324" : "#fdf7f7", overflow: "hidden" }}>
       {/* Image */}
       {listing.image_url && (
         <Box component="img" src={listing.image_url} alt={listing.title} sx={{ width: "100%", height: 180, objectFit: "cover" }} />
@@ -127,12 +135,12 @@ function PostDetail({ listing }) {
       <Box sx={{ p: 2 }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.75, flexWrap: "wrap" }}>
           <Typography fontWeight={800} fontSize={16}>{listing.title}</Typography>
-          {listing.resolved && <Chip label="Resolved" size="small" sx={{ background: "#dcfce7", color: "#16a34a", fontWeight: 800, fontSize: 10 }} />}
+          {listing.resolved && <Chip label="Resolved" size="small" sx={{ background: isDark ? "#1f3527" : "#dcfce7", color: isDark ? "#6ee7b7" : "#16a34a", border: isDark ? "1px solid rgba(110,231,183,0.42)" : "none", fontWeight: 800, fontSize: 10 }} />}
         </Box>
         <Typography variant="caption" color="text.secondary" fontWeight={600} display="block" sx={{ mb: 0.5 }}>
           {listing.locations?.name ?? "Unknown location"} · {listing.found_at || "No specific spot"}
         </Typography>
-        <Typography variant="caption" sx={{ color: "#aaa", fontWeight: 600, display: "block", mb: 1 }}>
+        <Typography variant="caption" sx={{ color: isDark ? "#a59493" : "#aaa", fontWeight: 600, display: "block", mb: 1 }}>
           Posted by {listing.poster_name} · {formatShortDate(listing.date)}
         </Typography>
         <Box sx={{ display: "flex", gap: 0.75, mb: 1.5, flexWrap: "wrap" }}>
@@ -140,11 +148,11 @@ function PostDetail({ listing }) {
             <Chip label={IMPORTANCE_LABELS[listing.importance]} size="small"
               sx={{ background: IMPORTANCE_COLORS[listing.importance] + "22", color: IMPORTANCE_COLORS[listing.importance], fontWeight: 800, fontSize: 10 }} />
           )}
-          {listing.category && <Chip label={listing.category} size="small" sx={{ background: "#f5eded", color: "#a07070", fontWeight: 700, fontSize: 10 }} />}
+          {listing.category && <Chip label={listing.category} size="small" sx={{ background: isDark ? "#343536" : "#f5eded", color: isDark ? "#B8BABD" : "#a07070", fontWeight: 700, fontSize: 10 }} />}
         </Box>
         {listing.description && (
           <>
-            <Typography variant="caption" fontWeight={800} color="#a07070" sx={{ letterSpacing: 0.5, display: "block", mb: 0.5 }}>DESCRIPTION</Typography>
+            <Typography variant="caption" fontWeight={800} color={isDark ? "#B8BABD" : "#a07070"} sx={{ letterSpacing: 0.5, display: "block", mb: 0.5 }}>DESCRIPTION</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6, fontSize: 13 }}>{listing.description}</Typography>
           </>
         )}
@@ -154,7 +162,7 @@ function PostDetail({ listing }) {
 }
 
 // --- Message Thread Panel ---
-function MessageThread({ reporterId, reportedUserId }) {
+function MessageThread({ reporterId, reportedUserId, isDark = false }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [profiles, setProfiles] = useState({});
@@ -210,7 +218,7 @@ function MessageThread({ reporterId, reportedUserId }) {
 
   if (messages.length === 0) {
     return (
-      <Box sx={{ p: 3, background: "#faf8f8", borderRadius: 2, border: "1px dashed #e0d6d6", textAlign: "center" }}>
+      <Box sx={{ p: 3, background: isDark ? "#232324" : "#faf8f8", borderRadius: 2, border: isDark ? "1px dashed rgba(255,255,255,0.16)" : "1px dashed #e0d6d6", textAlign: "center" }}>
         <Typography variant="body2" color="text.disabled" fontWeight={600}>No messages found between these users.</Typography>
       </Box>
     );
@@ -222,9 +230,9 @@ function MessageThread({ reporterId, reportedUserId }) {
   };
 
   return (
-    <Paper variant="outlined" sx={{ borderRadius: 2, borderColor: "#ecdcdc", background: "#fdf7f7", overflow: "hidden" }}>
-      <Box sx={{ px: 2, py: 1.5, borderBottom: "1px solid #ecdcdc", display: "flex", justifyContent: "space-between" }}>
-        <Typography variant="caption" fontWeight={800} color="#a07070" sx={{ letterSpacing: 0.5 }}>
+    <Paper variant="outlined" sx={{ borderRadius: 2, borderColor: isDark ? "rgba(255,255,255,0.16)" : "#ecdcdc", background: isDark ? "#232324" : "#fdf7f7", overflow: "hidden" }}>
+      <Box sx={{ px: 2, py: 1.5, borderBottom: isDark ? "1px solid rgba(255,255,255,0.12)" : "1px solid #ecdcdc", display: "flex", justifyContent: "space-between" }}>
+        <Typography variant="caption" fontWeight={800} color={isDark ? "#B8BABD" : "#a07070"} sx={{ letterSpacing: 0.5 }}>
           CONVERSATION ({messages.length} messages)
         </Typography>
         <Typography variant="caption" color="text.disabled" fontWeight={600}>
@@ -236,7 +244,7 @@ function MessageThread({ reporterId, reportedUserId }) {
           if (msg.is_system) {
             return (
               <Box key={msg.id} sx={{ alignSelf: "center", my: 0.25 }}>
-                <Typography variant="caption" sx={{ px: 1.5, py: 0.25, borderRadius: 99, background: "#f0e8e8", color: "#999", fontSize: 11 }}>
+                <Typography variant="caption" sx={{ px: 1.5, py: 0.25, borderRadius: 99, background: isDark ? "#2D2D2E" : "#f0e8e8", color: isDark ? "#818384" : "#999", fontSize: 11 }}>
                   {msg.content}
                 </Typography>
               </Box>
@@ -245,15 +253,15 @@ function MessageThread({ reporterId, reportedUserId }) {
           const isReported = msg.sender_id === reportedUserId;
           return (
             <Box key={msg.id} sx={{ alignSelf: isReported ? "flex-start" : "flex-end", maxWidth: "75%" }}>
-              <Typography variant="caption" fontWeight={700} sx={{ color: isReported ? "#dc2626" : "#666", fontSize: 10, display: "block", mb: 0.25 }}>
+              <Typography variant="caption" fontWeight={700} sx={{ color: isReported ? "#dc2626" : isDark ? "#818384" : "#666", fontSize: 10, display: "block", mb: 0.25 }}>
                 {isReported ? `⚠ ${getName(msg.sender_id)}` : getName(msg.sender_id)}
               </Typography>
               <Box sx={{
                 p: "8px 12px", borderRadius: 2.5,
-                background: isReported ? "#fef2f2" : "#f5eded",
-                border: isReported ? "1px solid #fca5a5" : "1px solid #e0d6d6",
+                background: isReported ? (isDark ? "#4a2a2a" : "#fef2f2") : (isDark ? "#2D2D2E" : "#f5eded"),
+                border: isReported ? (isDark ? "1px solid rgba(252,165,165,0.6)" : "1px solid #fca5a5") : isDark ? "1px solid rgba(255,255,255,0.12)" : "1px solid #e0d6d6",
               }}>
-                <Typography fontSize={13} sx={{ color: isReported ? "#991b1b" : "#333" }}>{msg.content}</Typography>
+                <Typography fontSize={13} sx={{ color: isReported ? "#ffd4d4" : isDark ? "#D7DADC" : "#333" }}>{msg.content}</Typography>
               </Box>
               <Typography variant="caption" color="text.disabled" sx={{ fontSize: 10, mt: 0.25, display: "block" }}>
                 {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -267,7 +275,7 @@ function MessageThread({ reporterId, reportedUserId }) {
 }
 
 // --- Decision Panel ---
-function DecisionPanel({ report, onDecision, processing }) {
+function DecisionPanel({ report, onDecision, processing, isDark = false }) {
   const [decision, setDecision] = useState("");
   const [modNote, setModNote] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -283,7 +291,7 @@ function DecisionPanel({ report, onDecision, processing }) {
   };
 
   return (
-    <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, borderColor: "#ecdcdc", background: "#fff" }}>
+    <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, borderColor: isDark ? "rgba(255,255,255,0.16)" : "#ecdcdc", background: isDark ? "#1A1A1B" : "#fff" }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5 }}>
         <GavelIcon sx={{ color: "#A84D48", fontSize: 20 }} />
         <Typography fontWeight={800} fontSize={14}>Make a Decision</Typography>
@@ -328,7 +336,7 @@ function DecisionPanel({ report, onDecision, processing }) {
             background: isViolation ? "#dc2626" : "#16a34a",
             "&:hover": { background: isViolation ? "#b91c1c" : "#15803d" },
             fontWeight: 700, borderRadius: 2, px: 3,
-            "&.Mui-disabled": { background: "#e0e0e0" },
+            "&.Mui-disabled": { background: isDark ? "#3A3A3C" : "#e0e0e0", color: isDark ? "#818384" : undefined },
           }}
         >
           {processing ? <CircularProgress size={18} color="inherit" /> : "Apply Decision"}
@@ -356,7 +364,11 @@ function DecisionPanel({ report, onDecision, processing }) {
       )}
 
       {/* Confirmation dialog */}
-      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
+      <Dialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        PaperProps={{ sx: { background: isDark ? "#1A1A1B" : "#fff", border: isDark ? "1px solid rgba(255,255,255,0.16)" : "none", color: isDark ? "#D7DADC" : "inherit" } }}
+      >
         <DialogTitle sx={{ fontWeight: 700 }}>Confirm Violation Action</DialogTitle>
         <DialogContent>
           <DialogContentText>
@@ -365,7 +377,7 @@ function DecisionPanel({ report, onDecision, processing }) {
             the offending user. This cannot be undone.
           </DialogContentText>
           {modNote.trim() && (
-            <Box sx={{ mt: 2, p: 1.5, background: "#fdf7f7", borderRadius: 1.5, border: "1px solid #ecdcdc" }}>
+            <Box sx={{ mt: 2, p: 1.5, background: isDark ? "#232324" : "#fdf7f7", borderRadius: 1.5, border: isDark ? "1px solid rgba(255,255,255,0.14)" : "1px solid #ecdcdc" }}>
               <Typography variant="caption" fontWeight={700} color="text.secondary">Ban reason shown to user:</Typography>
               <Typography variant="body2" sx={{ mt: 0.5 }}>{modNote.trim()}</Typography>
             </Box>
@@ -388,19 +400,21 @@ function DecisionPanel({ report, onDecision, processing }) {
 }
 
 // --- Report Card ---
-function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision, processing }) {
+function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision, processing, isDark = false }) {
   const [expanded, setExpanded] = useState(false);
   const isPost = !!report.reported_listing_id;
-  const statusStyle = STATUS_CONFIG[report.status] || STATUS_CONFIG.pending;
+  const statusStyle = isDark
+    ? (STATUS_CONFIG_DARK[report.status] || STATUS_CONFIG_DARK.pending)
+    : (STATUS_CONFIG[report.status] || STATUS_CONFIG.pending);
 
   return (
-    <Paper variant="outlined" sx={{ borderRadius: 2.5, borderColor: "#ecdcdc", transition: "box-shadow 0.15s", "&:hover": { boxShadow: "0 2px 12px rgba(168,77,72,0.1)" } }}>
+    <Paper variant="outlined" sx={{ borderRadius: 2.5, borderColor: isDark ? "rgba(255,255,255,0.16)" : "#ecdcdc", background: isDark ? "#1A1A1B" : "#fff", transition: "box-shadow 0.15s", "&:hover": { boxShadow: isDark ? "0 4px 14px rgba(0,0,0,0.35)" : "0 2px 12px rgba(168,77,72,0.1)" } }}>
       <Box sx={{ p: 2.5 }}>
         {/* Header */}
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1.5 }}>
           <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
             <Chip label={isPost ? "Post" : "User"} size="small"
-              sx={{ fontWeight: 800, fontSize: 11, background: isPost ? "#f5eded" : "#ede8f5", color: isPost ? "#A84D48" : "#6b21a8" }} />
+              sx={{ fontWeight: 800, fontSize: 11, background: isPost ? (isDark ? "#343536" : "#f5eded") : (isDark ? "#31283f" : "#ede8f5"), color: isPost ? "#A84D48" : isDark ? "#c4a5ff" : "#6b21a8" }} />
             <Chip label={report.status} size="small"
               sx={{ fontWeight: 700, fontSize: 11, textTransform: "capitalize", background: statusStyle.bg, color: statusStyle.color, border: `1px solid ${statusStyle.border}` }} />
           </Box>
@@ -444,20 +458,20 @@ function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision,
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mb: 1.5, mt: 1 }}>
             {/* Show reported content */}
             {isPost ? (
-              <PostDetail listing={fullListing} />
+              <PostDetail listing={fullListing} isDark={isDark} />
             ) : (
-              <MessageThread reporterId={report.reporter_id} reportedUserId={report.reported_user_id} />
+                <MessageThread reporterId={report.reporter_id} reportedUserId={report.reported_user_id} isDark={isDark} />
             )}
 
             {/* Decision panel — only for pending reports */}
             {report.status === "pending" && (
-              <DecisionPanel report={report} onDecision={onDecision} processing={processing} />
+              <DecisionPanel report={report} onDecision={onDecision} processing={processing} isDark={isDark} />
             )}
           </Box>
         </Collapse>
 
         {/* Quick actions */}
-        <Box sx={{ display: "flex", gap: 1, pt: 1.5, borderTop: "1px solid #f0e8e8", alignItems: "center" }}>
+        <Box sx={{ display: "flex", gap: 1, pt: 1.5, borderTop: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid #f0e8e8", alignItems: "center" }}>
           {report.status === "pending" && (
             <>
               <Button size="small" startIcon={<CheckCircleIcon sx={{ fontSize: 16 }} />}
@@ -479,7 +493,7 @@ function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision,
             </Button>
           )}
           <Box sx={{ flex: 1 }} />
-          <IconButton size="small" onClick={() => onDelete(report.id)} sx={{ color: "#ccc", "&:hover": { color: "#dc2626" } }}>
+          <IconButton size="small" onClick={() => onDelete(report.id)} sx={{ color: isDark ? "#818384" : "#ccc", "&:hover": { color: "#dc2626" } }}>
             <DeleteIcon fontSize="small" />
           </IconButton>
         </Box>
@@ -491,7 +505,8 @@ function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision,
 // ============================================================
 // DASHBOARD PAGE
 // ============================================================
-export default function DashboardPage() {
+export default function DashboardPage({ effectiveTheme = "light" }) {
+  const isDark = effectiveTheme === "dark";
   const { profile } = useAuth();
   const navigate = useNavigate();
 
@@ -668,7 +683,7 @@ export default function DashboardPage() {
 
   // --- Guard ---
   if (!profile) return null;
-  if (!profile.is_moderator) return <AccessDenied />;
+  if (!profile.is_moderator) return <AccessDenied isDark={isDark} />;
 
   const sections = [
     { id: "reports", label: "Reports", icon: <FlagIcon sx={{ fontSize: 18 }} /> },
@@ -677,10 +692,10 @@ export default function DashboardPage() {
   ];
 
   return (
-    <Box sx={{ display: "flex", justifyContent: "center", width: "100%", p: 3 }}>
+    <Box sx={{ display: "flex", justifyContent: "center", width: "100%", p: 3, color: isDark ? "#D7DADC" : "inherit" }}>
       <Box sx={{ width: "100%", maxWidth: 960 }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 0.5 }}>
-          <Box sx={{ width: 44, height: 44, borderRadius: 2, background: "#A84D4815", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Box sx={{ width: 44, height: 44, borderRadius: 2, background: isDark ? "rgba(255,255,255,0.08)" : "#A84D4815", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <ShieldIcon sx={{ color: "#A84D48", fontSize: 24 }} />
           </Box>
           <Box>
@@ -690,16 +705,16 @@ export default function DashboardPage() {
         </Box>
 
         <Box sx={{ display: "flex", gap: 2, my: 3, flexWrap: "wrap" }}>
-          <StatCard icon={<FlagIcon sx={{ color: "#f59e0b", fontSize: 22 }} />} label="Pending" value={counts.pending} color="#f59e0b" />
-          <StatCard icon={<ArticleIcon sx={{ color: "#A84D48", fontSize: 22 }} />} label="Post Reports" value={postReports} color="#A84D48" />
-          <StatCard icon={<PeopleIcon sx={{ color: "#6b21a8", fontSize: 22 }} />} label="User Reports" value={userReports} color="#6b21a8" />
-          <StatCard icon={<CheckCircleIcon sx={{ color: "#16a34a", fontSize: 22 }} />} label="Reviewed" value={counts.reviewed} color="#16a34a" />
+          <StatCard icon={<FlagIcon sx={{ color: "#f59e0b", fontSize: 22 }} />} label="Pending" value={counts.pending} color="#f59e0b" isDark={isDark} />
+          <StatCard icon={<ArticleIcon sx={{ color: "#A84D48", fontSize: 22 }} />} label="Post Reports" value={postReports} color="#A84D48" isDark={isDark} />
+          <StatCard icon={<PeopleIcon sx={{ color: "#6b21a8", fontSize: 22 }} />} label="User Reports" value={userReports} color="#6b21a8" isDark={isDark} />
+          <StatCard icon={<CheckCircleIcon sx={{ color: "#16a34a", fontSize: 22 }} />} label="Reviewed" value={counts.reviewed} color="#16a34a" isDark={isDark} />
         </Box>
 
-        <Box sx={{ display: "flex", gap: 1, mb: 3, borderBottom: "1.5px solid #f0e8e8", pb: 1.5 }}>
+        <Box sx={{ display: "flex", gap: 1, mb: 3, borderBottom: isDark ? "1px solid rgba(255,255,255,0.12)" : "1.5px solid #f0e8e8", pb: 1.5 }}>
           {sections.map((s) => (
             <Button key={s.id} startIcon={s.icon} onClick={() => setSection(s.id)}
-              sx={{ fontWeight: 700, fontSize: 13, textTransform: "none", color: section === s.id ? "#A84D48" : "#999", background: section === s.id ? "#A84D4810" : "transparent", borderRadius: 2, px: 2, "&:hover": { background: section === s.id ? "#A84D4818" : "#f5f5f5" } }}>
+              sx={{ fontWeight: 700, fontSize: 13, textTransform: "none", color: section === s.id ? "#A84D48" : isDark ? "#818384" : "#999", background: section === s.id ? "#A84D4810" : "transparent", borderRadius: 2, px: 2, "&:hover": { background: section === s.id ? "#A84D4818" : isDark ? "#343536" : "#f5f5f5" } }}>
               {s.label}
             </Button>
           ))}
@@ -721,7 +736,7 @@ export default function DashboardPage() {
             {loading ? (
               <Box sx={{ display: "flex", justifyContent: "center", mt: 6 }}><CircularProgress sx={{ color: "#A84D48" }} /></Box>
             ) : filteredReports.length === 0 ? (
-              <EmptySection icon={<FlagIcon sx={{ color: "#A84D48", fontSize: 28 }} />} title={`No ${reportTab} reports`} description="All clear! Check back later or switch tabs." />
+              <EmptySection icon={<FlagIcon sx={{ color: "#A84D48", fontSize: 28 }} />} title={`No ${reportTab} reports`} description="All clear! Check back later or switch tabs." isDark={isDark} />
             ) : (
               <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
                 {filteredReports.map((report) => (
@@ -729,7 +744,7 @@ export default function DashboardPage() {
                     key={report.id} report={report}
                     fullListing={fullListings[report.reported_listing_id] || null}
                     onUpdateStatus={updateStatus} onDelete={setDeleteTarget}
-                    onDecision={handleDecision} processing={processing}
+                    onDecision={handleDecision} processing={processing} isDark={isDark}
                   />
                 ))}
               </Box>
@@ -738,14 +753,14 @@ export default function DashboardPage() {
         )}
 
         {section === "feedback" && (
-          <EmptySection icon={<FeedbackIcon sx={{ color: "#A84D48", fontSize: 28 }} />} title="Feedback — Coming Soon" description="This section will display user feedback and feature requests." />
+          <EmptySection icon={<FeedbackIcon sx={{ color: "#A84D48", fontSize: 28 }} />} title="Feedback — Coming Soon" description="This section will display user feedback and feature requests." isDark={isDark} />
         )}
         {section === "bugs" && (
-          <EmptySection icon={<BugReportIcon sx={{ color: "#A84D48", fontSize: 28 }} />} title="Bug Reports — Coming Soon" description="This section will display bug reports with status tracking." />
+          <EmptySection icon={<BugReportIcon sx={{ color: "#A84D48", fontSize: 28 }} />} title="Bug Reports — Coming Soon" description="This section will display bug reports with status tracking." isDark={isDark} />
         )}
       </Box>
 
-      <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)}>
+      <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} PaperProps={{ sx: { background: isDark ? "#1A1A1B" : "#fff", border: isDark ? "1px solid rgba(255,255,255,0.16)" : "none" } }}>
         <DialogTitle sx={{ fontWeight: 700 }}>Delete this report?</DialogTitle>
         <DialogContent><DialogContentText>This will permanently remove the report. This cannot be undone.</DialogContentText></DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
