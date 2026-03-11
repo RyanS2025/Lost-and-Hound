@@ -536,6 +536,8 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
 // --- FeedPage ---
 export default function FeedPage({ effectiveTheme = "light" }) {
   const isDark = effectiveTheme === "dark";
+  const pageBg = isDark ? "#101214" : "#f9f5f4";
+  const pageDot = isDark ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
   const { profile } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -587,7 +589,28 @@ export default function FeedPage({ effectiveTheme = "light" }) {
     });
 
   return (
-    <Box sx={{ display: "flex", justifyContent: "center", width: "100%", p: 3, color: isDark ? "#D7DADC" : "inherit" }}>
+    <>
+      <Box
+        sx={{
+          position: "fixed",
+          inset: 0,
+          zIndex: -1,
+          backgroundColor: pageBg,
+          backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`,
+          backgroundSize: "24px 24px",
+        }}
+      />
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "center",
+          width: "100%",
+          minHeight: "calc(100vh - 100px)",
+          boxSizing: "border-box",
+          p: 3,
+          color: isDark ? "#D7DADC" : "inherit",
+        }}
+      >
       <Box sx={{ width: "100%", maxWidth: 680 }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2.5 }}>
           <Typography variant="h4" fontWeight={900}>Lost & Found Feed</Typography>
@@ -604,6 +627,7 @@ export default function FeedPage({ effectiveTheme = "light" }) {
               sx={{
                 borderColor: isDark ? "rgba(255,255,255,0.24)" : "#ecdcdc", color: "#A84D48", fontWeight: 800,
                 borderRadius: 2, minWidth: 0, px: 1.5, fontSize: 18,
+                background: isDark ? "#1A1A1B" : "#fff",
               }}
             >
               <span
@@ -629,7 +653,7 @@ export default function FeedPage({ effectiveTheme = "light" }) {
             value={search} onChange={e => setSearch(e.target.value)}
             InputProps={{
               startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: isDark ? "#B8BABD" : "#a07070" }} /></InputAdornment>,
-              sx: isDark ? { background: "#2D2D2E", color: "#D7DADC" } : undefined,
+              sx: { background: isDark ? "#2D2D2E" : "#fff", color: isDark ? "#D7DADC" : "inherit" },
             }}
           />
           <FormControl size="small" sx={{ minWidth: 160, flexShrink: 0 }}>
@@ -637,6 +661,7 @@ export default function FeedPage({ effectiveTheme = "light" }) {
               value={selectedCampus}
               onChange={(e) => setSelectedCampus(e.target.value)}
               displayEmpty
+              sx={{ background: isDark ? "#2D2D2E" : "#fff" }}
             >
               <MenuItem value="all">All Campuses</MenuItem>
               {CAMPUSES.map((c) => (
@@ -678,7 +703,7 @@ export default function FeedPage({ effectiveTheme = "light" }) {
             />
             <FormControl size="small" sx={{ minWidth: 150 }}>
               <InputLabel>Sort by</InputLabel>
-              <Select value={sort} label="Sort by" onChange={e => setSort(e.target.value)}>
+              <Select value={sort} label="Sort by" onChange={e => setSort(e.target.value)} sx={{ background: isDark ? "#2D2D2E" : "#fff" }}>
                 {SORT_OPTIONS.map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}
               </Select>
             </FormControl>
@@ -697,6 +722,7 @@ export default function FeedPage({ effectiveTheme = "light" }) {
 
       <DetailModal item={selected} onClose={() => setSelected(null)} onClaim={handleClaim} isDark={isDark} />
       <NewItemModal open={showNew} onClose={() => setShowNew(false)} onAdd={item => setItems(prev => [item, ...prev])} isDark={isDark} />
-    </Box>
+      </Box>
+    </>
   );
 }

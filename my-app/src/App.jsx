@@ -18,6 +18,7 @@ import MapIcon from '@mui/icons-material/Map';
 import SettingsIcon from '@mui/icons-material/Settings';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import LightModeIcon from '@mui/icons-material/LightMode';
+import BrightnessAutoIcon from '@mui/icons-material/BrightnessAuto';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MessageIcon from '@mui/icons-material/Message';
 import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
@@ -26,6 +27,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 // --- App: Main application component with routing and navigation ---
 export default function App() {
   const { user, profile, logout } = useAuth();
+  const darkBg = "#101214";
 
   const [themeMode, setThemeMode] = useState(() => {
     const saved = localStorage.getItem("themeMode");
@@ -49,10 +51,12 @@ export default function App() {
   const effectiveTheme = themeMode === "auto" ? (systemPrefersDark ? "dark" : "light") : themeMode;
   const darkAccent = "#FF4500";
   const darkAccentHover = "#E03D00";
+  const pageDot = effectiveTheme === "dark" ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
+  const pageBg = effectiveTheme === "dark" ? darkBg : "#f9f5f4";
 
   useEffect(() => {
     document.documentElement.style.colorScheme = effectiveTheme;
-    document.body.style.backgroundColor = effectiveTheme === "dark" ? "#030303" : "#f5f0f0";
+    document.body.style.backgroundColor = effectiveTheme === "dark" ? darkBg : "#f5f0f0";
   }, [effectiveTheme]);
 
   const navBg = effectiveTheme === "dark" ? "#1A1A1B" : "#A84D48";
@@ -67,7 +71,7 @@ export default function App() {
           mode: effectiveTheme,
           primary: { main: effectiveTheme === "dark" ? darkAccent : "#A84D48" },
           background: {
-            default: effectiveTheme === "dark" ? "#030303" : "#f5f0f0",
+            default: effectiveTheme === "dark" ? darkBg : "#f5f0f0",
             paper: effectiveTheme === "dark" ? "#1A1A1B" : "#ffffff",
           },
           text: {
@@ -86,16 +90,35 @@ export default function App() {
               },
             },
           },
+          MuiOutlinedInput: {
+            styleOverrides: {
+              root: {
+                backgroundColor: effectiveTheme === "dark" ? "#2D2D2E" : "#fff",
+              },
+            },
+          },
           MuiTextField: {
             defaultProps: {
               autoComplete: "off",
             },
           },
-          MuiButton: {
+          MuiChip: {
             styleOverrides: {
               root: {
-                textTransform: "none",
+                backgroundColor: effectiveTheme === "dark" ? "#1A1A1B" : "#fff",
               },
+            },
+          },
+          MuiButton: {
+            styleOverrides: {
+              root: ({ ownerState }) => ({
+                textTransform: "none",
+                ...(ownerState.variant === "outlined"
+                  ? {
+                      backgroundColor: effectiveTheme === "dark" ? "#1A1A1B" : "#fff",
+                    }
+                  : {}),
+              }),
             },
           },
         },
@@ -104,12 +127,26 @@ export default function App() {
   );
 
   const toggleThemeFromNav = () => {
-    if (effectiveTheme === "dark") {
-      setThemeMode("light");
-    } else {
+    if (themeMode === "auto") {
+      return;
+    }
+    if (themeMode === "light") {
       setThemeMode("dark");
+    } else {
+      setThemeMode("light");
     }
   };
+
+  const navThemeToggle =
+    themeMode === "auto"
+      ? {
+          label: `Default (${effectiveTheme === "dark" ? "Dark" : "Light"})`,
+          icon: <BrightnessAutoIcon />,
+          disabled: true,
+        }
+      : themeMode === "light"
+        ? { label: "Light", icon: <LightModeIcon />, disabled: false }
+        : { label: "Dark", icon: <DarkModeIcon />, disabled: false };
 
   // LoginPage calls onLoginSuccess right before signing in.
   // This holds the LoginPage on screen for 1.8s so the animation can play.
@@ -127,7 +164,11 @@ export default function App() {
     return (
       <ThemeProvider theme={appTheme}>
         <CssBaseline />
-        <LoginPage loginTransition={loginTransition} onLoginSuccess={onLoginSuccess} />
+        <LoginPage
+          loginTransition={loginTransition}
+          onLoginSuccess={onLoginSuccess}
+          effectiveTheme={effectiveTheme}
+        />
       </ThemeProvider>
     );
   }
@@ -159,24 +200,30 @@ export default function App() {
               <Button
                 color="inherit"
                 onClick={toggleThemeFromNav}
-                startIcon={effectiveTheme === "dark" ? <LightModeIcon /> : <DarkModeIcon />}
+                startIcon={navThemeToggle.icon}
+                disabled={navThemeToggle.disabled}
                 sx={{ mr: 1 }}
               >
-                {effectiveTheme === "dark" ? "Light" : "Dark"}
+                {navThemeToggle.label}
               </Button>
               <Button color="inherit" onClick={logout} endIcon={<LogoutIcon />}>Log Out</Button>
             </Toolbar>
           </AppBar>
           <Toolbar />
+          <Box
+            sx={{
+              position: "fixed",
+              inset: 0,
+              zIndex: -1,
+              backgroundColor: pageBg,
+              backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`,
+              backgroundSize: "24px 24px",
+            }}
+          />
           <Box sx={{
             display: "flex", justifyContent: "center", alignItems: "center",
-            minHeight: "calc(100vh - 140px)", p: 3,
-            background:
-              effectiveTheme === "dark"
-                ? "radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)"
-                : "radial-gradient(circle, #d4b5b5 1px, transparent 1px)",
-            backgroundColor: effectiveTheme === "dark" ? "#030303" : "#f5f0f0",
-            backgroundSize: "24px 24px",
+            minHeight: "calc(100vh - 100px)", p: 3,
+            boxSizing: "border-box",
           }}>
               <Paper elevation={0} sx={{
                 p: 4, pt: 0, borderRadius: 3, textAlign: "center", maxWidth: 380,
@@ -307,10 +354,11 @@ export default function App() {
           <Button
             color="inherit"
             onClick={toggleThemeFromNav}
-            startIcon={effectiveTheme === "dark" ? <LightModeIcon /> : <DarkModeIcon />}
+            startIcon={navThemeToggle.icon}
+            disabled={navThemeToggle.disabled}
             sx={{ mr: 2 }}
           >
-            {effectiveTheme === "dark" ? "Light" : "Dark"}
+            {navThemeToggle.label}
           </Button>
           <Button
             color="inherit"
