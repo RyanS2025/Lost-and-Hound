@@ -68,11 +68,16 @@ export default function App() {
           <Box sx={{
             display: "flex", justifyContent: "center", alignItems: "center",
             minHeight: "calc(100vh - 140px)", p: 3,
+            background: "radial-gradient(circle, #d4b5b5 1px, transparent 1px)",
+            backgroundColor: "#f5f0f0",
+            backgroundSize: "24px 24px",
           }}>
-            <Paper elevation={0} sx={{
-              p: 4, pt: 0, borderRadius: 3, textAlign: "center", maxWidth: 380,
-              border: "1.5px solid #ecdcdc", overflow: "visible",
-            }}>
+              <Paper elevation={0} sx={{
+                p: 4, pt: 0, borderRadius: 3, textAlign: "center", maxWidth: 380,
+                border: "1.5px solid #ecdcdc", overflow: "visible",
+                boxShadow: "0 8px 32px rgba(168, 77, 72, 0.13), 0 2px 8px rgba(0,0,0,0.07)",
+                background: "#fff",
+              }}>
               <Box component="img" src="/HuskyBan.png" alt="Banned husky"
                 sx={{ width: "100%", maxWidth: 260, mx: "auto", display: "block", mt: -6, mb: -2 }} />
               <Typography variant="h3" fontWeight={900} sx={{ mb: 0.5, color: "#3d2020" }}>
