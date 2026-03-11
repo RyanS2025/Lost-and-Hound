@@ -53,7 +53,7 @@ function parseCoordinates(coordStr) {
 }
 
 // --- ImageUpload ---
-function ImageUpload({ image, onChange }) {
+function ImageUpload({ image, onChange, isDark = false }) {
   const inputRef = useRef();
   const handleFile = (e) => {
     const file = e.target.files[0];
@@ -72,7 +72,7 @@ function ImageUpload({ image, onChange }) {
         sx={{
           border: `2px dashed ${image ? "#A84D48" : "#ccc"}`,
           borderRadius: 2, p: 2, cursor: "pointer", textAlign: "center",
-          background: image ? "#fdf7f7" : "#fafafa",
+          background: image ? (isDark ? "#2D2D2E" : "#fdf7f7") : (isDark ? "#232324" : "#fafafa"),
           transition: "border-color 0.15s",
           "&:hover": { borderColor: "#A84D48" },
         }}
@@ -97,7 +97,7 @@ function ImageUpload({ image, onChange }) {
 }
 
 // --- ItemCard ---
-function ItemCard({ item, onClick }) {
+function ItemCard({ item, onClick, isDark = false }) {
   return (
     <Paper
       elevation={1}
@@ -105,14 +105,16 @@ function ItemCard({ item, onClick }) {
       sx={{
         display: "flex", gap: 2, p: 2, borderRadius: 3, cursor: "pointer",
         opacity: item.resolved ? 0.65 : 1,
-        border: "1.5px solid", borderColor: item.resolved ? "#e8e0e0" : "#ecdcdc",
+        border: "1.5px solid",
+        borderColor: isDark ? "rgba(255,255,255,0.14)" : item.resolved ? "#e8e0e0" : "#ecdcdc",
+        background: isDark ? "#1A1A1B" : "#fff",
         transition: "box-shadow 0.15s, transform 0.15s",
-        "&:hover": { boxShadow: "0 4px 18px rgba(168,77,72,0.13)", transform: "translateY(-2px)" },
+        "&:hover": { boxShadow: isDark ? "0 6px 18px rgba(0,0,0,0.35)" : "0 4px 18px rgba(168,77,72,0.13)", transform: "translateY(-2px)" },
       }}
     >
       <Box sx={{
         width: 72, height: 72, borderRadius: 2, flexShrink: 0, overflow: "hidden",
-        background: "#f0eded", border: "1.5px solid #e0d6d6",
+        background: isDark ? "#2D2D2E" : "#f0eded", border: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #e0d6d6",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
         {item.image_url
@@ -125,12 +127,12 @@ function ItemCard({ item, onClick }) {
           <Box>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
               <Typography fontWeight={800} fontSize={16}>{item.title}</Typography>
-              {item.resolved && <Chip label="Resolved" size="small" sx={{ background: "#dcfce7", color: "#16a34a", fontWeight: 800, fontSize: 11 }} />}
+              {item.resolved && <Chip label="Resolved" size="small" sx={{ background: isDark ? "#1f3527" : "#dcfce7", color: isDark ? "#6ee7b7" : "#16a34a", border: isDark ? "1px solid rgba(110,231,183,0.42)" : "none", fontWeight: 800, fontSize: 11 }} />}
             </Box>
-            <Typography variant="caption" color="text.secondary" fontWeight={600} display="block">
+            <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600} display="block">
               {item.locations?.name ?? "Unknown location"} · {item.found_at}
             </Typography>
-            <Typography variant="caption" sx={{ color: "#aaa", fontWeight: 600 }}>
+            <Typography variant="caption" sx={{ color: isDark ? "#818384" : "#aaa", fontWeight: 600 }}>
               {item.poster_name} · {formatDate(item.date)}
             </Typography>
           </Box>
@@ -140,10 +142,10 @@ function ItemCard({ item, onClick }) {
               size="small"
               sx={{ background: IMPORTANCE_COLORS[item.importance] + "22", color: IMPORTANCE_COLORS[item.importance], fontWeight: 800, fontSize: 11, border: `1px solid ${IMPORTANCE_COLORS[item.importance]}44` }}
             />
-            <Chip label={item.category} size="small" sx={{ background: "#f5eded", color: "#a07070", fontWeight: 700, fontSize: 11 }} />
+            <Chip label={item.category} size="small" sx={{ background: isDark ? "#343536" : "#f5eded", color: isDark ? "#B8BABD" : "#a07070", fontWeight: 700, fontSize: 11 }} />
           </Box>
         </Box>
-        <Typography variant="body2" color="text.secondary" fontWeight={500} sx={{ mt: 1, lineHeight: 1.5 }}>
+        <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={500} sx={{ mt: 1, lineHeight: 1.5 }}>
           {item.description?.length > 100 ? item.description.slice(0, 100) + "…" : item.description}
         </Typography>
       </Box>
@@ -152,7 +154,7 @@ function ItemCard({ item, onClick }) {
 }
 
 // --- DetailModal ---
-function DetailModal({ item, onClose, onClaim }) {
+function DetailModal({ item, onClose, onClaim, isDark = false }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [claimed, setClaimed] = useState(false);
@@ -167,18 +169,19 @@ function DetailModal({ item, onClose, onClaim }) {
     <Modal open={!!item} onClose={onClose}>
       <Box sx={{
         position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-        background: "#fff", borderRadius: 4, p: "26px", width: "100%", maxWidth: 520,
+        background: isDark ? "#1A1A1B" : "#fff", borderRadius: 4, p: "26px", width: "100%", maxWidth: 520,
         maxHeight: "90vh", overflowY: "auto", outline: "none",
+        border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
       }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 2 }}>
           <Box>
             <Typography variant="h6" fontWeight={900}>{item.title}</Typography>
-            <Typography variant="caption" color="text.secondary" fontWeight={600}>
+            <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600}>
               Posted by {item.poster_name} · {formatDate(item.date)}
             </Typography>
           </Box>
           <Box sx={{ display: "flex", gap: 0.5 }}>
-            <IconButton onClick={() => setReportOpen(true)} size="small" sx={{ color: "#999", "&:hover": { color: "#A84D48" } }}>
+            <IconButton onClick={() => setReportOpen(true)} size="small" sx={{ color: isDark ? "#818384" : "#999", "&:hover": { color: "#A84D48" } }}>
               <FlagIcon fontSize="small" />
             </IconButton>
             <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
@@ -187,22 +190,22 @@ function DetailModal({ item, onClose, onClaim }) {
         </Box>
 
         {item.image_url
-          ? <Box component="img" src={item.image_url} alt={item.title} sx={{ width: "100%", height: 200, objectFit: "cover", borderRadius: 2, mb: 2, border: "1.5px solid #ecdcdc" }} />
-          : <Box sx={{ width: "100%", height: 120, background: "#f5f0f0", borderRadius: 2, mb: 2, display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px dashed #dac8c8" }}>
-              <Typography variant="caption" color="text.disabled" fontWeight={700}>No photo provided</Typography>
+          ? <Box component="img" src={item.image_url} alt={item.title} sx={{ width: "100%", height: 200, objectFit: "cover", borderRadius: 2, mb: 2, border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc" }} />
+          : <Box sx={{ width: "100%", height: 120, background: isDark ? "#2D2D2E" : "#f5f0f0", borderRadius: 2, mb: 2, display: "flex", alignItems: "center", justifyContent: "center", border: isDark ? "1px dashed rgba(255,255,255,0.2)" : "1.5px dashed #dac8c8" }}>
+              <Typography variant="caption" color={isDark ? "#818384" : "text.disabled"} fontWeight={700}>No photo provided</Typography>
             </Box>
         }
 
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mb: 2 }}>
           <Chip label={IMPORTANCE_LABELS[item.importance]} size="small" sx={{ background: IMPORTANCE_COLORS[item.importance] + "22", color: IMPORTANCE_COLORS[item.importance], fontWeight: 800 }} />
-          <Chip label={item.category} size="small" sx={{ background: "#f5eded", color: "#A84D48", fontWeight: 700 }} />
-          {item.resolved && <Chip label="Resolved" size="small" sx={{ background: "#dcfce7", color: "#16a34a", fontWeight: 800 }} />}
+          <Chip label={item.category} size="small" sx={{ background: isDark ? "#343536" : "#f5eded", color: "#A84D48", fontWeight: 700 }} />
+          {item.resolved && <Chip label="Resolved" size="small" sx={{ background: isDark ? "#1f3527" : "#dcfce7", color: isDark ? "#6ee7b7" : "#16a34a", border: isDark ? "1px solid rgba(110,231,183,0.42)" : "none", fontWeight: 800 }} />}
         </Box>
 
-        <Paper variant="outlined" sx={{ p: 2, mb: 2, background: "#fdf7f7", borderColor: "#ecdcdc", borderRadius: 2 }}>
-          <Typography variant="caption" fontWeight={800} color="#a07070" sx={{ letterSpacing: 0.5, display: "block", mb: 0.75 }}>LOCATION</Typography>
+        <Paper variant="outlined" sx={{ p: 2, mb: 2, background: isDark ? "#232324" : "#fdf7f7", borderColor: isDark ? "rgba(255,255,255,0.14)" : "#ecdcdc", borderRadius: 2 }}>
+          <Typography variant="caption" fontWeight={800} color={isDark ? "#B8BABD" : "#a07070"} sx={{ letterSpacing: 0.5, display: "block", mb: 0.75 }}>LOCATION</Typography>
           <Typography fontWeight={700} fontSize={14}>{item.locations?.name ?? "Unknown location"}</Typography>
-          <Typography variant="caption" color="text.secondary" fontWeight={600}>Found at: {item.found_at}</Typography>
+          <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600}>Found at: {item.found_at}</Typography>
 
           {pinCoords ? (
             <Box sx={{ mt: 1.5 }}>
@@ -216,15 +219,15 @@ function DetailModal({ item, onClose, onClaim }) {
               />
             </Box>
           ) : (
-            <Box sx={{ mt: 1.5, background: "#ede8e8", borderRadius: 1.5, height: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Typography variant="caption" color="text.disabled" fontWeight={700}>No exact location pinned</Typography>
+            <Box sx={{ mt: 1.5, background: isDark ? "#2D2D2E" : "#ede8e8", borderRadius: 1.5, height: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Typography variant="caption" color={isDark ? "#818384" : "text.disabled"} fontWeight={700}>No exact location pinned</Typography>
             </Box>
           )}
         </Paper>
 
         <Box sx={{ mb: 3 }}>
-          <Typography variant="caption" fontWeight={800} color="#a07070" sx={{ letterSpacing: 0.5, display: "block", mb: 0.75 }}>DESCRIPTION</Typography>
-          <Typography variant="body2" color="text.secondary" lineHeight={1.65}>{item.description}</Typography>
+          <Typography variant="caption" fontWeight={800} color={isDark ? "#B8BABD" : "#a07070"} sx={{ letterSpacing: 0.5, display: "block", mb: 0.75 }}>DESCRIPTION</Typography>
+          <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} lineHeight={1.65}>{item.description}</Typography>
         </Box>
 
         {!item.resolved && (
@@ -232,10 +235,10 @@ function DetailModal({ item, onClose, onClaim }) {
             sx={{
               display: "flex", alignItems: "center", gap: 0.75,
               px: 1.25, py: 0.75, mb: 1.5, borderRadius: 1.5,
-              background: "#fff3cd", border: "1px solid #ffc107",
+              background: isDark ? "#3a2f22" : "#fff3cd", border: isDark ? "1px solid rgba(245,158,11,0.5)" : "1px solid #ffc107",
             }}
           >
-            <Typography variant="caption" sx={{ color: "#7d4e00", fontWeight: 600, lineHeight: 1.4 }}>
+            <Typography variant="caption" sx={{ color: isDark ? "#f6c66a" : "#7d4e00", fontWeight: 600, lineHeight: 1.4 }}>
               ⚠️ Falsely claiming an item violates the Northeastern Code of Student Conduct and may result in disciplinary action.
             </Typography>
           </Box>
@@ -255,7 +258,7 @@ function DetailModal({ item, onClose, onClaim }) {
           </Button>
           <Button
             variant="outlined"
-            sx={{ borderColor: "#ecdcdc", color: "#A84D48", fontWeight: 800, borderRadius: 2, flexShrink: 0 }}
+            sx={{ borderColor: isDark ? "rgba(255,255,255,0.2)" : "#ecdcdc", color: "#A84D48", fontWeight: 800, borderRadius: 2, flexShrink: 0 }}
             onClick={async () => {
               const { data } = await supabase
                 .from("conversations")
@@ -290,7 +293,7 @@ function DetailModal({ item, onClose, onClaim }) {
 }
 
 // --- NewItemModal ---
-function NewItemModal({ open, onClose, onAdd }) {
+function NewItemModal({ open, onClose, onAdd, isDark = false }) {
   const { user, profile } = useAuth();
   const [locations, setLocations] = useState([]);
   const [selectedCampus, setSelectedCampus] = useState(profile?.default_campus || "boston");
@@ -399,8 +402,9 @@ function NewItemModal({ open, onClose, onAdd }) {
     <Modal open={open} onClose={onClose}>
       <Box sx={{
         position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-        background: "#fff", borderRadius: 4, p: "26px", width: "100%", maxWidth: 520,
+        background: isDark ? "#1A1A1B" : "#fff", borderRadius: 4, p: "26px", width: "100%", maxWidth: 520,
         maxHeight: "92vh", overflowY: "auto", outline: "none",
+        border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
       }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2.5 }}>
           <Typography variant="h6" fontWeight={900}>Report Found Item</Typography>
@@ -411,7 +415,7 @@ function NewItemModal({ open, onClose, onAdd }) {
 
         {/* Campus chips */}
         <Box sx={{ mb: 0.5 }}>
-          <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
+          <Typography variant="caption" fontWeight={700} color={isDark ? "#B8BABD" : "text.secondary"} sx={{ display: "block", mb: 0.75 }}>
             Campus
           </Typography>
           <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap" }}>
@@ -426,9 +430,9 @@ function NewItemModal({ open, onClose, onAdd }) {
                   fontWeight: 700, fontSize: 11, cursor: "pointer",
                   borderColor: selectedCampus === c.id ? "#A84D48" : "#e0d0d0",
                   background: selectedCampus === c.id ? "#A84D48" : "transparent",
-                  color: selectedCampus === c.id ? "#fff" : "#7a5050",
+                  color: selectedCampus === c.id ? "#fff" : isDark ? "#B8BABD" : "#7a5050",
                   "&:hover": {
-                    background: selectedCampus === c.id ? "#8f3e3a" : "#fdf0f0",
+                    background: selectedCampus === c.id ? "#8f3e3a" : isDark ? "#2D2D2E" : "#fdf0f0",
                     borderColor: "#A84D48",
                   },
                   transition: "all 0.15s",
@@ -503,7 +507,7 @@ function NewItemModal({ open, onClose, onAdd }) {
 
         {/* Importance */}
         <Box sx={{ mb: 2.5 }}>
-          <Typography variant="caption" fontWeight={800} color="text.secondary" sx={{ display: "block", mb: 1 }}>
+          <Typography variant="caption" fontWeight={800} color={isDark ? "#B8BABD" : "text.secondary"} sx={{ display: "block", mb: 1 }}>
             Importance: <span style={{ color: IMPORTANCE_COLORS[form.importance], fontWeight: 900 }}>{IMPORTANCE_LABELS[form.importance]}</span>
           </Typography>
           <Slider
@@ -515,7 +519,7 @@ function NewItemModal({ open, onClose, onAdd }) {
         </Box>
 
         <Box sx={{ mb: 3 }}>
-          <ImageUpload image={form.image} onChange={v => set("image", v)} />
+          <ImageUpload image={form.image} onChange={v => set("image", v)} isDark={isDark} />
         </Box>
 
         <Button
@@ -530,7 +534,8 @@ function NewItemModal({ open, onClose, onAdd }) {
 }
 
 // --- FeedPage ---
-export default function FeedPage() {
+export default function FeedPage({ effectiveTheme = "light" }) {
+  const isDark = effectiveTheme === "dark";
   const { profile } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -582,7 +587,7 @@ export default function FeedPage() {
     });
 
   return (
-    <Box sx={{ display: "flex", justifyContent: "center", width: "100%", p: 3 }}>
+    <Box sx={{ display: "flex", justifyContent: "center", width: "100%", p: 3, color: isDark ? "#D7DADC" : "inherit" }}>
       <Box sx={{ width: "100%", maxWidth: 680 }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2.5 }}>
           <Typography variant="h4" fontWeight={900}>Lost & Found Feed</Typography>
@@ -597,7 +602,7 @@ export default function FeedPage() {
                 });
               }}
               sx={{
-                borderColor: "#ecdcdc", color: "#A84D48", fontWeight: 800,
+                borderColor: isDark ? "rgba(255,255,255,0.24)" : "#ecdcdc", color: "#A84D48", fontWeight: 800,
                 borderRadius: 2, minWidth: 0, px: 1.5, fontSize: 18,
               }}
             >
@@ -622,7 +627,10 @@ export default function FeedPage() {
           <TextField
             fullWidth placeholder="Search items, locations, descriptions..."
             value={search} onChange={e => setSearch(e.target.value)}
-            InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: "#a07070" }} /></InputAdornment> }}
+            InputProps={{
+              startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: isDark ? "#B8BABD" : "#a07070" }} /></InputAdornment>,
+              sx: isDark ? { background: "#2D2D2E", color: "#D7DADC" } : undefined,
+            }}
           />
           <FormControl size="small" sx={{ minWidth: 160, flexShrink: 0 }}>
             <Select
@@ -643,16 +651,16 @@ export default function FeedPage() {
           {CATEGORIES.map(c => (
             <Chip key={c} label={c} clickable onClick={() => setCategory(c)} sx={{
               flexShrink: 0, fontWeight: 800,
-              background: category === c ? "#A84D48" : "#fff",
-              color: category === c ? "#fff" : "#a07070",
-              border: `1.5px solid ${category === c ? "#A84D48" : "#e0d8d8"}`,
-              "&:hover": { background: category === c ? "#8f3e3a" : "#fdf7f7" },
+              background: category === c ? "#A84D48" : isDark ? "#2D2D2E" : "#fff",
+              color: category === c ? "#fff" : isDark ? "#B8BABD" : "#a07070",
+              border: `1.5px solid ${category === c ? "#A84D48" : isDark ? "rgba(255,255,255,0.18)" : "#e0d8d8"}`,
+              "&:hover": { background: category === c ? "#8f3e3a" : isDark ? "#343536" : "#fdf7f7" },
             }} />
           ))}
         </Box>
 
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-          <Typography variant="body2" color="text.secondary" fontWeight={700}>
+          <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={700}>
             {filtered.length} item{filtered.length !== 1 ? "s" : ""}
           </Typography>
           <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
@@ -662,10 +670,10 @@ export default function FeedPage() {
               onClick={() => setShowResolved(v => !v)}
               sx={{
                 fontWeight: 800, fontSize: 12,
-                background: showResolved ? "#dcfce7" : "#f5f5f5",
-                color: showResolved ? "#16a34a" : "#999",
-                border: `1.5px solid ${showResolved ? "#86efac" : "#e0e0e0"}`,
-                "&:hover": { background: showResolved ? "#bbf7d0" : "#ececec" },
+                background: showResolved ? (isDark ? "#1f3527" : "#dcfce7") : isDark ? "#2D2D2E" : "#f5f5f5",
+                color: showResolved ? (isDark ? "#6ee7b7" : "#16a34a") : isDark ? "#818384" : "#999",
+                border: `1.5px solid ${showResolved ? (isDark ? "rgba(110,231,183,0.42)" : "#86efac") : isDark ? "rgba(255,255,255,0.18)" : "#e0e0e0"}`,
+                "&:hover": { background: showResolved ? (isDark ? "#27412f" : "#bbf7d0") : isDark ? "#343536" : "#ececec" },
               }}
             />
             <FormControl size="small" sx={{ minWidth: 150 }}>
@@ -680,15 +688,15 @@ export default function FeedPage() {
         {loading
           ? <Box sx={{ display: "flex", justifyContent: "center", mt: 6 }}><CircularProgress sx={{ color: "#A84D48" }} /></Box>
           : filtered.length === 0
-            ? <Typography textAlign="center" color="text.disabled" fontWeight={700} sx={{ mt: 8 }}>No items found.</Typography>
+            ? <Typography textAlign="center" color={isDark ? "#818384" : "text.disabled"} fontWeight={700} sx={{ mt: 8 }}>No items found.</Typography>
             : <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                {filtered.map(item => <ItemCard key={item.item_id} item={item} onClick={setSelected} />)}
+                {filtered.map(item => <ItemCard key={item.item_id} item={item} onClick={setSelected} isDark={isDark} />)}
               </Box>
         }
       </Box>
 
-      <DetailModal item={selected} onClose={() => setSelected(null)} onClaim={handleClaim} />
-      <NewItemModal open={showNew} onClose={() => setShowNew(false)} onAdd={item => setItems(prev => [item, ...prev])} />
+      <DetailModal item={selected} onClose={() => setSelected(null)} onClaim={handleClaim} isDark={isDark} />
+      <NewItemModal open={showNew} onClose={() => setShowNew(false)} onAdd={item => setItems(prev => [item, ...prev])} isDark={isDark} />
     </Box>
   );
 }

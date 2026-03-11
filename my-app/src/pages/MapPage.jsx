@@ -75,7 +75,7 @@ function formatDate(d) {
 }
 
 // --- DetailModal ---
-function DetailModal({ item, onClose, onClaim }) {
+function DetailModal({ item, onClose, onClaim, isDark = false }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [claimed, setClaimed] = useState(false);
@@ -85,8 +85,9 @@ function DetailModal({ item, onClose, onClaim }) {
     <Modal open={!!item} onClose={onClose}>
       <Box sx={{
         position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-        background: "#fff", borderRadius: 4, p: "26px", width: "100%", maxWidth: 520,
+        background: isDark ? "#1A1A1B" : "#fff", borderRadius: 4, p: "26px", width: "100%", maxWidth: 520,
         maxHeight: "90vh", overflowY: "auto", outline: "none",
+        border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
       }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 2 }}>
           <Box>
@@ -96,7 +97,7 @@ function DetailModal({ item, onClose, onClaim }) {
             </Typography>
           </Box>
             <Box sx={{ display: "flex", gap: 0.5 }}>
-              <IconButton onClick={() => setReportOpen(true)} size="small" sx={{ color: "#999", "&:hover": { color: "#A84D48" } }}>
+              <IconButton onClick={() => setReportOpen(true)} size="small" sx={{ color: isDark ? "#818384" : "#999", "&:hover": { color: "#A84D48" } }}>
                 <FlagIcon fontSize="small" />
               </IconButton>
               <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
@@ -105,32 +106,32 @@ function DetailModal({ item, onClose, onClaim }) {
         </Box>
 
         {item.image_url
-          ? <Box component="img" src={item.image_url} alt={item.title} sx={{ width: "100%", height: 200, objectFit: "cover", borderRadius: 2, mb: 2, border: "1.5px solid #ecdcdc" }} />
-          : <Box sx={{ width: "100%", height: 120, background: "#f5f0f0", borderRadius: 2, mb: 2, display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px dashed #dac8c8" }}>
-              <Typography variant="caption" color="text.disabled" fontWeight={700}>No photo provided</Typography>
+          ? <Box component="img" src={item.image_url} alt={item.title} sx={{ width: "100%", height: 200, objectFit: "cover", borderRadius: 2, mb: 2, border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc" }} />
+          : <Box sx={{ width: "100%", height: 120, background: isDark ? "#2D2D2E" : "#f5f0f0", borderRadius: 2, mb: 2, display: "flex", alignItems: "center", justifyContent: "center", border: isDark ? "1px dashed rgba(255,255,255,0.2)" : "1.5px dashed #dac8c8" }}>
+              <Typography variant="caption" color={isDark ? "#818384" : "text.disabled"} fontWeight={700}>No photo provided</Typography>
             </Box>
         }
 
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mb: 2 }}>
           <Chip label={IMPORTANCE_LABELS[item.importance]} size="small" sx={{ background: IMPORTANCE_COLORS[item.importance] + "22", color: IMPORTANCE_COLORS[item.importance], fontWeight: 800 }} />
-          <Chip label={item.category} size="small" sx={{ background: "#f5eded", color: "#A84D48", fontWeight: 700 }} />
-          {item.resolved && <Chip label="Resolved" size="small" sx={{ background: "#dcfce7", color: "#16a34a", fontWeight: 800 }} />}
+          <Chip label={item.category} size="small" sx={{ background: isDark ? "#343536" : "#f5eded", color: "#A84D48", fontWeight: 700 }} />
+          {item.resolved && <Chip label="Resolved" size="small" sx={{ background: isDark ? "#1f3527" : "#dcfce7", color: isDark ? "#6ee7b7" : "#16a34a", border: isDark ? "1px solid rgba(110,231,183,0.42)" : "none", fontWeight: 800 }} />}
         </Box>
 
-        <Paper variant="outlined" sx={{ p: 2, mb: 2, background: "#fdf7f7", borderColor: "#ecdcdc", borderRadius: 2 }}>
+        <Paper variant="outlined" sx={{ p: 2, mb: 2, background: isDark ? "#232324" : "#fdf7f7", borderColor: isDark ? "rgba(255,255,255,0.14)" : "#ecdcdc", borderRadius: 2 }}>
           <Typography variant="caption" fontWeight={800} color="#a07070" sx={{ letterSpacing: 0.5, display: "block", mb: 0.75 }}>LOCATION</Typography>
           <Typography fontWeight={700} fontSize={14}>{item.locations?.name ?? "Unknown location"}</Typography>
-          <Typography variant="caption" color="text.secondary" fontWeight={600}>Found at: {item.found_at}</Typography>
+          <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600}>Found at: {item.found_at}</Typography>
         </Paper>
 
         <Box sx={{ mb: 3 }}>
           <Typography variant="caption" fontWeight={800} color="#a07070" sx={{ letterSpacing: 0.5, display: "block", mb: 0.75 }}>DESCRIPTION</Typography>
-          <Typography variant="body2" color="text.secondary" lineHeight={1.65}>{item.description}</Typography>
+          <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} lineHeight={1.65}>{item.description}</Typography>
         </Box>
 
         {!item.resolved && (
-          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, px: 1.25, py: 0.75, mb: 1.5, borderRadius: 1.5, background: "#fff3cd", border: "1px solid #ffc107" }}>
-            <Typography variant="caption" sx={{ color: "#7d4e00", fontWeight: 600, lineHeight: 1.4 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, px: 1.25, py: 0.75, mb: 1.5, borderRadius: 1.5, background: isDark ? "#3a2f22" : "#fff3cd", border: isDark ? "1px solid rgba(245,158,11,0.5)" : "1px solid #ffc107" }}>
+            <Typography variant="caption" sx={{ color: isDark ? "#f6c66a" : "#7d4e00", fontWeight: 600, lineHeight: 1.4 }}>
               ⚠️ Falsely claiming an item violates the Northeastern Code of Student Conduct and may result in disciplinary action.
             </Typography>
           </Box>
@@ -145,7 +146,7 @@ function DetailModal({ item, onClose, onClaim }) {
           </Button>
           <Button
             variant="outlined"
-            sx={{ borderColor: "#ecdcdc", color: "#A84D48", fontWeight: 800, borderRadius: 2, flexShrink: 0 }}
+            sx={{ borderColor: isDark ? "rgba(255,255,255,0.2)" : "#ecdcdc", color: "#A84D48", fontWeight: 800, borderRadius: 2, flexShrink: 0 }}
             onClick={async () => {
               const { data } = await supabase.from("conversations").select("id").eq("listing_id", item.item_id).eq("participant_1", user.id).maybeSingle();
               if (data != null) { navigate(`/messages?conversation=${data.id}`); return; }
@@ -181,7 +182,8 @@ function buildCampusMarkerEl(campusName) {
 }
 
 // --- MapPage ---
-export default function MapPage() {
+export default function MapPage({ effectiveTheme = "light" }) {
+  const isDark = effectiveTheme === "dark";
   const { profile } = useAuth();
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -465,13 +467,13 @@ export default function MapPage() {
   };
 
   return (
-    <Box sx={{ display: "flex", justifyContent: "center", width: "100%", p: 3 }}>
+    <Box sx={{ display: "flex", justifyContent: "center", width: "100%", p: 3, color: isDark ? "#D7DADC" : "inherit" }}>
       <Box sx={{ width: "100%", maxWidth: 1200 }}>
         {/* Campus selector */}
         <Box
           sx={{
             display: "flex", gap: 0.6, flexWrap: "nowrap", mb: 1.5,
-            pb: 1.5, borderBottom: "1.5px solid #f0e8e8",
+            pb: 1.5, borderBottom: isDark ? "1px solid rgba(255,255,255,0.12)" : "1.5px solid #f0e8e8",
             justifyContent: "center",
           }}
         >
@@ -484,11 +486,11 @@ export default function MapPage() {
               sx={{
                 fontWeight: 700, fontSize: 11, height: 26, cursor: "pointer", flexShrink: 1,
                 "& .MuiChip-label": { px: 1 },
-                borderColor: selectedCampus === campus.id ? "#A84D48" : "#e0d0d0",
+                borderColor: selectedCampus === campus.id ? "#A84D48" : isDark ? "rgba(255,255,255,0.2)" : "#e0d0d0",
                 background: selectedCampus === campus.id ? "#A84D48" : "transparent",
-                color: selectedCampus === campus.id ? "#fff" : "#7a5050",
+                color: selectedCampus === campus.id ? "#fff" : isDark ? "#B8BABD" : "#7a5050",
                 "&:hover": {
-                  background: selectedCampus === campus.id ? "#8f3e3a" : "#fdf0f0",
+                  background: selectedCampus === campus.id ? "#8f3e3a" : isDark ? "#2D2D2E" : "#fdf0f0",
                   borderColor: "#A84D48",
                 },
                 transition: "all 0.15s",
@@ -509,7 +511,7 @@ export default function MapPage() {
             <Button
               variant="outlined" onClick={handleRefresh} disabled={refreshing}
               sx={{
-                borderColor: "#ecdcdc", color: "#A84D48", fontWeight: 800,
+                borderColor: isDark ? "rgba(255,255,255,0.24)" : "#ecdcdc", color: "#A84D48", fontWeight: 800,
                 borderRadius: 2, minWidth: 0, px: 1.5, fontSize: 18,
                 "& .refresh-icon": {
                   display: "inline-block",
@@ -530,6 +532,8 @@ export default function MapPage() {
             sx={{
               flex: 1, height: { xs: "50vh", md: "calc(100vh - 270px)" },
               minHeight: 400, overflow: "hidden", borderRadius: 3, position: "relative",
+              border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
+              background: isDark ? "#1A1A1B" : "#fff",
             }}
           >
             {loading && (
@@ -561,9 +565,10 @@ export default function MapPage() {
                   }}
                   sx={{
                     "& .MuiOutlinedInput-root": {
-                      background: "rgba(255,255,255,0.95)", backdropFilter: "blur(8px)",
+                      background: isDark ? "rgba(36,29,29,0.95)" : "rgba(255,255,255,0.95)", backdropFilter: "blur(8px)",
+                      color: isDark ? "#D7DADC" : "inherit",
                       borderRadius: 2, fontWeight: 700, fontSize: 13,
-                      "& fieldset": { borderColor: "#ecdcdc" },
+                      "& fieldset": { borderColor: isDark ? "rgba(255,255,255,0.16)" : "#ecdcdc" },
                       "&:hover fieldset": { borderColor: "#A84D48" },
                       "&.Mui-focused fieldset": { borderColor: "#A84D48" },
                     },
@@ -580,8 +585,8 @@ export default function MapPage() {
                   position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)",
                   display: "flex", alignItems: "center", gap: 1,
                   px: 2.5, py: 1.25, borderRadius: 99,
-                  background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)",
-                  border: "1.5px solid #ecdcdc",
+                  background: isDark ? "rgba(36,29,29,0.92)" : "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)",
+                  border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc",
                 }}
               >
                 <MyLocationIcon sx={{ color: "#A84D48", fontSize: 18 }} />
@@ -599,7 +604,8 @@ export default function MapPage() {
               sx={{
                 width: 320, p: 2.5, borderRadius: 3,
                 height: { xs: "auto", md: "calc(100vh - 270px)" },
-                overflowY: "auto", border: "1.5px solid #ecdcdc",
+                overflowY: "auto", border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc",
+                background: isDark ? "#1A1A1B" : "#fff",
               }}
             >
               <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
@@ -614,14 +620,14 @@ export default function MapPage() {
               />
 
               <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5 }}>
-                <ListIcon sx={{ color: "#a07070", fontSize: 18 }} />
+                <ListIcon sx={{ color: isDark ? "#B8BABD" : "#a07070", fontSize: 18 }} />
                 <Typography variant="body2" fontWeight={800} color="text.secondary">
                   {nearbyItems.length} item{nearbyItems.length !== 1 ? "s" : ""} within {radius} ft
                 </Typography>
               </Box>
 
               {nearbyItems.length === 0 ? (
-                <Typography variant="body2" color="text.disabled" fontWeight={600} sx={{ textAlign: "center", mt: 4 }}>
+                <Typography variant="body2" color={isDark ? "#818384" : "text.disabled"} fontWeight={600} sx={{ textAlign: "center", mt: 4 }}>
                   No lost items in this area. Try a larger radius.
                 </Typography>
               ) : (
@@ -630,10 +636,11 @@ export default function MapPage() {
                     <Paper
                       key={item.item_id} variant="outlined"
                       sx={{
-                        p: 1.5, borderRadius: 2, borderColor: "#ecdcdc",
+                        p: 1.5, borderRadius: 2, borderColor: isDark ? "rgba(255,255,255,0.16)" : "#ecdcdc",
+                        background: isDark ? "#232324" : "#fff",
                         cursor: "pointer", transition: "box-shadow 0.15s",
                         opacity: item.resolved ? 0.6 : 1,
-                        "&:hover": { boxShadow: "0 2px 12px rgba(168,77,72,0.12)" },
+                        "&:hover": { boxShadow: isDark ? "0 4px 14px rgba(0,0,0,0.35)" : "0 2px 12px rgba(168,77,72,0.12)" },
                       }}
                       onClick={() => {
                         if (mapInstanceRef.current && item._lat && item._lng) {
@@ -646,18 +653,18 @@ export default function MapPage() {
                       <Box sx={{ display: "flex", gap: 1.5, alignItems: "center" }}>
                         <Box sx={{
                           width: 44, height: 44, borderRadius: 1.5, flexShrink: 0,
-                          overflow: "hidden", background: "#f0eded",
+                          overflow: "hidden", background: isDark ? "#2D2D2E" : "#f0eded",
                           display: "flex", alignItems: "center", justifyContent: "center",
-                          border: "1px solid #e0d6d6",
+                          border: isDark ? "1px solid rgba(255,255,255,0.14)" : "1px solid #e0d6d6",
                         }}>
                           {item.image_url
                             ? <img src={item.image_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                            : <Typography variant="caption" sx={{ color: "#ccc", fontSize: 18 }}>📦</Typography>
+                            : <Typography variant="caption" sx={{ color: isDark ? "#818384" : "#ccc", fontSize: 18 }}>📦</Typography>
                           }
                         </Box>
                         <Box sx={{ flex: 1, minWidth: 0 }}>
                           <Typography fontWeight={800} fontSize={13} noWrap>{item.title}</Typography>
-                          <Typography variant="caption" color="text.secondary" fontWeight={600} noWrap>
+                          <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600} noWrap>
                             {item.locations?.name ?? "Unknown"} · {formatDate(item.date)}
                           </Typography>
                         </Box>
@@ -679,7 +686,7 @@ export default function MapPage() {
         </Box>
       </Box>
 
-      <DetailModal item={selectedItem} onClose={() => setSelectedItem(null)} onClaim={handleClaim} />
+      <DetailModal item={selectedItem} onClose={() => setSelectedItem(null)} onClaim={handleClaim} isDark={isDark} />
     </Box>
   );
 }
