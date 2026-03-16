@@ -11,6 +11,9 @@ import {
 } from "@mui/material";
 import TermsModal from "../components/TermsModal";
 
+const NAME_MAX_LENGTH = 25;
+const PASSWORD_MAX_LENGTH = 32;
+
 /* ───────────────────────────────────────────
    Confetti canvas — lightweight, no deps
    ─────────────────────────────────────────── */
@@ -249,6 +252,16 @@ export default function LoginPage({
 
     if (isSignUp && (!firstName.trim() || !lastName.trim())) {
       setError("Please enter your first and last name.");
+      return;
+    }
+
+    if (isSignUp && (firstName.trim().length > NAME_MAX_LENGTH || lastName.trim().length > NAME_MAX_LENGTH)) {
+      setError(`First and last name must be ${NAME_MAX_LENGTH} characters or fewer.`);
+      return;
+    }
+
+    if (password.length > PASSWORD_MAX_LENGTH) {
+      setError(`Password must be ${PASSWORD_MAX_LENGTH} characters or fewer.`);
       return;
     }
 
@@ -526,26 +539,35 @@ export default function LoginPage({
 
                 <Box component="form" onSubmit={handleSubmit} noValidate>
                   {isSignUp && (
-                    <Box sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, gap: 1.5, mb: 1.5 }}>
-                      <TextField
-                        required
-                        fullWidth
-                        size="small"
-                        label="First Name"
-                        value={firstName}
-                        onChange={(e) => setFirstName(e.target.value)}
-                        sx={autofillTextFieldSx}
-                      />
-                      <TextField
-                        required
-                        fullWidth
-                        size="small"
-                        label="Last Name"
-                        value={lastName}
-                        onChange={(e) => setLastName(e.target.value)}
-                        sx={autofillTextFieldSx}
-                      />
-                    </Box>
+                    <>
+                      <Box sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, gap: 1.5, mb: 0.75 }}>
+                        <TextField
+                          required
+                          fullWidth
+                          size="small"
+                          label="First Name"
+                          value={firstName}
+                          onChange={(e) => setFirstName(e.target.value.slice(0, NAME_MAX_LENGTH))}
+                          inputProps={{ maxLength: NAME_MAX_LENGTH }}
+                          helperText={`${firstName.length}/${NAME_MAX_LENGTH}`}
+                          sx={autofillTextFieldSx}
+                        />
+                        <TextField
+                          required
+                          fullWidth
+                          size="small"
+                          label="Last Name"
+                          value={lastName}
+                          onChange={(e) => setLastName(e.target.value.slice(0, NAME_MAX_LENGTH))}
+                          inputProps={{ maxLength: NAME_MAX_LENGTH }}
+                          helperText={`${lastName.length}/${NAME_MAX_LENGTH}`}
+                          sx={autofillTextFieldSx}
+                        />
+                      </Box>
+                      <Typography variant="caption" sx={{ display: "block", mb: 1.5, color: isDark ? "#A9AAAB" : "text.secondary" }}>
+                        Max {NAME_MAX_LENGTH} characters for first and last name.
+                      </Typography>
+                    </>
                   )}
 
                   <TextField
@@ -571,9 +593,9 @@ export default function LoginPage({
                     type="password"
                     placeholder="Enter your password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => setPassword(e.target.value.slice(0, PASSWORD_MAX_LENGTH))}
                     autoComplete="current-password"
-                    inputProps={{ minLength: 6 }}
+                    inputProps={{ minLength: 6, maxLength: PASSWORD_MAX_LENGTH }}
                     sx={{ ...autofillTextFieldSx, mb: 3 }}
                   />
 

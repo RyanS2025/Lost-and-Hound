@@ -74,6 +74,8 @@ function validateRequired(fields, body) {
   return null;
 }
 
+const PROFILE_NAME_MAX_LENGTH = 25;
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AUTH MIDDLEWARE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -180,8 +182,8 @@ app.get("/api/profile", requireAuth, async (req, res) => {
         .upsert(
           {
             id: req.user.id,
-            first_name: sanitize(meta.first_name, 50),
-            last_name: sanitize(meta.last_name, 50),
+            first_name: sanitize(meta.first_name, PROFILE_NAME_MAX_LENGTH),
+            last_name: sanitize(meta.last_name, PROFILE_NAME_MAX_LENGTH),
             default_campus: "boston",
           },
           { onConflict: "id" }
@@ -200,8 +202,17 @@ app.get("/api/profile", requireAuth, async (req, res) => {
 });
 
 app.patch("/api/profile", requireAuth, async (req, res) => {
-  const first_name = sanitize(req.body.first_name, 50);
-  const last_name = sanitize(req.body.last_name, 50);
+  if (
+    typeof req.body.first_name === "string" && req.body.first_name.trim().length > PROFILE_NAME_MAX_LENGTH ||
+    typeof req.body.last_name === "string" && req.body.last_name.trim().length > PROFILE_NAME_MAX_LENGTH
+  ) {
+    return res.status(400).json({
+      error: `First name and last name must be ${PROFILE_NAME_MAX_LENGTH} characters or fewer`,
+    });
+  }
+
+  const first_name = sanitize(req.body.first_name, PROFILE_NAME_MAX_LENGTH);
+  const last_name = sanitize(req.body.last_name, PROFILE_NAME_MAX_LENGTH);
 
   if (!first_name || !last_name) {
     return res.status(400).json({ error: "First name and last name are required" });
@@ -259,12 +270,12 @@ app.get("/api/listings", requireAuth, async (req, res) => {
 });
 
 app.post("/api/listings", writeLimiter, requireAuth, requireNotBanned, async (req, res) => {
-  const title = sanitize(req.body.title, 100);
+  const title = sanitize(req.body.title, 50);
   const category = sanitize(req.body.category, 50);
   const location_id = req.body.location_id;
-  const found_at = sanitize(req.body.found_at, 200);
+  const found_at = sanitize(req.body.found_at, 50);
   const importance = req.body.importance;
-  const description = sanitize(req.body.description, 2000);
+  const description = sanitize(req.body.description, 250);
   const image_url = req.body.image_url || null;
   const lat = req.body.lat;
   const lng = req.body.lng;
@@ -577,7 +588,7 @@ app.get("/api/conversations/:id/messages", requireAuth, requireConversationParti
 
 // Send messages — must be a participant, must not be banned
 app.post("/api/conversations/:id/messages", writeLimiter, requireAuth, requireNotBanned, requireConversationParticipant, async (req, res) => {
-  const content = sanitize(req.body.content, 5000);
+  const content = sanitize(req.body.content, 500);
 
   if (!content) {
     return res.status(400).json({ error: "Message cannot be empty" });

@@ -2,7 +2,7 @@ import { supabase } from "../../backend/supabaseClient";
 
 const API_BASE = window.location.hostname === "localhost"
   ? "http://localhost:3001"
-  : "lost-and-hound-backend.railway.internal";
+  : "lost-and-hound-backend-production.up.railway.app";
 // Change this to your deployed URL later, e.g. "https://api.myapp.com"
 
 export default async function apiFetch(path, options = {}) {

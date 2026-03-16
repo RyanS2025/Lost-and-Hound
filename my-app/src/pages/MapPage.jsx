@@ -16,6 +16,7 @@ import FlagIcon from "@mui/icons-material/Flag";
 import ReportModal from "../components/ReportModal";
 import { CAMPUSES } from "../constants/campuses";
 import apiFetch from "../utils/apiFetch";
+import { DEFAULT_TIME_ZONE, formatRelativeDate } from "../utils/timezone";
 
 setOptions({
   key: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
@@ -67,15 +68,8 @@ function haversine(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-function formatDate(d) {
-  const diff = Math.floor((new Date() - new Date(d)) / 86400000);
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Yesterday";
-  return `${diff}d ago`;
-}
-
 // --- DetailModal ---
-function DetailModal({ item, onClose, onClaim, isDark = false }) {
+function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
   const navigate = useNavigate();
   const [claimed, setClaimed] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
@@ -95,7 +89,7 @@ function DetailModal({ item, onClose, onClaim, isDark = false }) {
           <Box>
             <Typography variant="h6" fontWeight={900}>{item.title}</Typography>
             <Typography variant="caption" color="text.secondary" fontWeight={600}>
-              Posted by {item.poster_name} · {formatDate(item.date)}
+              Posted by {item.poster_name} · {formatRelativeDate(item.date, timeZone, { compact: true })}
             </Typography>
           </Box>
             <Box sx={{ display: "flex", gap: 0.5 }}>
@@ -191,7 +185,7 @@ function buildCampusMarkerEl(campusName) {
 }
 
 // --- Side panel content (shared between desktop panel & mobile drawer) ---
-function SidePanelContent({ isDark, radius, setRadius, nearbyItems, mapInstanceRef, setSelectedItem }) {
+function SidePanelContent({ isDark, radius, setRadius, nearbyItems, mapInstanceRef, setSelectedItem, timeZone = DEFAULT_TIME_ZONE }) {
   return (
     <>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
@@ -251,7 +245,7 @@ function SidePanelContent({ isDark, radius, setRadius, nearbyItems, mapInstanceR
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography fontWeight={800} fontSize={13} noWrap>{item.title}</Typography>
                   <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600} noWrap>
-                    {item.locations?.name ?? "Unknown"} · {formatDate(item.date)}
+                    {item.locations?.name ?? "Unknown"} · {formatRelativeDate(item.date, timeZone, { compact: true })}
                   </Typography>
                 </Box>
                 <Chip
@@ -272,7 +266,7 @@ function SidePanelContent({ isDark, radius, setRadius, nearbyItems, mapInstanceR
 }
 
 // --- MapPage ---
-export default function MapPage({ effectiveTheme = "light" }) {
+export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE }) {
   const isDark = effectiveTheme === "dark";
   const isMobile = useMediaQuery("(max-width:900px)");
   const pageBg = isDark ? "#101214" : "#f9f5f4";
@@ -864,6 +858,7 @@ export default function MapPage({ effectiveTheme = "light" }) {
                   nearbyItems={nearbyItems}
                   mapInstanceRef={mapInstanceRef}
                   setSelectedItem={setSelectedItem}
+                  timeZone={timeZone}
                 />
               </Paper>
             </Collapse>
@@ -942,12 +937,13 @@ export default function MapPage({ effectiveTheme = "light" }) {
               setSelectedItem={(item) => {
                 setSelectedItem(item);
               }}
+              timeZone={timeZone}
             />
           </Box>
         </SwipeableDrawer>
       )}
 
-      <DetailModal item={selectedItem} onClose={() => setSelectedItem(null)} onClaim={handleClaim} isDark={isDark} />
+      <DetailModal item={selectedItem} onClose={() => setSelectedItem(null)} onClaim={handleClaim} isDark={isDark} timeZone={timeZone} />
       </Box>
     </>
   );

@@ -4,11 +4,12 @@ import {
   Box, Typography, Paper, Button, Chip, Tabs, Tab,
   CircularProgress, Alert, Dialog, DialogTitle,
   DialogContent, DialogContentText, DialogActions,
-  IconButton, Collapse, Select, MenuItem, FormControl, TextField,
+  IconButton, Collapse, Select, MenuItem, FormControl, TextField, Modal,
 } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CancelIcon from "@mui/icons-material/Cancel";
+import CloseIcon from "@mui/icons-material/Close";
 import DeleteIcon from "@mui/icons-material/Delete";
 import FlagIcon from "@mui/icons-material/Flag";
 import BugReportIcon from "@mui/icons-material/BugReport";
@@ -22,6 +23,13 @@ import GavelIcon from "@mui/icons-material/Gavel";
 import UndoIcon from "@mui/icons-material/Undo";
 import { useAuth } from "../AuthContext";
 import apiFetch from "../utils/apiFetch";
+import MapPinPicker from "../components/MapPinPicker";
+import {
+  DEFAULT_TIME_ZONE,
+  formatDateTime,
+  formatRelativeDate,
+  formatTime,
+} from "../utils/timezone";
 
 // --- Constants ---
 const STATUS_CONFIG = {
@@ -46,19 +54,102 @@ const DECISION_OPTIONS = [
   { value: "violation_permanent", label: "Permanent Ban", color: "#7f1d1d", description: "Remove content + permanently ban user" },
 ];
 
-function formatDate(d) {
-  if (!d) return "";
-  const date = new Date(d);
-  return date.toLocaleDateString([], { month: "short", day: "numeric" }) +
-    " at " + date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+function parseCoordinates(coordStr) {
+  if (!coordStr || typeof coordStr !== "string") return null;
+  const match = coordStr.match(/([\d.]+)°?\s*([NS])\s+([\d.]+)°?\s*([EW])/i);
+  if (!match) {
+    try {
+      const obj = typeof coordStr === "string" ? JSON.parse(coordStr) : coordStr;
+      if (obj.lat != null && obj.lng != null) return { lat: Number(obj.lat), lng: Number(obj.lng) };
+    } catch {
+      return null;
+    }
+    return null;
+  }
+  let lat = parseFloat(match[1]);
+  let lng = parseFloat(match[3]);
+  if (match[2].toUpperCase() === "S") lat = -lat;
+  if (match[4].toUpperCase() === "W") lng = -lng;
+  return { lat, lng };
 }
 
-function formatShortDate(d) {
-  if (!d) return "";
-  const diff = Math.floor((new Date() - new Date(d)) / 86400000);
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Yesterday";
-  return `${diff}d ago`;
+function DashboardListingModal({ listing, open, onClose, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
+  if (!listing) return null;
+
+  const pinCoords = (listing.lat && listing.lng)
+    ? { lat: listing.lat, lng: listing.lng }
+    : parseCoordinates(listing.locations?.coordinates);
+
+  return (
+    <Modal open={open} onClose={onClose}>
+      <Box sx={{
+        position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+        background: isDark ? "#1A1A1B" : "#fff", borderRadius: 4, p: "26px", width: "100%", maxWidth: 520,
+        maxHeight: "90vh", overflowY: "auto", outline: "none",
+        border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
+        mx: 1.5,
+        boxSizing: "border-box",
+        width: { xs: "calc(100% - 24px)", sm: "100%" },
+      }}>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 2 }}>
+          <Box sx={{ flex: 1, minWidth: 0, pr: 1 }}>
+            <Typography variant="h6" fontWeight={900} sx={{ lineHeight: 1.25, overflowWrap: "anywhere", wordBreak: "break-word" }}>
+              {listing.title}
+            </Typography>
+            <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600}>
+              Posted by {listing.poster_name} · {formatRelativeDate(listing.date, timeZone, { compact: true })}
+            </Typography>
+          </Box>
+          <Box sx={{ display: "flex", gap: 0.5, flexShrink: 0 }}>
+            <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+          </Box>
+        </Box>
+
+        {listing.image_url
+          ? <Box component="img" src={listing.image_url} alt={listing.title} sx={{ width: "100%", height: 200, objectFit: "cover", borderRadius: 2, mb: 2, border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc" }} />
+          : <Box sx={{ width: "100%", height: 120, background: isDark ? "#2D2D2E" : "#f5f0f0", borderRadius: 2, mb: 2, display: "flex", alignItems: "center", justifyContent: "center", border: isDark ? "1px dashed rgba(255,255,255,0.2)" : "1.5px dashed #dac8c8" }}>
+              <Typography variant="caption" color={isDark ? "#818384" : "text.disabled"} fontWeight={700}>No photo provided</Typography>
+            </Box>
+        }
+
+        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mb: 2 }}>
+          {listing.importance && <Chip label={IMPORTANCE_LABELS[listing.importance]} size="small" sx={{ background: IMPORTANCE_COLORS[listing.importance] + "22", color: IMPORTANCE_COLORS[listing.importance], fontWeight: 800 }} />}
+          {listing.category && <Chip label={listing.category} size="small" sx={{ background: isDark ? "#343536" : "#f5eded", color: "#A84D48", fontWeight: 700 }} />}
+          {listing.resolved && <Chip label="Resolved" size="small" sx={{ background: isDark ? "#1f3527" : "#dcfce7", color: isDark ? "#6ee7b7" : "#16a34a", border: isDark ? "1px solid rgba(110,231,183,0.42)" : "none", fontWeight: 800 }} />}
+        </Box>
+
+        <Paper variant="outlined" sx={{ p: 2, mb: 2, background: isDark ? "#232324" : "#fdf7f7", borderColor: isDark ? "rgba(255,255,255,0.14)" : "#ecdcdc", borderRadius: 2 }}>
+          <Typography variant="caption" fontWeight={800} color={isDark ? "#B8BABD" : "#a07070"} sx={{ letterSpacing: 0.5, display: "block", mb: 0.75 }}>LOCATION</Typography>
+          <Typography fontWeight={700} fontSize={14} sx={{ overflowWrap: "anywhere", wordBreak: "break-word" }}>{listing.locations?.name ?? "Unknown location"}</Typography>
+          <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600}>Found at: {listing.found_at || "No specific spot"}</Typography>
+
+          {pinCoords ? (
+            <Box sx={{ mt: 1.5 }}>
+              <MapPinPicker
+                value={pinCoords}
+                height={120}
+                interactive={false}
+                showCoords={false}
+                zoom={17}
+                center={pinCoords}
+              />
+            </Box>
+          ) : (
+            <Box sx={{ mt: 1.5, background: isDark ? "#2D2D2E" : "#ede8e8", borderRadius: 1.5, height: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Typography variant="caption" color={isDark ? "#818384" : "text.disabled"} fontWeight={700}>No exact location pinned</Typography>
+            </Box>
+          )}
+        </Paper>
+
+        <Box>
+          <Typography variant="caption" fontWeight={800} color={isDark ? "#B8BABD" : "#a07070"} sx={{ letterSpacing: 0.5, display: "block", mb: 0.75 }}>DESCRIPTION</Typography>
+          <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} lineHeight={1.65} sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
+            {listing.description}
+          </Typography>
+        </Box>
+      </Box>
+    </Modal>
+  );
 }
 
 // --- Stat Card ---
@@ -127,7 +218,9 @@ function AccessDenied({ isDark = false }) {
 }
 
 // --- Post Detail Panel ---
-function PostDetail({ listing, isDark = false }) {
+function PostDetail({ listing, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
+  const [modalOpen, setModalOpen] = useState(false);
+
   if (!listing) {
     return (
       <Box sx={{ p: 3, background: isDark ? "#232324" : "#faf8f8", borderRadius: 2, border: isDark ? "1px dashed rgba(255,255,255,0.16)" : "1px dashed #e0d6d6", textAlign: "center" }}>
@@ -136,7 +229,8 @@ function PostDetail({ listing, isDark = false }) {
     );
   }
   return (
-    <Paper variant="outlined" sx={{ borderRadius: 2, borderColor: isDark ? "rgba(255,255,255,0.16)" : "#ecdcdc", background: isDark ? "#232324" : "#fdf7f7", overflow: "hidden" }}>
+    <>
+      <Paper variant="outlined" sx={{ borderRadius: 2, borderColor: isDark ? "rgba(255,255,255,0.16)" : "#ecdcdc", background: isDark ? "#232324" : "#fdf7f7", overflow: "hidden" }}>
       {listing.image_url && (
         <Box component="img" src={listing.image_url} alt={listing.title} sx={{ width: "100%", height: { xs: 140, sm: 180 }, objectFit: "cover" }} />
       )}
@@ -149,7 +243,7 @@ function PostDetail({ listing, isDark = false }) {
           {listing.locations?.name ?? "Unknown location"} · {listing.found_at || "No specific spot"}
         </Typography>
         <Typography variant="caption" sx={{ color: isDark ? "#a59493" : "#aaa", fontWeight: 600, display: "block", mb: 1 }}>
-          Posted by {listing.poster_name} · {formatShortDate(listing.date)}
+          Posted by {listing.poster_name} · {formatRelativeDate(listing.date, timeZone, { compact: true })}
         </Typography>
         <Box sx={{ display: "flex", gap: 0.75, mb: 1.5, flexWrap: "wrap" }}>
           {listing.importance && (
@@ -164,13 +258,24 @@ function PostDetail({ listing, isDark = false }) {
             <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6, fontSize: 13 }}>{listing.description}</Typography>
           </>
         )}
+
+        <Button
+          size="small"
+          onClick={() => setModalOpen(true)}
+          sx={{ mt: 1.5, color: "#A84D48", fontWeight: 700, textTransform: "none", px: 0, minWidth: 0, "&:hover": { background: "transparent", textDecoration: "underline" } }}
+        >
+          Open Full Post
+        </Button>
       </Box>
-    </Paper>
+      </Paper>
+
+      <DashboardListingModal listing={listing} open={modalOpen} onClose={() => setModalOpen(false)} isDark={isDark} timeZone={timeZone} />
+    </>
   );
 }
 
 // --- Message Thread Panel ---
-function MessageThread({ reporterId, reportedUserId, isDark = false }) {
+function MessageThread({ reporterId, reportedUserId, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [profiles, setProfiles] = useState({});
@@ -251,7 +356,7 @@ function MessageThread({ reporterId, reportedUserId, isDark = false }) {
                 <Typography fontSize={13} sx={{ color: isReported ? "#ffd4d4" : isDark ? "#D7DADC" : "#333" }}>{msg.content}</Typography>
               </Box>
               <Typography variant="caption" color="text.disabled" sx={{ fontSize: 10, mt: 0.25, display: "block" }}>
-                {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                {formatTime(msg.created_at, timeZone)}
               </Typography>
             </Box>
           );
@@ -386,7 +491,7 @@ function DecisionPanel({ report, onDecision, processing, isDark = false }) {
 }
 
 // --- Reverse Ban Panel ---
-function ReverseBanPanel({ report, onReverseBan, processing, isDark = false }) {
+function ReverseBanPanel({ report, onReverseBan, processing, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [banInfo, setBanInfo] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -424,7 +529,7 @@ function ReverseBanPanel({ report, onReverseBan, processing, isDark = false }) {
     ? "Permanently banned"
     : banExpired
       ? "Ban expired"
-      : `Banned until ${formatDate(banInfo.banned_until)}`;
+      : `Banned until ${formatDateTime(banInfo.banned_until, timeZone)}`;
 
   return (
     <>
@@ -515,7 +620,7 @@ function ReverseBanPanel({ report, onReverseBan, processing, isDark = false }) {
 }
 
 // --- Report Card ---
-function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision, onReverseBan, processing, isDark = false }) {
+function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision, onReverseBan, processing, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
   const [expanded, setExpanded] = useState(false);
   const isPost = !!report.reported_listing_id;
   const statusStyle = isDark
@@ -533,24 +638,26 @@ function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision,
             <Chip label={report.status} size="small"
               sx={{ fontWeight: 700, fontSize: 11, textTransform: "capitalize", background: statusStyle.bg, color: statusStyle.color, border: `1px solid ${statusStyle.border}` }} />
           </Box>
-          <Typography variant="caption" color="text.disabled" fontWeight={600} sx={{ fontSize: 11 }}>{formatDate(report.created_at)}</Typography>
+          <Typography variant="caption" color="text.disabled" fontWeight={600} sx={{ fontSize: 11 }}>{formatDateTime(report.created_at, timeZone)}</Typography>
         </Box>
 
         {/* Reason */}
-        <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>{report.reason}</Typography>
-        {report.details && <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, lineHeight: 1.5, fontSize: { xs: 13, sm: 14 } }}>{report.details}</Typography>}
+        <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
+          {report.reason}
+        </Typography>
+        {report.details && <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, lineHeight: 1.5, fontSize: { xs: 13, sm: 14 }, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>{report.details}</Typography>}
 
         {/* Reporter + target — stack on mobile */}
         <Box sx={{ display: "flex", gap: { xs: 1.5, sm: 3 }, mb: 1.5, flexDirection: { xs: "column", sm: "row" } }}>
           <Box>
             <Typography variant="caption" fontWeight={700} color="text.secondary">Reported by</Typography>
-            <Typography variant="body2" fontWeight={600}>
+            <Typography variant="body2" fontWeight={600} sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
               {report.reporter ? `${report.reporter.first_name} ${report.reporter.last_name}` : "Unknown"}
             </Typography>
           </Box>
           <Box>
             <Typography variant="caption" fontWeight={700} color="text.secondary">{isPost ? "Post" : "User"}</Typography>
-            <Typography variant="body2" fontWeight={600}>
+            <Typography variant="body2" fontWeight={600} sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
               {isPost
                 ? (report.reportedListing?.title || "Deleted listing")
                 : (report.reportedUser ? `${report.reportedUser.first_name} ${report.reportedUser.last_name}` : "Unknown user")}
@@ -572,9 +679,9 @@ function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision,
         <Collapse in={expanded}>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mb: 1.5, mt: 1 }}>
             {isPost ? (
-              <PostDetail listing={fullListing} isDark={isDark} />
+              <PostDetail listing={fullListing} isDark={isDark} timeZone={timeZone} />
             ) : (
-              <MessageThread reporterId={report.reporter_id} reportedUserId={report.reported_user_id} isDark={isDark} />
+              <MessageThread reporterId={report.reporter_id} reportedUserId={report.reported_user_id} isDark={isDark} timeZone={timeZone} />
             )}
 
             {report.status === "pending" && (
@@ -582,7 +689,7 @@ function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision,
             )}
 
             {report.status === "reviewed" && (
-              <ReverseBanPanel report={report} onReverseBan={onReverseBan} processing={processing} isDark={isDark} />
+              <ReverseBanPanel report={report} onReverseBan={onReverseBan} processing={processing} isDark={isDark} timeZone={timeZone} />
             )}
           </Box>
         </Collapse>
@@ -626,7 +733,7 @@ function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision,
 // ============================================================
 // DASHBOARD PAGE
 // ============================================================
-export default function DashboardPage({ effectiveTheme = "light" }) {
+export default function DashboardPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE }) {
   const isDark = effectiveTheme === "dark";
   const isMobile = useMediaQuery("(max-width:600px)");
   const { profile } = useAuth();
@@ -862,7 +969,7 @@ export default function DashboardPage({ effectiveTheme = "light" }) {
                     fullListing={fullListings[report.reported_listing_id] || null}
                     onUpdateStatus={updateStatus} onDelete={setDeleteTarget}
                     onDecision={handleDecision} onReverseBan={handleReverseBan}
-                    processing={processing} isDark={isDark}
+                    processing={processing} isDark={isDark} timeZone={timeZone}
                   />
                 ))}
               </Box>

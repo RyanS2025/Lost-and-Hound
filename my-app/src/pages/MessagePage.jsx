@@ -12,8 +12,11 @@ import ReportModal from "../components/ReportModal";
 import { supabase } from "../../backend/supabaseClient";
 import apiFetch from "../utils/apiFetch";
 import { useAuth } from "../AuthContext";
+import { DEFAULT_TIME_ZONE, formatTime } from "../utils/timezone";
 
-export default function MessagesPage({ effectiveTheme = "light" }) {
+const MESSAGE_MAX_LENGTH = 500;
+
+export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE }) {
   const isDark = effectiveTheme === "dark";
   const isMobile = useMediaQuery("(max-width:900px)");
   const pageBg = isDark ? "#101214" : "#f9f5f4";
@@ -46,11 +49,12 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
   };
 
   const sendMessage = async () => {
-    if (!newMessage.trim() || !selectedConversation || isClosed) return;
+    const trimmedMessage = newMessage.trim();
+    if (!trimmedMessage || !selectedConversation || isClosed || trimmedMessage.length > MESSAGE_MAX_LENGTH) return;
     try {
       await apiFetch(`/api/conversations/${selectedConversation.id}/messages`, {
         method: "POST",
-        body: JSON.stringify({ content: newMessage }),
+        body: JSON.stringify({ content: trimmedMessage }),
       });
       setNewMessage("");
     } catch (err) {
@@ -352,19 +356,22 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
 
                       const isOwn = msg.sender_id === user.id;
                       return (
-                        <Box key={msg.id} sx={{ alignSelf: isOwn ? "flex-end" : "flex-start", maxWidth: { xs: "85%", md: "70%" } }}>
+                        <Box key={msg.id} sx={{ alignSelf: isOwn ? "flex-end" : "flex-start", maxWidth: { xs: "85%", md: "70%" }, minWidth: 0 }}>
                           <Box sx={{
                             p: "10px 14px", borderRadius: 3,
                             background: isOwn ? "#A84D48" : isDark ? "#2D2D2E" : "#f5eded",
                             color: isOwn ? "#fff" : isDark ? "#D7DADC" : "#333",
+                            maxWidth: "100%",
                           }}>
-                            <Typography fontSize={14}>{msg.content}</Typography>
+                            <Typography fontSize={14} sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                              {msg.content}
+                            </Typography>
                           </Box>
                           <Typography
                             variant="caption" color={mutedTextColor}
                             sx={{ display: "block", mt: 0.5, textAlign: isOwn ? "right" : "left" }}
                           >
-                            {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            {formatTime(msg.created_at, timeZone)}
                           </Typography>
                         </Box>
                       );
@@ -384,16 +391,23 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
                       <TextField
                         fullWidth size="small" placeholder="Type a message..."
                         value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
+                        onChange={(e) => setNewMessage(e.target.value.slice(0, MESSAGE_MAX_LENGTH))}
                         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                        helperText={`${newMessage.length}/${MESSAGE_MAX_LENGTH}`}
+                        inputProps={{ maxLength: MESSAGE_MAX_LENGTH }}
                         sx={{
                           "& .MuiOutlinedInput-root": {
                             background: isDark ? "#2D2D2E" : "#fff",
                             color: isDark ? "#D7DADC" : "inherit",
                           },
+                          "& .MuiFormHelperText-root": {
+                            textAlign: "right",
+                            color: isDark ? "#818384" : "text.secondary",
+                            mr: 0.5,
+                          },
                         }}
                       />
-                      <IconButton onClick={sendMessage} disabled={!newMessage.trim()} sx={{ color: "#A84D48" }}>
+                      <IconButton onClick={sendMessage} disabled={!newMessage.trim() || newMessage.trim().length > MESSAGE_MAX_LENGTH} sx={{ color: "#A84D48" }}>
                         <SendIcon />
                       </IconButton>
                     </Box>

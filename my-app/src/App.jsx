@@ -24,6 +24,7 @@ import MessageIcon from '@mui/icons-material/Message';
 import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/timezone';
 
 // --- App: Main application component with routing and navigation ---
 export default function App() {
@@ -35,6 +36,9 @@ export default function App() {
     const saved = localStorage.getItem("themeMode");
     return saved === "light" || saved === "dark" || saved === "auto" ? saved : "auto";
   });
+  const [timeZone, setTimeZone] = useState(() =>
+    resolveTimeZone(localStorage.getItem("timeZone") || DEFAULT_TIME_ZONE)
+  );
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches
   );
@@ -49,6 +53,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("themeMode", themeMode);
   }, [themeMode]);
+
+  useEffect(() => {
+    localStorage.setItem("timeZone", timeZone);
+  }, [timeZone]);
 
   const effectiveTheme = themeMode === "auto" ? (systemPrefersDark ? "dark" : "light") : themeMode;
   const darkAccent = "#FF4500";
@@ -254,7 +262,7 @@ export default function App() {
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                 {isPermanent
                   ? "Your account has been permanently suspended."
-                  : `Your account is suspended until ${bannedUntil.toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" })}.`}
+                  : `Your account is suspended until ${formatCalendarDate(bannedUntil, timeZone)}.`}
               </Typography>
               {profile.ban_reason && (
                 <Typography variant="body2" sx={{ mb: 2, color: effectiveTheme === "dark" ? "#FF6A33" : "#A84D48", fontWeight: 600 }}>
@@ -418,20 +426,22 @@ export default function App() {
       >
         <Box sx={{ mt: 0, pb: "48px" }}>
           <Routes>
-            <Route path="/" element={<FeedPage effectiveTheme={effectiveTheme} />} />
-            <Route path="/map" element={<MapPage effectiveTheme={effectiveTheme} />} />
-            <Route path="/messages" element={<MessagePage effectiveTheme={effectiveTheme} />} />
+            <Route path="/" element={<FeedPage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
+            <Route path="/map" element={<MapPage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
+            <Route path="/messages" element={<MessagePage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
             <Route
               path="/settings"
               element={
                 <SettingsPage
                   themeMode={themeMode}
                   setThemeMode={setThemeMode}
+                  timeZone={timeZone}
+                  setTimeZone={setTimeZone}
                   effectiveTheme={effectiveTheme}
                 />
               }
             />
-            <Route path="/moderation" element={<DashboardPage effectiveTheme={effectiveTheme} />} />
+            <Route path="/moderation" element={<DashboardPage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
             <Route path="*" element={<NotFoundPage effectiveTheme={effectiveTheme} />} />
           </Routes>
         </Box>
