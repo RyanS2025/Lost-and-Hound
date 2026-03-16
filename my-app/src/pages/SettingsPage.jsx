@@ -1,6 +1,7 @@
 // --- SettingsPage: User account settings UI ---
 import { useState } from "react";
-import { supabase } from "../supabaseClient";
+import { supabase } from "../../backend/supabaseClient";
+import apiFetch from "../utils/apiFetch";
 import {
   Container,
   Paper,
@@ -69,16 +70,16 @@ export default function SettingsPage({
     if (!user?.id) return;
     setDefaultCampus(campusId);
     setCampusMessage("");
-    const { error } = await supabase
-      .from("profiles")
-      .update({ default_campus: campusId })
-      .eq("id", user.id);
-    if (error) {
-      setCampusMessage("Error updating campus.");
-    } else {
+    try {
+      await apiFetch("/api/profile/campus", {
+        method: "PATCH",
+        body: JSON.stringify({ default_campus: campusId }),
+      });
       updateProfile({ default_campus: campusId });
       setCampusMessage("Default campus updated!");
       setTimeout(() => setCampusMessage(""), 2000);
+    } catch {
+      setCampusMessage("Error updating campus.");
     }
   };
 
@@ -96,16 +97,16 @@ export default function SettingsPage({
   const handleSaveName = async () => {
     if (!user?.id) return;
     setNameMessage("");
-    const { error } = await supabase
-      .from("profiles")
-      .update({ first_name: firstName, last_name: lastName })
-      .eq("id", user.id);
-    if (error) {
-      setNameMessage("Error updating name.");
-    } else {
+    try {
+      await apiFetch("/api/profile", {
+        method: "PATCH",
+        body: JSON.stringify({ first_name: firstName, last_name: lastName }),
+      });
       updateProfile({ first_name: firstName, last_name: lastName });
       setNameMessage("Name updated!");
       setEditMode(false);
+    } catch {
+      setNameMessage("Error updating name.");
     }
   };
 
@@ -113,11 +114,7 @@ export default function SettingsPage({
     if (!user?.id) return;
     setDeleteMessage("");
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .delete()
-        .eq("id", user.id);
-      if (error) throw error;
+      await apiFetch("/api/profile", { method: "DELETE" });
       await supabase.auth.signOut();
     } catch {
       setDeleteMessage("Error deleting account. Please contact support.");

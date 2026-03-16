@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { supabase } from "../supabaseClient";
+import { supabase } from "../../backend/supabaseClient";
 import {
   Paper,
   TextField,
@@ -9,6 +9,7 @@ import {
   Alert,
   Link as MuiLink,
 } from "@mui/material";
+import TermsModal from "../components/TermsModal";
 
 /* ───────────────────────────────────────────
    Confetti canvas — lightweight, no deps
@@ -111,15 +112,15 @@ export default function LoginPage({
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
+  // Terms modal state
+  const [termsOpen, setTermsOpen] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+
   // Refs to read Chrome's autofilled DOM values (Chrome bypasses onChange)
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
 
   // Sync Chrome autofill into React state on mount.
-  // Chrome fills the DOM directly without firing onChange, so React state
-  // stays "". When user backspaces to empty, React re-renders with value=""
-  // and Chrome re-fills — creating an un-clearable loop. Reading the DOM
-  // value into state on mount breaks that cycle.
   useEffect(() => {
     const sync = () => {
       const eInput = emailRef.current?.querySelector("input");
@@ -127,14 +128,12 @@ export default function LoginPage({
       if (eInput?.value && !email) setEmail(eInput.value);
       if (pInput?.value && !password) setPassword(pInput.value);
     };
-    // Chrome autofills at unpredictable times, so poll a few times
     const t1 = setTimeout(sync, 100);
     const t2 = setTimeout(sync, 500);
     const t3 = setTimeout(sync, 1000);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fade-out starts slightly after confetti
   const [fadeOut, setFadeOut] = useState(false);
 
   const BRAND = {
@@ -195,13 +194,48 @@ export default function LoginPage({
     },
   };
 
-  // When App tells us the transition is active (even on remount), start the fade
   useEffect(() => {
     if (loginTransition) {
       const timer = setTimeout(() => setFadeOut(true), 400);
       return () => clearTimeout(timer);
     }
   }, [loginTransition]);
+
+  // Reset terms accepted when switching between sign-up and sign-in
+  useEffect(() => {
+    setTermsAccepted(false);
+  }, [isSignUp]);
+
+  const doSignUp = async () => {
+    try {
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            first_name: firstName.trim(),
+            last_name: lastName.trim(),
+          },
+        },
+      });
+
+      if (signUpError) {
+        setError(cleanErrorMessage(signUpError.message || signUpError.code || "Unknown error"));
+        return;
+      }
+
+      if (data.user && data.user.identities && data.user.identities.length === 0) {
+        setError("An account with this email already exists.");
+        return;
+      }
+
+      setMessage("Account created! Check your Northeastern email for a verification link.");
+      setFirstName("");
+      setLastName("");
+    } catch (err) {
+      setError(cleanErrorMessage(err.message || err.code));
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -220,30 +254,12 @@ export default function LoginPage({
 
     try {
       if (isSignUp) {
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              first_name: firstName.trim(),
-              last_name: lastName.trim(),
-            },
-          },
-        });
-
-        if (signUpError) {
-          setError(cleanErrorMessage(signUpError.message || signUpError.code || "Unknown error"));
+        // Show terms modal first — sign-up happens after acceptance
+        if (!termsAccepted) {
+          setTermsOpen(true);
           return;
         }
-
-        if (data.user && data.user.identities && data.user.identities.length === 0) {
-          setError("An account with this email already exists.");
-          return;
-        }
-
-        setMessage("Account created! Check your Northeastern email for a verification link.");
-        setFirstName("");
-        setLastName("");
+        await doSignUp();
       } else {
         onLoginSuccess?.();
 
@@ -611,6 +627,17 @@ export default function LoginPage({
           </Box>
         </Paper>
       </Box>
+
+      {/* Terms & Conditions modal — shows before sign-up */}
+      <TermsModal
+        open={termsOpen}
+        onClose={() => setTermsOpen(false)}
+        onAccept={() => {
+          setTermsAccepted(true);
+          // Run sign-up now that terms are accepted
+          doSignUp();
+        }}
+      />
     </>
   );
 }

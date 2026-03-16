@@ -9,7 +9,8 @@ import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import FlagIcon from "@mui/icons-material/Flag";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ReportModal from "../components/ReportModal";
-import { supabase } from "../supabaseClient";
+import { supabase } from "../../backend/supabaseClient";
+import apiFetch from "../utils/apiFetch";
 import { useAuth } from "../AuthContext";
 
 export default function MessagesPage({ effectiveTheme = "light" }) {
@@ -35,80 +36,38 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
 
   const hideConversation = async (convo, e) => {
     e.stopPropagation();
-
-    const name = profile?.first_name ? `${profile.first_name} ${profile.last_name}` : "Someone";
-    await supabase.from("messages").insert({
-      conversation_id: convo.id,
-      sender_id: user.id,
-      content: `${name} has closed this conversation.`,
-      is_system: true,
-    });
-
-    await supabase.from("hidden_conversations").insert({
-      user_id: user.id,
-      conversation_id: convo.id,
-    });
-
-    await supabase.from("messages").delete().eq("conversation_id", convo.id);
-    await supabase.from("conversations").delete().eq("id", convo.id);
-
-    setConversations((prev) => prev.filter((c) => c.id !== convo.id));
-    if (selectedConversation?.id === convo.id) setSelectedConversation(null);
+    try {
+      await apiFetch(`/api/conversations/${convo.id}`, { method: "DELETE" });
+      setConversations((prev) => prev.filter((c) => c.id !== convo.id));
+      if (selectedConversation?.id === convo.id) setSelectedConversation(null);
+    } catch (err) {
+      console.error("Close conversation error:", err);
+    }
   };
 
   const sendMessage = async () => {
     if (!newMessage.trim() || !selectedConversation || isClosed) return;
-    await supabase.from("messages").insert({
-      conversation_id: selectedConversation.id,
-      sender_id: user.id,
-      content: newMessage,
-    });
-    setNewMessage("");
+    try {
+      await apiFetch(`/api/conversations/${selectedConversation.id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ content: newMessage }),
+      });
+      setNewMessage("");
+    } catch (err) {
+      console.error("Send message error:", err);
+    }
   };
 
   useEffect(() => {
     if (!user) return;
     const fetchConversations = async () => {
-      const { data } = await supabase
-        .from("conversations")
-        .select("*")
-        .or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`);
-      if (data) {
-        const { data: hiddenData } = await supabase
-          .from("hidden_conversations")
-          .select("conversation_id")
-          .eq("user_id", user.id);
-        const hiddenIds = new Set((hiddenData || []).map((h) => h.conversation_id));
-        const visible = data.filter((c) => !hiddenIds.has(c.id));
-        setConversations(visible);
-
-        const otherIds = visible.map((c) =>
-          c.participant_1 === user.id ? c.participant_2 : c.participant_1
-        );
-
-        const { data: profileData } = await supabase
-          .from("profiles")
-          .select("id, first_name, last_name")
-          .in("id", otherIds);
-
-        if (profileData) {
-          const map = {};
-          profileData.forEach((p) => { map[p.id] = p; });
-          setProfiles(map);
-        }
-
-        const listingIds = visible.map((c) => c.listing_id).filter(Boolean);
-        if (listingIds.length > 0) {
-          const { data: listingData } = await supabase
-            .from("listings")
-            .select("item_id, title")
-            .in("item_id", listingIds);
-          if (listingData) {
-            const map = {};
-            listingData.forEach((l) => { map[l.item_id] = l; });
-            setListings(map);
-          }
-        }
+      try {
+        const { conversations: convos, profiles: profileData, listings: listingData } = await apiFetch("/api/conversations");
+        setConversations(convos);
+        setProfiles(profileData);
+        setListings(listingData);
+      } catch (err) {
+        console.error("Fetch conversations error:", err);
       }
     };
     fetchConversations();
@@ -127,21 +86,17 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
     let active = true;
 
     const setup = async () => {
-      const { data } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", selectedConversation.id)
-        .order("created_at", { ascending: true });
-
-      if (!active) return;
-      if (data) setMessages(data);
-
-      const { count } = await supabase
-        .from("hidden_conversations")
-        .select("id", { count: "exact", head: true })
-        .eq("conversation_id", selectedConversation.id);
-      if (!active) return;
-      setIsClosed((count ?? 0) > 0);
+      try {
+        const { messages: msgs, isClosed: closed } = await apiFetch(
+          `/api/conversations/${selectedConversation.id}/messages`
+        );
+        if (active) {
+          setMessages(msgs);
+          setIsClosed(closed);
+        }
+      } catch (err) {
+        console.error("Fetch messages error:", err);
+      }
 
       channel = supabase
         .channel(`messages-${selectedConversation.id}`)
@@ -185,32 +140,26 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
     }
 
     const fetchAndSelect = async () => {
-      const { data } = await supabase
-        .from("conversations")
-        .select("*")
-        .eq("id", convoId)
-        .single();
-      if (!data) return;
+      try {
+        const { conversation, profile: otherProfile, listing } = await apiFetch(`/api/conversations/${convoId}`);
 
-      handledConvoIdRef.current = convoId;
+        handledConvoIdRef.current = convoId;
 
-      const otherId = data.participant_1 === user?.id ? data.participant_2 : data.participant_1;
-      const { data: p } = await supabase.from("profiles").select("id, first_name, last_name").eq("id", otherId).single();
-      if (p) setProfiles((prev) => ({ ...prev, [p.id]: p }));
+        if (otherProfile) setProfiles((prev) => ({ ...prev, [otherProfile.id]: otherProfile }));
+        if (listing) setListings((prev) => ({ ...prev, [listing.item_id]: listing }));
 
-      if (data.listing_id) {
-        const { data: l } = await supabase.from("listings").select("item_id, title").eq("item_id", data.listing_id).single();
-        if (l) setListings((prev) => ({ ...prev, [l.item_id]: l }));
+        setConversations((prev) =>
+          prev.some((c) => c.id === convoId) ? prev : [conversation, ...prev]
+        );
+        setSelectedConversation(conversation);
+      } catch (err) {
+        console.error("Fetch conversation error:", err);
       }
-
-      setConversations((prev) => prev.some((c) => c.id === convoId) ? prev : [data, ...prev]);
-      setSelectedConversation(data);
     };
 
     fetchAndSelect();
   }, [conversations, searchParams]);
 
-  // Helper to get the other participant's info for the selected conversation
   const getOtherParticipant = () => {
     if (!selectedConversation) return null;
     const otherId = selectedConversation.participant_1 === user.id
@@ -244,13 +193,13 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
           px: { xs: 1.25, sm: 2, md: 3 },
           py: { xs: 1.25, sm: 2, md: 3 },
           boxSizing: "border-box",
-          minHeight: "calc(100dvh - 64px - 36px)",
-          overflow: { xs: "visible", md: "hidden" },
+          height: "calc(100dvh - 64px - 36px)",
+          overflow: "hidden",
           color: isDark ? "#D7DADC" : "inherit",
         }}
       >
       <Box sx={{ width: "100%", maxWidth: 900, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <Typography variant="h4" fontWeight={900} sx={{ mb: 2.5 }}>
+        <Typography variant="h4" fontWeight={900} sx={{ mb: 2.5, flexShrink: 0 }}>
           Messages
         </Typography>
 
@@ -258,9 +207,10 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
           elevation={2}
           sx={{
             flex: 1, borderRadius: 3,
-            border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc", overflow: "hidden",
+            border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc",
+            overflow: "hidden",
             background: isDark ? "#1A1A1B" : "#fff",
-            minHeight: { xs: 520, md: 0 },
+            minHeight: 0,
           }}
         >
           <Box sx={{ display: "flex", flexDirection: "row", height: "100%" }}>
@@ -336,7 +286,7 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
               ) : (
                 <Box sx={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
                   {isMobile && (
-                    <Box sx={{ px: 1.25, py: 0.75, borderBottom: isDark ? "1px solid rgba(255,255,255,0.12)" : "1px solid #ecdcdc" }}>
+                    <Box sx={{ px: 1.25, py: 0.75, borderBottom: isDark ? "1px solid rgba(255,255,255,0.12)" : "1px solid #ecdcdc", flexShrink: 0 }}>
                       <Button
                         size="small"
                         startIcon={<ArrowBackIcon fontSize="small" />}
@@ -351,7 +301,7 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
                   <Box
                     sx={{
                       display: "flex", alignItems: "center", justifyContent: "space-between",
-                      gap: 1, px: 2, py: 1,
+                      gap: 1, px: 2, py: 1, flexShrink: 0,
                       background: isDark ? "#3a2f22" : "#fff8e1", borderBottom: isDark ? "1px solid rgba(255,193,7,0.35)" : "1px solid #ffe082",
                     }}
                   >
@@ -380,8 +330,8 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
                     })()}
                   </Box>
 
-                  {/* Messages */}
-                  <Box sx={{ flex: 1, overflowY: "auto", p: 2, display: "flex", flexDirection: "column", gap: 1 }}>
+                  {/* Messages — scrollable area */}
+                  <Box sx={{ flex: 1, overflowY: "auto", p: 2, display: "flex", flexDirection: "column", gap: 1, minHeight: 0 }}>
                     {messages.map((msg) => {
                       if (msg.is_system) {
                         return (
@@ -422,15 +372,15 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
                     <div ref={bottomRef} />
                   </Box>
 
-                  {/* Input */}
+                  {/* Input — pinned to bottom */}
                   {isClosed ? (
-                    <Box sx={{ p: 2, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", textAlign: "center" }}>
+                    <Box sx={{ p: 2, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", textAlign: "center", flexShrink: 0 }}>
                       <Typography variant="caption" fontWeight={700} color={mutedTextColor}>
                         This conversation has been closed.
                       </Typography>
                     </Box>
                   ) : (
-                    <Box sx={{ display: "flex", alignItems: "center", p: 1.5, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", gap: 1 }}>
+                    <Box sx={{ display: "flex", alignItems: "center", p: 1.5, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", gap: 1, flexShrink: 0 }}>
                       <TextField
                         fullWidth size="small" placeholder="Type a message..."
                         value={newMessage}

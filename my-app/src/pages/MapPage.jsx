@@ -14,9 +14,8 @@ import ListIcon from "@mui/icons-material/ViewList";
 import SearchIcon from "@mui/icons-material/Search";
 import FlagIcon from "@mui/icons-material/Flag";
 import ReportModal from "../components/ReportModal";
-import { supabase } from "../supabaseClient";
 import { CAMPUSES } from "../constants/campuses";
-import { removeExpiredUnresolvedListings } from "../utils/listingExpiry";
+import apiFetch from "../utils/apiFetch";
 
 setOptions({
   key: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
@@ -77,7 +76,6 @@ function formatDate(d) {
 
 // --- DetailModal ---
 function DetailModal({ item, onClose, onClaim, isDark = false }) {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const [claimed, setClaimed] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
@@ -89,7 +87,6 @@ function DetailModal({ item, onClose, onClaim, isDark = false }) {
         background: isDark ? "#1A1A1B" : "#fff", borderRadius: 4, p: "26px", width: "100%", maxWidth: 520,
         maxHeight: "90vh", overflowY: "auto", outline: "none",
         border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
-        // Prevent modal from being too wide on tiny screens
         mx: 1.5,
         boxSizing: "border-box",
         width: { xs: "calc(100% - 24px)", sm: "100%" },
@@ -152,10 +149,18 @@ function DetailModal({ item, onClose, onClaim, isDark = false }) {
             variant="outlined"
             sx={{ borderColor: isDark ? "rgba(255,255,255,0.2)" : "#ecdcdc", color: "#A84D48", fontWeight: 800, borderRadius: 2, flexShrink: 0 }}
             onClick={async () => {
-              const { data } = await supabase.from("conversations").select("id").eq("listing_id", item.item_id).eq("participant_1", user.id).maybeSingle();
-              if (data != null) { navigate(`/messages?conversation=${data.id}`); return; }
-              const { data: created } = await supabase.from("conversations").insert({ listing_id: item.item_id, participant_1: user.id, participant_2: item.poster_id }).select("id").single();
-              if (created) navigate(`/messages?conversation=${created.id}`);
+              try {
+                const result = await apiFetch("/api/conversations", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    listing_id: item.item_id,
+                    other_user_id: item.poster_id,
+                  }),
+                });
+                if (result?.id) navigate(`/messages?conversation=${result.id}`);
+              } catch (err) {
+                console.error("Failed to open conversation:", err);
+              }
             }}
           >
             Message
@@ -281,7 +286,6 @@ export default function MapPage({ effectiveTheme = "light" }) {
   const infoWindowRef = useRef(null);
   const campusCenterMarkerRef = useRef(null);
 
-  // Read default campus from profile, fall back to "boston"
   const initialCampus = profile?.default_campus || "boston";
 
   const [selectedCampus, setSelectedCampus] = useState(initialCampus);
@@ -294,21 +298,17 @@ export default function MapPage({ effectiveTheme = "light" }) {
   const [showPanel, setShowPanel] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
-  // Mobile bottom-drawer open state (separate from showPanel to avoid layout fighting)
+  const [showResolved, setShowResolved] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const activeCampus = CAMPUSES.find((c) => c.id === selectedCampus) ?? CAMPUSES[0];
 
   // ---- Fetch buildings for active campus ----
   useEffect(() => {
-    supabase
-      .from("locations")
-      .select("name, coordinates")
-      .eq("campus", selectedCampus)
-      .order("name", { ascending: true })
-      .then(({ data }) => {
-        if (!data) return;
-        const parsed = data
+    (async () => {
+      try {
+        const data = await apiFetch(`/api/locations?campus=${encodeURIComponent(selectedCampus)}`);
+        const parsed = (data || [])
           .map((loc) => {
             const coords = parseCoordinates(loc.coordinates);
             if (!coords) return null;
@@ -316,21 +316,22 @@ export default function MapPage({ effectiveTheme = "light" }) {
           })
           .filter(Boolean);
         setCampusBuildings(parsed);
-      });
+      } catch (err) {
+        console.error("Failed to fetch campus locations:", err);
+        setCampusBuildings([]);
+      }
+    })();
   }, [selectedCampus]);
 
   // ---- Fetch all listings ----
   const fetchItems = useCallback(async () => {
     setLoading(true);
-    await removeExpiredUnresolvedListings();
 
-    const { data, error } = await supabase
-      .from("listings")
-      .select("*, locations(name, coordinates)")
-      .order("date", { ascending: false });
+    try {
+      await apiFetch("/api/listings/cleanup", { method: "POST" });
+      const data = await apiFetch("/api/listings");
 
-    if (!error && data) {
-      const normalized = data.map((item) => {
+      const normalized = (data || []).map((item) => {
         let lat = item.lat;
         let lng = item.lng;
         if (lat == null && item.locations?.coordinates) {
@@ -340,8 +341,12 @@ export default function MapPage({ effectiveTheme = "light" }) {
         return { ...item, _lat: lat, _lng: lng };
       });
       setItems(normalized);
+    } catch (err) {
+      console.error("Failed to fetch listings:", err);
+      setItems([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
@@ -369,9 +374,13 @@ export default function MapPage({ effectiveTheme = "light" }) {
   };
 
   const handleClaim = async (item_id) => {
-    await supabase.from("listings").update({ resolved: true }).eq("item_id", item_id);
-    setItems(prev => prev.map(i => i.item_id === item_id ? { ...i, resolved: true } : i));
-    if (selectedItem?.item_id === item_id) setSelectedItem(prev => ({ ...prev, resolved: true }));
+    try {
+      await apiFetch(`/api/listings/${item_id}/resolve`, { method: "PATCH" });
+      setItems(prev => prev.map(i => i.item_id === item_id ? { ...i, resolved: true } : i));
+      if (selectedItem?.item_id === item_id) setSelectedItem(prev => ({ ...prev, resolved: true }));
+    } catch (err) {
+      console.error("Failed to resolve listing:", err);
+    }
   };
 
   // ---- Initialize Google Map + place initial campus marker ----
@@ -388,7 +397,7 @@ export default function MapPage({ effectiveTheme = "light" }) {
         center: campus.center,
         zoom: campus.zoom,
         disableDefaultUI: true,
-        zoomControl: !isMobile, // hide zoom buttons on mobile — pinch-to-zoom works
+        zoomControl: !isMobile,
         gestureHandling: "greedy",
         mapId: "LOST_HOUND_MAP",
         clickableIcons: false,
@@ -396,27 +405,20 @@ export default function MapPage({ effectiveTheme = "light" }) {
 
       mapInstanceRef.current = map;
 
-      // Force the map to repaint after the container has its final pixel size.
-      // The modern Maps JS API (importLibrary-based) uses its own internal
-      // ResizeObserver, but it can miss the initial size if the container is
-      // still being laid out.  moveCamera() forces a full re-render.
       const kick = () => {
         try {
-          // Modern API — forces tile fetch & repaint
           map.moveCamera({ center: campus.center, zoom: campus.zoom });
         } catch {
-          // Fallback: legacy resize event
           if (window.google?.maps?.event) {
             window.google.maps.event.trigger(map, "resize");
             map.setCenter(campus.center);
           }
         }
       };
-      // Staggered kicks to cover layout settling across browsers
       requestAnimationFrame(kick);
       setTimeout(kick, 150);
       setTimeout(kick, 600);
-      setTimeout(kick, 1500);  // extra late kick for slow mobile renders
+      setTimeout(kick, 1500);
 
       campusCenterMarkerRef.current = new AdvancedMarkerElement({
         map,
@@ -438,15 +440,12 @@ export default function MapPage({ effectiveTheme = "light" }) {
     })();
 
     return () => { cancelled = true; };
-    // Note: isMobile is intentionally in the dep array only at init time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCampus]);
 
-  // Keep the click handler's isMobile reference fresh without re-creating the map
   const isMobileRef = useRef(isMobile);
   useEffect(() => { isMobileRef.current = isMobile; }, [isMobile]);
 
-  // Update the map click listener when isMobile changes (so drawer vs panel stays correct)
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
@@ -595,14 +594,13 @@ export default function MapPage({ effectiveTheme = "light" }) {
     if (!searchPin) { setNearbyItems([]); return; }
     const nearby = items.filter((i) => {
       if (i._lat == null || i._lng == null) return false;
+      if (!showResolved && i.resolved) return false;
       return haversine(searchPin, { lat: i._lat, lng: i._lng }) <= radius;
     });
     setNearbyItems(nearby);
-  }, [searchPin, radius, items]);
+  }, [searchPin, radius, items, showResolved]);
 
   // ---- Trigger map resize when layout changes ----
-  // IMPORTANT: read mapInstanceRef.current inside the callback (not captured at
-  // setup time) because the map is created asynchronously after this effect runs.
   useEffect(() => {
     const el = mapRef.current;
     if (!el) return;
@@ -614,7 +612,6 @@ export default function MapPage({ effectiveTheme = "light" }) {
         const center = map.getCenter();
         if (center) map.moveCamera({ center: { lat: center.lat(), lng: center.lng() } });
       } catch {
-        // Fallback for older API versions
         if (window.google?.maps?.event) {
           const center = map.getCenter();
           window.google.maps.event.trigger(map, "resize");
@@ -627,7 +624,6 @@ export default function MapPage({ effectiveTheme = "light" }) {
     return () => observer.disconnect();
   }, []);
 
-  // Also handle the visual-viewport resize (mobile browser chrome showing/hiding)
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
@@ -651,7 +647,6 @@ export default function MapPage({ effectiveTheme = "light" }) {
     setNearbyItems([]);
   };
 
-  // ---- Derived: whether the mobile FAB should show ----
   const showMobileFab = isMobile && !!searchPin && !drawerOpen;
 
   return (
@@ -681,7 +676,6 @@ export default function MapPage({ effectiveTheme = "light" }) {
             justifyContent: { xs: "flex-start", md: "center" },
             overflowX: "auto",
             flexShrink: 0,
-            // Prevent momentum scrolling from interfering with map
             WebkitOverflowScrolling: "touch",
             "&::-webkit-scrollbar": { height: 4 },
           }}
@@ -716,7 +710,19 @@ export default function MapPage({ effectiveTheme = "light" }) {
           gap: 1, mb: 1.5, flexShrink: 0,
         }}>
           <Typography variant={isMobile ? "h5" : "h4"} fontWeight={900}>Campus Map</Typography>
-          <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+          <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <Chip
+              label={showResolved ? "Hide Resolved" : "Show Resolved"}
+              clickable
+              onClick={() => setShowResolved(v => !v)}
+              sx={{
+                fontWeight: 800, fontSize: 12,
+                background: showResolved ? (isDark ? "#1f3527" : "#dcfce7") : isDark ? "#2D2D2E" : "#f5f5f5",
+                color: showResolved ? (isDark ? "#6ee7b7" : "#16a34a") : isDark ? "#818384" : "#999",
+                border: `1.5px solid ${showResolved ? (isDark ? "rgba(110,231,183,0.42)" : "#86efac") : isDark ? "rgba(255,255,255,0.18)" : "#e0e0e0"}`,
+                "&:hover": { background: showResolved ? (isDark ? "#27412f" : "#bbf7d0") : isDark ? "#343536" : "#ececec" },
+              }}
+            />
             {searchPin && (
               <Button size="small" onClick={clearSearch} startIcon={<CloseIcon />} sx={{ color: "#A84D48", fontWeight: 700, background: isDark ? "#1A1A1B" : "#fff", borderRadius: 2, px: 1.25 }}>
                 Clear
@@ -743,24 +749,19 @@ export default function MapPage({ effectiveTheme = "light" }) {
         <Box sx={{
           display: "flex", gap: 2.5,
           flexDirection: { xs: "column", md: "row" },
-          // On mobile the map should fill the remaining vertical space
           flex: isMobile ? 1 : undefined,
-          minHeight: 0, // allow flex children to shrink
+          minHeight: 0,
         }}>
           {/* Map container */}
           <Paper
             elevation={3}
             sx={{
-              // On desktop: calc-based height. On mobile: use dvh so the map always
-              // gets real pixels even if the flex parent chain doesn't provide them.
-              // 160px ≈ nav bar + campus chips + header + padding.
               flex: 1,
               minHeight: { xs: 280, md: 400 },
               height: { xs: "calc(100dvh - 160px)", md: "calc(100vh - 240px)" },
               overflow: "hidden", borderRadius: 3, position: "relative",
               border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
               background: isDark ? "#1A1A1B" : "#fff",
-              // Prevent touch events on the Paper from being swallowed
               touchAction: "none",
             }}
           >
@@ -769,13 +770,12 @@ export default function MapPage({ effectiveTheme = "light" }) {
                 <CircularProgress sx={{ color: "#A84D48" }} />
               </Box>
             )}
-            {/* Map div — position:absolute to fill the Paper regardless of flex/% resolution order */}
             <Box
               ref={mapRef}
               sx={{
                 position: "absolute",
                 inset: 0,
-                touchAction: "none",   // let Google Maps handle all touch
+                touchAction: "none",
                 WebkitUserSelect: "none",
                 userSelect: "none",
               }}
@@ -941,7 +941,6 @@ export default function MapPage({ effectiveTheme = "light" }) {
               mapInstanceRef={mapInstanceRef}
               setSelectedItem={(item) => {
                 setSelectedItem(item);
-                // Don't auto-close drawer — user may want to pick another item
               }}
             />
           </Box>

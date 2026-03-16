@@ -5,8 +5,7 @@ import {
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
-import { supabase } from "../supabaseClient";
-import { useAuth } from "../AuthContext";
+import apiFetch from "../utils/apiFetch";
 
 const POST_REASONS = [
   "False or misleading listing",
@@ -25,7 +24,6 @@ const USER_REASONS = [
 ];
 
 export default function ReportModal({ open, onClose, type, targetId, targetLabel }) {
-  const { user } = useAuth();
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
 
@@ -52,10 +50,8 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
     setError("");
 
     const row = {
-      reporter_id: user.id,
       reason,
       details: details.trim() || null,
-      status: "pending",
     };
 
     if (type === "post") {
@@ -64,13 +60,16 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
       row.reported_user_id = targetId;
     }
 
-    const { error: insertErr } = await supabase.from("reports").insert(row);
-
-    setSubmitting(false);
-    if (insertErr) {
-      setError("Something went wrong. Please try again.");
-    } else {
+    try {
+      await apiFetch("/api/reports", {
+        method: "POST",
+        body: JSON.stringify(row),
+      });
       setSubmitted(true);
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
