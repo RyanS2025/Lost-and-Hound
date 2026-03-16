@@ -1,6 +1,6 @@
 import './App.css';
 import { Routes, Route, Link } from "react-router-dom";
-import { supabase } from "./supabaseClient";
+import { supabase } from "../backend/supabaseClient";
 import { useAuth } from "./AuthContext";
 import LoginPage from "./pages/LoginPage";
 import FeedPage from './pages/FeedPage';
@@ -18,14 +18,18 @@ import MapIcon from '@mui/icons-material/Map';
 import SettingsIcon from '@mui/icons-material/Settings';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import LightModeIcon from '@mui/icons-material/LightMode';
+import BrightnessAutoIcon from '@mui/icons-material/BrightnessAuto';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MessageIcon from '@mui/icons-material/Message';
 import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 
 // --- App: Main application component with routing and navigation ---
 export default function App() {
   const { user, profile, logout } = useAuth();
+  const darkBg = "#101214";
+  const isCompactNav = useMediaQuery("(max-width:1100px)");
 
   const [themeMode, setThemeMode] = useState(() => {
     const saved = localStorage.getItem("themeMode");
@@ -49,10 +53,12 @@ export default function App() {
   const effectiveTheme = themeMode === "auto" ? (systemPrefersDark ? "dark" : "light") : themeMode;
   const darkAccent = "#FF4500";
   const darkAccentHover = "#E03D00";
+  const pageDot = effectiveTheme === "dark" ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
+  const pageBg = effectiveTheme === "dark" ? darkBg : "#f9f5f4";
 
   useEffect(() => {
     document.documentElement.style.colorScheme = effectiveTheme;
-    document.body.style.backgroundColor = effectiveTheme === "dark" ? "#030303" : "#f5f0f0";
+    document.body.style.backgroundColor = effectiveTheme === "dark" ? darkBg : "#f5f0f0";
   }, [effectiveTheme]);
 
   const navBg = effectiveTheme === "dark" ? "#1A1A1B" : "#A84D48";
@@ -67,7 +73,7 @@ export default function App() {
           mode: effectiveTheme,
           primary: { main: effectiveTheme === "dark" ? darkAccent : "#A84D48" },
           background: {
-            default: effectiveTheme === "dark" ? "#030303" : "#f5f0f0",
+            default: effectiveTheme === "dark" ? darkBg : "#f5f0f0",
             paper: effectiveTheme === "dark" ? "#1A1A1B" : "#ffffff",
           },
           text: {
@@ -86,16 +92,35 @@ export default function App() {
               },
             },
           },
+          MuiOutlinedInput: {
+            styleOverrides: {
+              root: {
+                backgroundColor: effectiveTheme === "dark" ? "#2D2D2E" : "#fff",
+              },
+            },
+          },
           MuiTextField: {
             defaultProps: {
               autoComplete: "off",
             },
           },
-          MuiButton: {
+          MuiChip: {
             styleOverrides: {
               root: {
-                textTransform: "none",
+                backgroundColor: effectiveTheme === "dark" ? "#1A1A1B" : "#fff",
               },
+            },
+          },
+          MuiButton: {
+            styleOverrides: {
+              root: ({ ownerState }) => ({
+                textTransform: "none",
+                ...(ownerState.variant === "outlined"
+                  ? {
+                      backgroundColor: effectiveTheme === "dark" ? "#1A1A1B" : "#fff",
+                    }
+                  : {}),
+              }),
             },
           },
         },
@@ -104,12 +129,26 @@ export default function App() {
   );
 
   const toggleThemeFromNav = () => {
-    if (effectiveTheme === "dark") {
-      setThemeMode("light");
-    } else {
+    if (themeMode === "auto") {
+      return;
+    }
+    if (themeMode === "light") {
       setThemeMode("dark");
+    } else {
+      setThemeMode("light");
     }
   };
+
+  const navThemeToggle =
+    themeMode === "auto"
+      ? {
+          label: `Default (${effectiveTheme === "dark" ? "Dark" : "Light"})`,
+          icon: <BrightnessAutoIcon />,
+          disabled: true,
+        }
+      : themeMode === "light"
+        ? { label: "Light", icon: <LightModeIcon />, disabled: false }
+        : { label: "Dark", icon: <DarkModeIcon />, disabled: false };
 
   // LoginPage calls onLoginSuccess right before signing in.
   // This holds the LoginPage on screen for 1.8s so the animation can play.
@@ -127,7 +166,11 @@ export default function App() {
     return (
       <ThemeProvider theme={appTheme}>
         <CssBaseline />
-        <LoginPage loginTransition={loginTransition} onLoginSuccess={onLoginSuccess} />
+        <LoginPage
+          loginTransition={loginTransition}
+          onLoginSuccess={onLoginSuccess}
+          effectiveTheme={effectiveTheme}
+        />
       </ThemeProvider>
     );
   }
@@ -147,11 +190,18 @@ export default function App() {
           <CssBaseline />
         <>
           <AppBar position="fixed" sx={{ background: navBg, borderBottom: navBorder }}>
-            <Toolbar>
+            <Toolbar
+              sx={{
+                gap: { xs: 0.5, sm: 1 },
+                px: { xs: 1, sm: 2 },
+                overflowX: "auto",
+                "&::-webkit-scrollbar": { display: "none" },
+              }}
+            >
               <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                 <Box component="img" src="/LostandHoundLogo.PNG" alt="Lost & Hound logo"
                   sx={{ height: 32, width: 32, objectFit: "contain", filter: "brightness(0) invert(1)" }} />
-                <Typography variant="h6" fontWeight={900} sx={{ letterSpacing: 0.5 }}>
+                <Typography variant="h6" fontWeight={900} sx={{ letterSpacing: 0.5, display: { xs: "none", sm: "block" } }}>
                   Lost &amp; Hound
                 </Typography>
               </Box>
@@ -159,24 +209,32 @@ export default function App() {
               <Button
                 color="inherit"
                 onClick={toggleThemeFromNav}
-                startIcon={effectiveTheme === "dark" ? <LightModeIcon /> : <DarkModeIcon />}
-                sx={{ mr: 1 }}
+                startIcon={navThemeToggle.icon}
+                disabled={navThemeToggle.disabled}
+                sx={{ mr: 0.5, minWidth: 0 }}
               >
-                {effectiveTheme === "dark" ? "Light" : "Dark"}
+                {!isCompactNav ? navThemeToggle.label : null}
               </Button>
-              <Button color="inherit" onClick={logout} endIcon={<LogoutIcon />}>Log Out</Button>
+              <Button color="inherit" onClick={logout} endIcon={<LogoutIcon />} sx={{ minWidth: 0 }}>
+                {!isCompactNav ? "Log Out" : null}
+              </Button>
             </Toolbar>
           </AppBar>
           <Toolbar />
+          <Box
+            sx={{
+              position: "fixed",
+              inset: 0,
+              zIndex: -1,
+              backgroundColor: pageBg,
+              backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`,
+              backgroundSize: "24px 24px",
+            }}
+          />
           <Box sx={{
             display: "flex", justifyContent: "center", alignItems: "center",
-            minHeight: "calc(100vh - 140px)", p: 3,
-            background:
-              effectiveTheme === "dark"
-                ? "radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)"
-                : "radial-gradient(circle, #d4b5b5 1px, transparent 1px)",
-            backgroundColor: effectiveTheme === "dark" ? "#030303" : "#f5f0f0",
-            backgroundSize: "24px 24px",
+            minHeight: "calc(100vh - 100px)", p: 3,
+            boxSizing: "border-box",
           }}>
               <Paper elevation={0} sx={{
                 p: 4, pt: 0, borderRadius: 3, textAlign: "center", maxWidth: 380,
@@ -217,7 +275,7 @@ export default function App() {
               left: 0,
               right: 0,
               height: 36,
-              px: 3,
+              px: { xs: 1.5, sm: 3 },
               borderTop: footerBorder,
               background: footerBg,
               display: "flex",
@@ -226,8 +284,11 @@ export default function App() {
               zIndex: 1200,
             }}
           >
-            <Typography variant="caption" color="text.disabled" fontWeight={600}>
+            <Typography variant="caption" color="text.disabled" fontWeight={600} sx={{ display: { xs: "none", sm: "block" } }}>
               🐾 Lost &amp; Hound · Built by Nahom Hailemelekot, Benjamin Haillu, Liam Pulsifer, and Ryan Sinha · Oasis @ Northeastern
+            </Typography>
+            <Typography variant="caption" color="text.disabled" fontWeight={700} sx={{ display: { xs: "block", sm: "none" } }}>
+              Lost &amp; Hound · Oasis
             </Typography>
           </Box>
         </>
@@ -246,11 +307,18 @@ export default function App() {
       <CssBaseline />
     <>
     <AppBar position="fixed" sx={{ background: navBg, borderBottom: navBorder }}>
-        <Toolbar>
+        <Toolbar
+          sx={{
+            gap: { xs: 0.5, sm: 1 },
+            px: { xs: 1, sm: 2 },
+            overflowX: "auto",
+            "&::-webkit-scrollbar": { display: "none" },
+          }}
+        >
           <Box
             component={Link}
             to="/"
-            sx={{ display: "flex", alignItems: "center", gap: 1, mr: 3, textDecoration: "none", color: "inherit" }}
+            sx={{ display: "flex", alignItems: "center", gap: 1, mr: { xs: 1, sm: 2 }, textDecoration: "none", color: "inherit", flexShrink: 0 }}
           >
             <Box
               component="img"
@@ -258,7 +326,7 @@ export default function App() {
               alt="Lost & Hound logo"
               sx={{ height: 32, width: 32, objectFit: "contain", filter: "brightness(0) invert(1)" }}
             />
-            <Typography variant="h6" fontWeight={900} sx={{ letterSpacing: 0.5 }}>
+            <Typography variant="h6" fontWeight={900} sx={{ letterSpacing: 0.5, display: { xs: "none", sm: "block" } }}>
               Lost &amp; Hound
             </Typography>
           </Box>
@@ -267,26 +335,27 @@ export default function App() {
             component={Link}
             to="/"
             startIcon={<FeedIcon />}
-            sx={{ mr: 2 }}
+            sx={{ mr: { xs: 0.5, sm: 1 }, minWidth: 0 }}
           >
-            Feed
+            {!isCompactNav ? "Feed" : null}
           </Button>
           <Button
             color="inherit"
             component={Link}
             to="/map"
             startIcon={<MapIcon />}
-            sx={{ mr: 2 }}
+            sx={{ mr: { xs: 0.5, sm: 1 }, minWidth: 0 }}
           >
-            Map
+            {!isCompactNav ? "Map" : null}
           </Button>
           <Button
             color="inherit"
             component={Link}
             to="/messages"
             startIcon={<MessageIcon />}
+            sx={{ minWidth: 0 }}
           >
-            Messages
+            {!isCompactNav ? "Messages" : null}
           </Button>
           <Box sx={{ flexGrow: 1 }} />
           {profile?.is_moderator && (
@@ -299,7 +368,7 @@ export default function App() {
               <SupervisorAccountIcon />
             </Button>
           )}
-          <Typography variant="body1" sx={{ mr: 2 }}>
+          <Typography variant="body1" sx={{ mr: 1, display: { xs: "none", md: "block" } }}>
             {profile?.first_name && profile?.last_name
               ? profile.first_name + " " + profile.last_name
               : user.email}
@@ -307,26 +376,28 @@ export default function App() {
           <Button
             color="inherit"
             onClick={toggleThemeFromNav}
-            startIcon={effectiveTheme === "dark" ? <LightModeIcon /> : <DarkModeIcon />}
-            sx={{ mr: 2 }}
+            startIcon={navThemeToggle.icon}
+            disabled={navThemeToggle.disabled}
+            sx={{ mr: { xs: 0.5, sm: 1 }, minWidth: 0 }}
           >
-            {effectiveTheme === "dark" ? "Light" : "Dark"}
+            {!isCompactNav ? navThemeToggle.label : null}
           </Button>
           <Button
             color="inherit"
             component={Link}
             to="/settings"
             endIcon={<SettingsIcon />}
-            sx={{ mr: 2 }}
+            sx={{ mr: { xs: 0.5, sm: 1 }, minWidth: 0 }}
           >
-            Settings
+            {!isCompactNav ? "Settings" : null}
           </Button>
           <Button
             color="inherit"
             onClick={logout}
             endIcon={<LogoutIcon />}
+            sx={{ minWidth: 0 }}
           >
-            Log Out
+            {!isCompactNav ? "Log Out" : null}
           </Button>
         </Toolbar>
       </AppBar>
@@ -374,7 +445,7 @@ export default function App() {
           left: 0,
           right: 0,
           height: 36,
-          px: 3,
+          px: { xs: 1.5, sm: 3 },
           borderTop: footerBorder,
           background: footerBg,
           display: "flex",
@@ -383,8 +454,11 @@ export default function App() {
           zIndex: 1200,
         }}
       >
-        <Typography variant="caption" color="text.disabled" fontWeight={600}>
+        <Typography variant="caption" color="text.disabled" fontWeight={600} sx={{ display: { xs: "none", sm: "block" } }}>
           🐾 Lost &amp; Hound · Built by Nahom Hailemelekot, Benjamin Haillu, Liam Pulsifer, and Ryan Sinha · Oasis @ Northeastern
+        </Typography>
+        <Typography variant="caption" color="text.disabled" fontWeight={700} sx={{ display: { xs: "block", sm: "none" } }}>
+          Lost &amp; Hound · Oasis
         </Typography>
       </Box>
     </>

@@ -4,20 +4,28 @@ import { Box, Paper, Typography, Button } from "@mui/material";
 export default function NotFoundPage({ effectiveTheme = "light" }) {
   const navigate = useNavigate();
   const isDark = effectiveTheme === "dark";
+  const pageBg = isDark ? "#101214" : "#f9f5f4";
+  const pageDot = isDark ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
   return (
+    <>
+      <Box sx={{
+        position: "fixed",
+        inset: 0,
+        zIndex: -1,
+        backgroundColor: pageBg,
+        backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`,
+        backgroundSize: "24px 24px",
+      }}>
+      </Box>
       <Box sx={{
         display: "flex", justifyContent: "center", alignItems: "center",
-        minHeight: "calc(100vh - 140px)", p: 3,
-        background: isDark
-          ? "radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)"
-          : "radial-gradient(circle, #d4b5b5 1px, transparent 1px)",
-        backgroundColor: isDark ? "#030303" : "#f5f0f0",
-        backgroundSize: "24px 24px",
+        minHeight: "calc(100dvh - 100px)", p: { xs: 1.5, sm: 3 },
+        boxSizing: "border-box",
       }}>
       <Paper
         elevation={0}
         sx={{
-          p: 4, pt: 0, borderRadius: 3, textAlign: "center", maxWidth: 380,
+          p: { xs: 3, sm: 4 }, pt: 0, borderRadius: 3, textAlign: "center", maxWidth: 380, width: "100%",
           border: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc",
           overflow: "visible",
           boxShadow: isDark
@@ -55,6 +63,7 @@ export default function NotFoundPage({ effectiveTheme = "light" }) {
           GO HOME
         </Button>
       </Paper>
-    </Box>
+      </Box>
+    </>
   );
 }

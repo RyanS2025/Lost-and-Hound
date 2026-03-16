@@ -12,11 +12,10 @@ import UploadIcon from "@mui/icons-material/UploadFile";
 import MapIcon from "@mui/icons-material/PinDrop";
 import FlagIcon from "@mui/icons-material/Flag";
 import ReportModal from "../components/ReportModal";
-import { supabase } from "../supabaseClient";
+import apiFetch from "../utils/apiFetch";
 import { useAuth } from "../AuthContext";
 import MapPinPicker from "../components/MapPinPicker";
 import { CAMPUSES } from "../constants/campuses";
-import { removeExpiredUnresolvedListings } from "../utils/listingExpiry";
 
 // --- Constants ---
 const CATEGORIES = ["All", "Husky Card", "Jacket", "Wallet/Purse", "Bag", "Keys", "Electronics", "Other"];
@@ -186,7 +185,6 @@ function DetailModal({ item, onClose, onClaim, isDark = false }) {
             </IconButton>
             <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
           </Box>
-
         </Box>
 
         {item.image_url
@@ -260,26 +258,17 @@ function DetailModal({ item, onClose, onClaim, isDark = false }) {
             variant="outlined"
             sx={{ borderColor: isDark ? "rgba(255,255,255,0.2)" : "#ecdcdc", color: "#A84D48", fontWeight: 800, borderRadius: 2, flexShrink: 0 }}
             onClick={async () => {
-              const { data } = await supabase
-                .from("conversations")
-                .select("id")
-                .eq("listing_id", item.item_id)
-                .eq("participant_1", user.id)
-                .maybeSingle();
-
-              if (data != null) {
-                navigate(`/messages?conversation=${data.id}`);
-                return;
-              }
-
-              else {
-                const {data: created } = await supabase
-                  .from("conversations")
-                  .insert({ listing_id: item.item_id, participant_1: user.id, participant_2: item.poster_id })
-                  .select("id")
-                  .single();
-                  
-                if (created) navigate(`/messages?conversation=${created.id}`);
+              try {
+                const result = await apiFetch("/api/conversations", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    listing_id: item.item_id,
+                    other_user_id: item.poster_id,
+                  }),
+                });
+                navigate(`/messages?conversation=${result.id}`);
+              } catch (err) {
+                console.error("Create conversation error:", err);
               }
             }}
           >
@@ -309,14 +298,15 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
 
   useEffect(() => {
     if (!open) return;
-    supabase
-      .from("locations")
-      .select("location_id, name, coordinates")
-      .eq("campus", selectedCampus)
-      .order("name", { ascending: true })
-      .then(({ data }) => {
-        if (data) setLocations(data);
-      });
+    const fetchLocations = async () => {
+      try {
+        const data = await apiFetch(`/api/locations?campus=${selectedCampus}`);
+        setLocations(data);
+      } catch (err) {
+        console.error("Fetch locations error:", err);
+      }
+    };
+    fetchLocations();
   }, [open, selectedCampus]);
 
   const handleCampusChange = (campusId) => {
@@ -346,56 +336,55 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
 
     let image_url = null;
 
+    // Two-step image upload: get signed URL from server, then upload directly to storage
     if (form.image?.file) {
-      const ext = form.image.file.name.split(".").pop();
-      const path = `${user.id}/${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from("listing-images")
-        .upload(path, form.image.file);
-      if (!uploadError) {
-        const { data } = supabase.storage.from("listing-images").getPublicUrl(path);
-        image_url = data.publicUrl;
+      try {
+        const uploadData = await apiFetch("/api/upload-url", {
+          method: "POST",
+          body: JSON.stringify({ filename: form.image.file.name }),
+        });
+
+        const uploadRes = await fetch(uploadData.signedUrl, {
+          method: "PUT",
+          headers: { "Content-Type": form.image.file.type },
+          body: form.image.file,
+        });
+
+        if (uploadRes.ok) {
+          image_url = uploadData.publicUrl;
+        }
+      } catch (err) {
+        console.error("Image upload error:", err);
       }
     }
 
-    const posterName = profile?.first_name && profile?.last_name
-      ? `${profile.first_name} ${profile.last_name}`
-      : user.email;
+    try {
+      const data = await apiFetch("/api/listings", {
+        method: "POST",
+        body: JSON.stringify({
+          title: form.title,
+          category: form.category,
+          location_id: form.location_id,
+          found_at: form.found_at,
+          importance: form.importance,
+          description: form.description,
+          image_url,
+          lat: form.pin?.lat ?? null,
+          lng: form.pin?.lng ?? null,
+        }),
+      });
 
-    const insertData = {
-      title: form.title,
-      category: form.category,
-      location_id: form.location_id,
-      found_at: form.found_at,
-      importance: form.importance,
-      description: form.description,
-      image_url,
-      resolved: false,
-      poster_id: user.id,
-      poster_name: posterName,
-      date: new Date().toISOString(),
-    };
-
-    if (form.pin) {
-      insertData.lat = form.pin.lat;
-      insertData.lng = form.pin.lng;
-    }
-
-    const { data, error } = await supabase
-      .from("listings")
-      .insert([insertData])
-      .select(`*, locations(name, coordinates, campus)`)
-      .single();
-
-    setSubmitting(false);
-    if (!error && data) {
       onAdd(data);
       onClose();
       setForm({ title: "", category: "Other", location_id: "", found_at: "", importance: 2, description: "", image: null, pin: null });
       setShowMap(false);
       setFlyTo(null);
       setSelectedCampus(profile?.default_campus || "boston");
+    } catch (err) {
+      console.error("Create listing error:", err);
     }
+
+    setSubmitting(false);
   };
 
   return (
@@ -536,6 +525,8 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
 // --- FeedPage ---
 export default function FeedPage({ effectiveTheme = "light" }) {
   const isDark = effectiveTheme === "dark";
+  const pageBg = isDark ? "#101214" : "#f9f5f4";
+  const pageDot = isDark ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
   const { profile } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -549,14 +540,23 @@ export default function FeedPage({ effectiveTheme = "light" }) {
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
-    await removeExpiredUnresolvedListings();
+    const data = await apiFetch("/api/listings");
+    console.log("listings response:", data);
 
-    const { data, error } = await supabase
-      .from("listings")
-      .select(`*, locations(name, coordinates, campus)`)
-      .order("date", { ascending: false });
+    // Server-side cleanup of old resolved listings
+    try {
+      await apiFetch("/api/listings/cleanup", { method: "POST" });
+    } catch (err) {
+      console.error("Cleanup error:", err);
+    }
 
-    if (!error) setItems(data ?? []);
+    try {
+      const data = await apiFetch("/api/listings");
+      setItems(data ?? []);
+    } catch (err) {
+      console.error("Fetch listings error:", err);
+    }
+
     setLoading(false);
   }, []);
 
@@ -565,9 +565,13 @@ export default function FeedPage({ effectiveTheme = "light" }) {
   }, [fetchItems]);
 
   const handleClaim = async (item_id) => {
-    await supabase.from("listings").update({ resolved: true }).eq("item_id", item_id);
-    setItems(prev => prev.map(i => i.item_id === item_id ? { ...i, resolved: true } : i));
-    if (selected?.item_id === item_id) setSelected(prev => ({ ...prev, resolved: true }));
+    try {
+      await apiFetch(`/api/listings/${item_id}/resolve`, { method: "PATCH" });
+      setItems(prev => prev.map(i => i.item_id === item_id ? { ...i, resolved: true } : i));
+      if (selected?.item_id === item_id) setSelected(prev => ({ ...prev, resolved: true }));
+    } catch (err) {
+      console.error("Claim error:", err);
+    }
   };
 
   const filtered = items
@@ -587,9 +591,31 @@ export default function FeedPage({ effectiveTheme = "light" }) {
     });
 
   return (
-    <Box sx={{ display: "flex", justifyContent: "center", width: "100%", p: 3, color: isDark ? "#D7DADC" : "inherit" }}>
+    <>
+      <Box
+        sx={{
+          position: "fixed",
+          inset: 0,
+          zIndex: -1,
+          backgroundColor: pageBg,
+          backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`,
+          backgroundSize: "24px 24px",
+        }}
+      />
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "center",
+          width: "100%",
+          minHeight: "calc(100vh - 100px)",
+          boxSizing: "border-box",
+          px: { xs: 1.25, sm: 2, md: 3 },
+          py: { xs: 1.25, sm: 2, md: 3 },
+          color: isDark ? "#D7DADC" : "inherit",
+        }}
+      >
       <Box sx={{ width: "100%", maxWidth: 680 }}>
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2.5 }}>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: { xs: "flex-start", sm: "center" }, flexDirection: { xs: "column", sm: "row" }, gap: 1.25, mb: 2.5 }}>
           <Typography variant="h4" fontWeight={900}>Lost & Found Feed</Typography>
           <Box sx={{ display: "flex", gap: 1 }}>
             <Button
@@ -604,6 +630,7 @@ export default function FeedPage({ effectiveTheme = "light" }) {
               sx={{
                 borderColor: isDark ? "rgba(255,255,255,0.24)" : "#ecdcdc", color: "#A84D48", fontWeight: 800,
                 borderRadius: 2, minWidth: 0, px: 1.5, fontSize: 18,
+                background: isDark ? "#1A1A1B" : "#fff",
               }}
             >
               <span
@@ -623,20 +650,21 @@ export default function FeedPage({ effectiveTheme = "light" }) {
         </Box>
 
         {/* Search + Campus filter */}
-        <Box sx={{ display: "flex", gap: 1.5, mb: 2, alignItems: "center" }}>
+        <Box sx={{ display: "flex", gap: 1.5, mb: 2, alignItems: "center", flexDirection: { xs: "column", sm: "row" } }}>
           <TextField
             fullWidth placeholder="Search items, locations, descriptions..."
             value={search} onChange={e => setSearch(e.target.value)}
             InputProps={{
               startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: isDark ? "#B8BABD" : "#a07070" }} /></InputAdornment>,
-              sx: isDark ? { background: "#2D2D2E", color: "#D7DADC" } : undefined,
+              sx: { background: isDark ? "#2D2D2E" : "#fff", color: isDark ? "#D7DADC" : "inherit" },
             }}
           />
-          <FormControl size="small" sx={{ minWidth: 160, flexShrink: 0 }}>
+          <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 160 }, width: { xs: "100%", sm: "auto" }, flexShrink: 0 }}>
             <Select
               value={selectedCampus}
               onChange={(e) => setSelectedCampus(e.target.value)}
               displayEmpty
+              sx={{ background: isDark ? "#2D2D2E" : "#fff" }}
             >
               <MenuItem value="all">All Campuses</MenuItem>
               {CAMPUSES.map((c) => (
@@ -659,11 +687,11 @@ export default function FeedPage({ effectiveTheme = "light" }) {
           ))}
         </Box>
 
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: { xs: "flex-start", sm: "center" }, flexDirection: { xs: "column", sm: "row" }, gap: 1, mb: 2 }}>
           <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={700}>
             {filtered.length} item{filtered.length !== 1 ? "s" : ""}
           </Typography>
-          <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+          <Box sx={{ display: "flex", gap: 1, alignItems: "center", width: { xs: "100%", sm: "auto" }, justifyContent: { xs: "space-between", sm: "flex-end" } }}>
             <Chip
               label={showResolved ? "Hide Resolved" : "Show Resolved"}
               clickable
@@ -676,9 +704,9 @@ export default function FeedPage({ effectiveTheme = "light" }) {
                 "&:hover": { background: showResolved ? (isDark ? "#27412f" : "#bbf7d0") : isDark ? "#343536" : "#ececec" },
               }}
             />
-            <FormControl size="small" sx={{ minWidth: 150 }}>
+            <FormControl size="small" sx={{ minWidth: { xs: 140, sm: 150 } }}>
               <InputLabel>Sort by</InputLabel>
-              <Select value={sort} label="Sort by" onChange={e => setSort(e.target.value)}>
+              <Select value={sort} label="Sort by" onChange={e => setSort(e.target.value)} sx={{ background: isDark ? "#2D2D2E" : "#fff" }}>
                 {SORT_OPTIONS.map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}
               </Select>
             </FormControl>
@@ -697,6 +725,7 @@ export default function FeedPage({ effectiveTheme = "light" }) {
 
       <DetailModal item={selected} onClose={() => setSelected(null)} onClaim={handleClaim} isDark={isDark} />
       <NewItemModal open={showNew} onClose={() => setShowNew(false)} onAdd={item => setItems(prev => [item, ...prev])} isDark={isDark} />
-    </Box>
+      </Box>
+    </>
   );
 }

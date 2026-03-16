@@ -1,4 +1,4 @@
-import { supabase } from "../supabaseClient";
+import { supabase } from "../../backend/supabaseClient";
 
 const EXPIRATION_DAYS = 10;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;

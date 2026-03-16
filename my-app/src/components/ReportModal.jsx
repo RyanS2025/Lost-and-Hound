@@ -3,9 +3,9 @@ import {
   Modal, Box, Typography, Button, IconButton, TextField,
   RadioGroup, FormControlLabel, Radio, Alert, CircularProgress,
 } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
-import { supabase } from "../supabaseClient";
-import { useAuth } from "../AuthContext";
+import apiFetch from "../utils/apiFetch";
 
 const POST_REASONS = [
   "False or misleading listing",
@@ -24,7 +24,18 @@ const USER_REASONS = [
 ];
 
 export default function ReportModal({ open, onClose, type, targetId, targetLabel }) {
-  const { user } = useAuth();
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
+
+  const BRAND = {
+    accent: isDark ? "#C96E47" : "#A84D48",
+    accentHover: isDark ? "#B35D38" : "#8f3e3a",
+    surface: isDark ? "#1A1A1B" : "#fff",
+    border: isDark ? "rgba(255,255,255,0.14)" : "rgba(122,41,41,0.12)",
+    inputBg: isDark ? "#2D2D2E" : "#fff",
+    backdrop: isDark ? "rgba(0,0,0,0.68)" : "rgba(20,15,15,0.45)",
+  };
+
   const [reason, setReason] = useState("");
   const [details, setDetails] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -39,10 +50,8 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
     setError("");
 
     const row = {
-      reporter_id: user.id,
       reason,
       details: details.trim() || null,
-      status: "pending",
     };
 
     if (type === "post") {
@@ -51,13 +60,16 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
       row.reported_user_id = targetId;
     }
 
-    const { error: insertErr } = await supabase.from("reports").insert(row);
-
-    setSubmitting(false);
-    if (insertErr) {
-      setError("Something went wrong. Please try again.");
-    } else {
+    try {
+      await apiFetch("/api/reports", {
+        method: "POST",
+        body: JSON.stringify(row),
+      });
       setSubmitted(true);
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -73,11 +85,28 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
   };
 
   return (
-    <Modal open={open} onClose={handleClose}>
+    <Modal
+      open={open}
+      onClose={handleClose}
+      slotProps={{
+        backdrop: {
+          sx: {
+            backgroundColor: BRAND.backdrop,
+            backdropFilter: "blur(1px)",
+          },
+        },
+      }}
+    >
       <Box sx={{
         position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-        background: "#fff", borderRadius: 3, p: 3, width: "100%", maxWidth: 420,
+        background: BRAND.surface,
+        border: `1px solid ${BRAND.border}`,
+        borderRadius: 3,
+        p: 3,
+        width: "100%",
+        maxWidth: 420,
         outline: "none",
+        color: "text.primary",
       }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
           <Typography variant="h6" fontWeight={800}>
@@ -97,7 +126,7 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
             <Button
               variant="contained"
               onClick={handleClose}
-              sx={{ background: "#A84D48", "&:hover": { background: "#8f3e3a" }, fontWeight: 700, borderRadius: 2 }}
+              sx={{ background: BRAND.accent, "&:hover": { background: BRAND.accentHover }, fontWeight: 700, borderRadius: 2 }}
             >
               Done
             </Button>
@@ -117,7 +146,7 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
                 <FormControlLabel
                   key={r}
                   value={r}
-                  control={<Radio size="small" sx={{ color: "#A84D48", "&.Mui-checked": { color: "#A84D48" } }} />}
+                  control={<Radio size="small" sx={{ color: BRAND.accent, "&.Mui-checked": { color: BRAND.accent } }} />}
                   label={<Typography variant="body2">{r}</Typography>}
                   sx={{ mb: -0.5 }}
                 />
@@ -132,7 +161,13 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
               rows={2}
               fullWidth
               size="small"
-              sx={{ mt: 2, mb: 2 }}
+              sx={{
+                mt: 2,
+                mb: 2,
+                "& .MuiOutlinedInput-root": {
+                  bgcolor: BRAND.inputBg,
+                },
+              }}
             />
 
             {error && (
@@ -145,8 +180,8 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
               disabled={!reason || submitting}
               onClick={handleSubmit}
               sx={{
-                background: "#A84D48",
-                "&:hover": { background: "#8f3e3a" },
+                background: BRAND.accent,
+                "&:hover": { background: BRAND.accentHover },
                 fontWeight: 800,
                 borderRadius: 2,
               }}

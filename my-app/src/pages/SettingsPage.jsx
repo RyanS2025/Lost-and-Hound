@@ -1,6 +1,7 @@
 // --- SettingsPage: User account settings UI ---
 import { useState } from "react";
-import { supabase } from "../supabaseClient";
+import { supabase } from "../../backend/supabaseClient";
+import apiFetch from "../utils/apiFetch";
 import {
   Container,
   Paper,
@@ -37,15 +38,15 @@ export default function SettingsPage({
 }) {
   const isDark = effectiveTheme === "dark";
   const BRAND = {
-    maroon: isDark ? "#FF4500" : "#7a2929",
-    maroonDark: isDark ? "#E03D00" : "#5e1f1f",
-    maroonLight: isDark ? "#FF6A33" : "#a04040",
-    maroonFaint: isDark ? "rgba(255,69,0,0.14)" : "rgba(122,41,41,0.06)",
-    maroonFaintHover: isDark ? "rgba(255,69,0,0.22)" : "rgba(122,41,41,0.10)",
+    maroon: isDark ? "#C96E47" : "#7a2929",
+    maroonDark: isDark ? "#B35D38" : "#5e1f1f",
+    maroonLight: isDark ? "#DA8864" : "#a04040",
+    maroonFaint: isDark ? "rgba(201,110,71,0.12)" : "rgba(122,41,41,0.06)",
+    maroonFaintHover: isDark ? "rgba(201,110,71,0.18)" : "rgba(122,41,41,0.10)",
     cardBorder: isDark ? "rgba(255,255,255,0.14)" : "rgba(122,41,41,0.12)",
     textPrimary: isDark ? "#D7DADC" : "#2d2d2d",
     textSecondary: isDark ? "#818384" : "#6b6b6b",
-    bg: isDark ? "#030303" : "#f9f5f4",
+    bg: isDark ? "#101214" : "#f9f5f4",
     dot: isDark ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)",
     surface: isDark ? "#1A1A1B" : "#fff",
     inputBg: isDark ? "#2D2D2E" : "#fff",
@@ -69,16 +70,16 @@ export default function SettingsPage({
     if (!user?.id) return;
     setDefaultCampus(campusId);
     setCampusMessage("");
-    const { error } = await supabase
-      .from("profiles")
-      .update({ default_campus: campusId })
-      .eq("id", user.id);
-    if (error) {
-      setCampusMessage("Error updating campus.");
-    } else {
+    try {
+      await apiFetch("/api/profile/campus", {
+        method: "PATCH",
+        body: JSON.stringify({ default_campus: campusId }),
+      });
       updateProfile({ default_campus: campusId });
       setCampusMessage("Default campus updated!");
       setTimeout(() => setCampusMessage(""), 2000);
+    } catch {
+      setCampusMessage("Error updating campus.");
     }
   };
 
@@ -96,16 +97,16 @@ export default function SettingsPage({
   const handleSaveName = async () => {
     if (!user?.id) return;
     setNameMessage("");
-    const { error } = await supabase
-      .from("profiles")
-      .update({ first_name: firstName, last_name: lastName })
-      .eq("id", user.id);
-    if (error) {
-      setNameMessage("Error updating name.");
-    } else {
+    try {
+      await apiFetch("/api/profile", {
+        method: "PATCH",
+        body: JSON.stringify({ first_name: firstName, last_name: lastName }),
+      });
       updateProfile({ first_name: firstName, last_name: lastName });
       setNameMessage("Name updated!");
       setEditMode(false);
+    } catch {
+      setNameMessage("Error updating name.");
     }
   };
 
@@ -113,11 +114,7 @@ export default function SettingsPage({
     if (!user?.id) return;
     setDeleteMessage("");
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .delete()
-        .eq("id", user.id);
-      if (error) throw error;
+      await apiFetch("/api/profile", { method: "DELETE" });
       await supabase.auth.signOut();
     } catch {
       setDeleteMessage("Error deleting account. Please contact support.");
@@ -137,7 +134,9 @@ export default function SettingsPage({
     boxShadow: "none",
     "&:hover": {
       bgcolor: BRAND.maroonDark,
-      boxShadow: "0 2px 8px rgba(122,41,41,0.25)",
+      boxShadow: isDark
+        ? "0 2px 8px rgba(201,110,71,0.22)"
+        : "0 2px 8px rgba(122,41,41,0.25)",
     },
   };
 
@@ -216,19 +215,20 @@ export default function SettingsPage({
       {/* --- Centered content --- */}
       <Box
         sx={{
-          minHeight: "calc(100vh - 120px)",
+          minHeight: "calc(100dvh - 100px)",
+          boxSizing: "border-box",
           display: "flex",
-          alignItems: "center",
+          alignItems: { xs: "flex-start", md: "center" },
           justifyContent: "center",
           px: 2,
-          py: 4,
+          py: { xs: 2, md: 3 },
         }}
       >
         <Container component="main" maxWidth="md">
           <Paper
             elevation={0}
             sx={{
-              p: { xs: 3, sm: 4, md: 5 },
+              p: { xs: 3, sm: 4, md: 4 },
               width: "100%",
               borderRadius: 3,
               backgroundColor: BRAND.surface,
@@ -327,7 +327,7 @@ export default function SettingsPage({
                   </Typography>
                   {editMode ? (
                     <Box sx={{ mt: 1 }}>
-                      <Box sx={{ display: "flex", gap: 1.5, mb: 1.5 }}>
+                      <Box sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, gap: 1.5, mb: 1.5 }}>
                         <TextField
                           label="First Name"
                           value={firstName}
@@ -343,7 +343,7 @@ export default function SettingsPage({
                           sx={{ flex: 1, borderRadius: 2, ...textFieldSx }}
                         />
                       </Box>
-                      <Box sx={{ display: "flex", gap: 1 }}>
+                      <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
                         <Button
                           variant="contained"
                           size="small"
@@ -424,9 +424,22 @@ export default function SettingsPage({
                 >
                   Change Password
                 </Button>
+
+                <Divider sx={{ my: 2.5, borderColor: BRAND.cardBorder }} />
+
+                {/* -- Log Out -- */}
+                <SectionLabel icon={LogoutOutlinedIcon}>Log Out</SectionLabel>
+                <Button
+                  variant="outlined"
+                  sx={{ ...btnOutline, width: "100%" }}
+                  onClick={logout}
+                  startIcon={<LogoutOutlinedIcon />}
+                >
+                  Log Out
+                </Button>
               </Box>
 
-              {/* === RIGHT COLUMN: Preferences, Session, Danger Zone === */}
+              {/* === RIGHT COLUMN: Appearance, Preferences, Danger Zone === */}
               <Box sx={{ display: "flex", flexDirection: "column" }}>
                 {/* -- Appearance -- */}
                 <SectionLabel icon={DarkModeOutlinedIcon}>Appearance</SectionLabel>
@@ -472,7 +485,7 @@ export default function SettingsPage({
                         },
                       }}
                     >
-                      <MenuItem value="auto">Device auto</MenuItem>
+                      <MenuItem value="auto">Device Default</MenuItem>
                       <MenuItem value="light">Light</MenuItem>
                       <MenuItem value="dark">Dark</MenuItem>
                     </Select>
@@ -481,7 +494,9 @@ export default function SettingsPage({
                     variant="caption"
                     sx={{ color: BRAND.textSecondary, mt: 1, display: "block" }}
                   >
-                    Currently using {effectiveTheme} mode.
+                    {themeMode === "auto"
+                      ? `Following Device Default (${effectiveTheme} mode).`
+                      : `Currently using ${effectiveTheme} mode.`}
                   </Typography>
                 </Box>
 
@@ -553,19 +568,6 @@ export default function SettingsPage({
 
                 <Divider sx={{ my: 2.5, borderColor: BRAND.cardBorder }} />
 
-                {/* -- Session -- */}
-                <SectionLabel icon={LogoutOutlinedIcon}>Session</SectionLabel>
-                <Button
-                  variant="outlined"
-                  sx={{ ...btnOutline, width: "100%" }}
-                  onClick={logout}
-                >
-                  Log Out
-                </Button>
-
-                <Divider sx={{ my: 2.5, borderColor: BRAND.cardBorder }} />
-
-                {/* -- Danger zone -- */}
                 <SectionLabel icon={DeleteOutlineIcon} color="#d32f2f">
                   Danger Zone
                 </SectionLabel>
