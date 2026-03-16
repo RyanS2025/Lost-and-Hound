@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "../backend/supabaseClient";
-import apiFetch, { clearDeviceToken } from "./utils/apiFetch";
+import apiFetch from "./utils/apiFetch";
 
 const AuthContext = createContext();
 
@@ -53,7 +53,11 @@ export function AuthProvider({ children }) {
   }, [user?.id, sessionToken]);
 
   const logout = async () => {
-    clearDeviceToken();
+    try {
+      await apiFetch("/api/auth/clear-device", { method: "POST" });
+    } catch {
+      // Always continue with sign-out even if cookie clearing fails.
+    }
     setSessionToken(null);
     await supabase.auth.signOut();
   };

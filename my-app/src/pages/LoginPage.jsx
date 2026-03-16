@@ -14,7 +14,6 @@ import {
   LinearProgress,
 } from "@mui/material";
 import TermsModal from "../components/TermsModal";
-import { storeDeviceToken, getStoredDeviceToken, clearDeviceToken, API_BASE } from "../utils/apiFetch";
 import apiFetch from "../utils/apiFetch";
 
 const NAME_MAX_LENGTH = 25;
@@ -110,6 +109,7 @@ function ConfettiCanvas({ active }) {
 export default function LoginPage({
   loginTransition = false,
   onLoginSuccess,
+  onLoginCancel,
   effectiveTheme = "light",
 }) {
   const isDark = effectiveTheme === "dark";
@@ -368,7 +368,6 @@ export default function LoginPage({
             (factorsData?.totp || []).some((f) => f.status === "verified");
 
           if (!hasVerifiedTotp) {
-            clearDeviceToken();
             setMfaLoading(true);
             try {
               await startMfaFlow(factorsData);
@@ -382,22 +381,13 @@ export default function LoginPage({
           }
 
           // 2FA gate: check whether this device is already trusted
-          const storedToken = getStoredDeviceToken();
-          const accessToken = signInData?.session?.access_token;
-
           let deviceTrusted = false;
-          if (storedToken && accessToken) {
+          if (signInData?.session?.access_token) {
             try {
-              const checkRes = await fetch(`${API_BASE}/api/auth/check-device`, {
+              const checkData = await apiFetch("/api/auth/check-device", {
                 method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${accessToken}`,
-                },
-                body: JSON.stringify({ deviceToken: storedToken }),
               });
-              const checkData = await checkRes.json();
-              deviceTrusted = checkData.trusted === true;
+              deviceTrusted = checkData?.trusted === true;
             } catch {
               deviceTrusted = false;
             }
@@ -462,25 +452,17 @@ export default function LoginPage({
       });
       if (verifyError) throw verifyError;
 
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData?.session?.access_token;
-      if (!accessToken) throw new Error("Session expired. Please sign in again.");
+      onLoginSuccess?.();
 
-      const res = await fetch(`${API_BASE}/api/auth/trust-device`, {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData?.session?.access_token) throw new Error("Session expired. Please sign in again.");
+
+      await apiFetch("/api/auth/trust-device", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
         body: JSON.stringify({ rememberDevice }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Verification failed");
-
-      // Persist trusted-device token for future logins
-      storeDeviceToken(data.deviceToken, rememberDevice);
-      onLoginSuccess?.();
     } catch (err) {
+      onLoginCancel?.();
       setError(err.message || "Verification failed. Please try again.");
     } finally {
       setMfaVerifying(false);

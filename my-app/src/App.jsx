@@ -10,7 +10,7 @@ import SettingsPage from "./pages/SettingsPage";
 import DashboardPage from "./pages/DashboardPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import AppFooter from "./components/AppFooter";
-import { AppBar, Toolbar, Button, Typography, Container, Box, Paper } from '@mui/material';
+import { AppBar, Toolbar, Button, Typography, Container, Box, Paper, CircularProgress } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import HomeIcon from '@mui/icons-material/Home';
@@ -160,13 +160,26 @@ export default function App() {
   // LoginPage calls onLoginSuccess right before signing in.
   // This holds the LoginPage on screen for 1.8s so the animation can play.
   const [loginTransition, setLoginTransition] = useState(false);
+  const [awaitingProfile, setAwaitingProfile] = useState(false);
   const didLoginTransition = useRef(false);
 
   const onLoginSuccess = useCallback(() => {
     setLoginTransition(true);
+    setAwaitingProfile(true);
     didLoginTransition.current = true;
     setTimeout(() => setLoginTransition(false), 1200);
   }, []);
+
+  const onLoginCancel = useCallback(() => {
+    setLoginTransition(false);
+    setAwaitingProfile(false);
+  }, []);
+
+  useEffect(() => {
+    if (profile || !user) {
+      setAwaitingProfile(false);
+    }
+  }, [profile, user]);
 
   // Keep showing LoginPage while auth/MFA is in progress.
   // This avoids a blank screen if /api/profile is blocked by require2FA.
@@ -174,11 +187,25 @@ export default function App() {
     return (
       <ThemeProvider theme={appTheme}>
         <CssBaseline />
-        <LoginPage
-          loginTransition={loginTransition}
-          onLoginSuccess={onLoginSuccess}
-          effectiveTheme={effectiveTheme}
-        />
+        {awaitingProfile && !loginTransition && user && !profile ? (
+          <Box
+            sx={{
+              minHeight: '100vh',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <CircularProgress color="primary" />
+          </Box>
+        ) : (
+          <LoginPage
+            loginTransition={loginTransition}
+            onLoginSuccess={onLoginSuccess}
+            onLoginCancel={onLoginCancel}
+            effectiveTheme={effectiveTheme}
+          />
+        )}
       </ThemeProvider>
     );
   }
