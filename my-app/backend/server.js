@@ -1,8 +1,10 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import dotenv from "dotenv";
 import rateLimit from "express-rate-limit";
 import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 
 dotenv.config();
 
@@ -13,6 +15,7 @@ const supabase = createClient(
 
 const app = express();
 
+app.use(helmet());
 app.use(cors({
   origin: [
     "http://localhost:5173",
@@ -76,6 +79,22 @@ function validateRequired(fields, body) {
 
 const PROFILE_NAME_MAX_LENGTH = 25;
 
+const VALID_CAMPUS_IDS = new Set([
+  "oakland", "san_jose", "miami", "boston", "burlington",
+  "portland", "charlotte", "new_york", "toronto", "london", "arlington", "seattle",
+]);
+
+const VALID_CATEGORIES = new Set([
+  "Husky Card", "Jacket", "Wallet/Purse", "Bag", "Keys", "Electronics", "Other",
+]);
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function dbError(res, error, label = "") {
+  console.error(`[DB error${label ? " " + label : ""}]`, error?.message || error);
+  return res.status(500).json({ error: "Internal server error" });
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AUTH MIDDLEWARE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -93,8 +112,56 @@ async function requireAuth(req, res, next) {
     return res.status(401).json({ error: "Invalid token" });
   }
 
+  req.accessToken = token;
   req.user = data.user;
   next();
+}
+
+function decodeJwtPayload(token) {
+  if (!token || typeof token !== "string") return null;
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64.padEnd(b64.length + ((4 - (b64.length % 4)) % 4), "=");
+    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function isAal2Token(token) {
+  const payload = decodeJwtPayload(token);
+  return payload?.aal === "aal2";
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 2FA MIDDLEWARE — validates device token issued after OTP
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+async function require2FA(req, res, next) {
+  const raw = req.headers["x-device-token"];
+  if (raw && typeof raw === "string" && raw.length >= 10) {
+    const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
+
+    const { data } = await supabase
+      .from("trusted_devices")
+      .select("expires_at")
+      .eq("user_id", req.user.id)
+      .eq("token_hash", tokenHash)
+      .maybeSingle();
+
+    if (data && new Date(data.expires_at) >= new Date()) {
+      return next();
+    }
+  }
+
+  // Fallback: allow requests from a current Supabase MFA-authenticated session.
+  if (isAal2Token(req.accessToken)) {
+    return next();
+  }
+
+  return res.status(403).json({ error: "2FA_REQUIRED" });
 }
 
 async function requireModerator(req, res, next) {
@@ -157,6 +224,66 @@ async function requireConversationParticipant(req, res, next) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 2FA ROUTES
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Check whether the device token in the request is still trusted.
+// If it is, the client can skip showing the OTP screen.
+app.post("/api/auth/check-device", requireAuth, async (req, res) => {
+  const raw = req.body?.deviceToken;
+  if (!raw || typeof raw !== "string") return res.json({ trusted: false });
+
+  const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
+  const { data } = await supabase
+    .from("trusted_devices")
+    .select("expires_at")
+    .eq("user_id", req.user.id)
+    .eq("token_hash", tokenHash)
+    .maybeSingle();
+
+  if (!data || new Date(data.expires_at) < new Date()) {
+    return res.json({ trusted: false });
+  }
+  res.json({ trusted: true });
+});
+
+// Issue a trusted-device token after Supabase MFA (aal2) is complete.
+app.post("/api/auth/trust-device", requireAuth, async (req, res) => {
+  if (!isAal2Token(req.accessToken)) {
+    return res.status(403).json({ error: "MFA_REQUIRED" });
+  }
+
+  const rememberDevice = !!req.body?.rememberDevice;
+  const userId = req.user.id;
+
+  const rawToken  = crypto.randomUUID() + "-" + crypto.randomBytes(16).toString("hex");
+  const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+  const ttlMs    = rememberDevice ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+  const deviceInfo = req.headers["user-agent"]?.slice(0, 200) || null;
+
+  // Clean up expired tokens for this user before inserting a new one
+  await supabase
+    .from("trusted_devices")
+    .delete()
+    .eq("user_id", userId)
+    .lt("expires_at", new Date().toISOString());
+
+  const { error: insertErr } = await supabase.from("trusted_devices").insert({
+    user_id:     userId,
+    token_hash:  tokenHash,
+    expires_at:  expiresAt,
+    device_info: deviceInfo,
+  });
+  if (insertErr) {
+    console.error("trust-device insert error:", insertErr);
+    return res.status(500).json({ error: "Failed to issue device token" });
+  }
+
+  res.json({ verified: true, deviceToken: rawToken, rememberDevice: !!rememberDevice });
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CLEANUP COOLDOWN
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -167,7 +294,7 @@ const CLEANUP_COOLDOWN = 60 * 60 * 1000; // 1 hour
 // PROFILE ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-app.get("/api/profile", requireAuth, async (req, res) => {
+app.get("/api/profile", requireAuth, require2FA, async (req, res) => {
   const { data, error } = await supabase
     .from("profiles")
     .select("first_name, last_name, default_campus, is_moderator, banned_until, ban_reason")
@@ -197,11 +324,11 @@ app.get("/api/profile", requireAuth, async (req, res) => {
     return res.status(404).json({ error: "Profile not found" });
   }
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "GET /api/profile");
   res.json(data);
 });
 
-app.patch("/api/profile", requireAuth, async (req, res) => {
+app.patch("/api/profile", requireAuth, require2FA, async (req, res) => {
   if (
     typeof req.body.first_name === "string" && req.body.first_name.trim().length > PROFILE_NAME_MAX_LENGTH ||
     typeof req.body.last_name === "string" && req.body.last_name.trim().length > PROFILE_NAME_MAX_LENGTH
@@ -225,15 +352,19 @@ app.patch("/api/profile", requireAuth, async (req, res) => {
     .select("first_name, last_name, default_campus, is_moderator")
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "PATCH /api/profile");
   res.json(data);
 });
 
-app.patch("/api/profile/campus", requireAuth, async (req, res) => {
+app.patch("/api/profile/campus", requireAuth, require2FA, async (req, res) => {
   const default_campus = sanitize(req.body.default_campus, 50);
 
   if (!default_campus) {
     return res.status(400).json({ error: "Campus is required" });
+  }
+
+  if (!VALID_CAMPUS_IDS.has(default_campus)) {
+    return res.status(400).json({ error: "Invalid campus" });
   }
 
   const { error } = await supabase
@@ -241,17 +372,17 @@ app.patch("/api/profile/campus", requireAuth, async (req, res) => {
     .update({ default_campus })
     .eq("id", req.user.id);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "PATCH /api/profile/campus");
   res.json({ default_campus });
 });
 
-app.delete("/api/profile", strictLimiter, requireAuth, async (req, res) => {
+app.delete("/api/profile", strictLimiter, requireAuth, require2FA, async (req, res) => {
   const { error } = await supabase
     .from("profiles")
     .delete()
     .eq("id", req.user.id);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "DELETE /api/profile");
   res.json({ success: true });
 });
 
@@ -259,17 +390,17 @@ app.delete("/api/profile", strictLimiter, requireAuth, async (req, res) => {
 // LISTING ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-app.get("/api/listings", requireAuth, async (req, res) => {
+app.get("/api/listings", requireAuth, require2FA, async (req, res) => {
   const { data, error } = await supabase
     .from("listings")
     .select("*, locations(name, coordinates, campus)")
     .order("date", { ascending: false });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "GET /api/listings");
   res.json(data);
 });
 
-app.post("/api/listings", writeLimiter, requireAuth, requireNotBanned, async (req, res) => {
+app.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBanned, async (req, res) => {
   const title = sanitize(req.body.title, 50);
   const category = sanitize(req.body.category, 50);
   const location_id = req.body.location_id;
@@ -284,8 +415,30 @@ app.post("/api/listings", writeLimiter, requireAuth, requireNotBanned, async (re
     return res.status(400).json({ error: "Missing required fields: title, category, location_id, found_at, description" });
   }
 
+  if (!VALID_CATEGORIES.has(category)) {
+    return res.status(400).json({ error: "Invalid category" });
+  }
+
   if (![1, 2, 3].includes(importance)) {
     return res.status(400).json({ error: "Importance must be 1, 2, or 3" });
+  }
+
+  if (image_url !== null) {
+    const ALLOWED_IMAGE_ORIGINS = [
+      "https://lost-and-hound-backend-production.up.railway.app",
+    ];
+    let parsedUrl;
+    try { parsedUrl = new URL(image_url); } catch { return res.status(400).json({ error: "Invalid image URL" }); }
+    const allowed = ALLOWED_IMAGE_ORIGINS.some((o) => parsedUrl.origin === o) ||
+      parsedUrl.hostname.endsWith(".supabase.co");
+    if (!allowed) return res.status(400).json({ error: "Invalid image URL" });
+  }
+
+  if (lat != null && (typeof lat !== "number" || lat < -90 || lat > 90)) {
+    return res.status(400).json({ error: "Invalid latitude" });
+  }
+  if (lng != null && (typeof lng !== "number" || lng < -180 || lng > 180)) {
+    return res.status(400).json({ error: "Invalid longitude" });
   }
 
   const { data: profile } = await supabase
@@ -321,11 +474,11 @@ app.post("/api/listings", writeLimiter, requireAuth, requireNotBanned, async (re
     .select("*, locations(name, coordinates, campus)")
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "POST /api/listings");
   res.json(data);
 });
 
-app.patch("/api/listings/:item_id/resolve", requireAuth, requireNotBanned, async (req, res) => {
+app.patch("/api/listings/:item_id/resolve", requireAuth, require2FA, requireNotBanned, async (req, res) => {
   const { data: listing } = await supabase
     .from("listings")
     .select("item_id, poster_id, resolved")
@@ -345,22 +498,22 @@ app.patch("/api/listings/:item_id/resolve", requireAuth, requireNotBanned, async
     .update({ resolved: true })
     .eq("item_id", req.params.item_id);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "PATCH /api/listings/resolve");
   res.json({ success: true });
 });
 
-app.delete("/api/listings/:item_id", requireAuth, requireModerator, async (req, res) => {
+app.delete("/api/listings/:item_id", requireAuth, require2FA, requireModerator, async (req, res) => {
   const { error } = await supabase
     .from("listings")
     .delete()
     .eq("item_id", req.params.item_id);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "DELETE /api/listings");
   res.json({ success: true });
 });
 
 // Cleanup with cooldown — runs at most once per hour
-app.post("/api/listings/cleanup", requireAuth, async (req, res) => {
+app.post("/api/listings/cleanup", requireAuth, require2FA, async (req, res) => {
   const now = Date.now();
 
   if (now - lastCleanupTime < CLEANUP_COOLDOWN) {
@@ -377,11 +530,11 @@ app.post("/api/listings/cleanup", requireAuth, async (req, res) => {
     .eq("resolved", true)
     .lt("date", cutoff);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "POST /api/listings/cleanup");
   res.json({ success: true });
 });
 
-app.post("/api/upload-url", writeLimiter, requireAuth, requireNotBanned, async (req, res) => {
+app.post("/api/upload-url", writeLimiter, requireAuth, require2FA, requireNotBanned, async (req, res) => {
   const filename = sanitize(req.body.filename, 200);
 
   if (!filename) {
@@ -400,7 +553,7 @@ app.post("/api/upload-url", writeLimiter, requireAuth, requireNotBanned, async (
     .from("listing-images")
     .createSignedUploadUrl(path);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "POST /api/upload-url");
 
   const { data: publicUrlData } = supabase.storage
     .from("listing-images")
@@ -417,7 +570,7 @@ app.post("/api/upload-url", writeLimiter, requireAuth, requireNotBanned, async (
 // LOCATIONS ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-app.get("/api/locations", requireAuth, async (req, res) => {
+app.get("/api/locations", requireAuth, require2FA, async (req, res) => {
   const { campus } = req.query;
 
   let query = supabase
@@ -425,10 +578,16 @@ app.get("/api/locations", requireAuth, async (req, res) => {
     .select("location_id, name, coordinates, campus")
     .order("name", { ascending: true });
 
-  if (campus) query = query.eq("campus", sanitize(campus, 50));
+  if (campus) {
+    const sanitizedCampus = sanitize(campus, 50);
+    if (!VALID_CAMPUS_IDS.has(sanitizedCampus)) {
+      return res.status(400).json({ error: "Invalid campus" });
+    }
+    query = query.eq("campus", sanitizedCampus);
+  }
 
   const { data, error } = await query;
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "GET /api/locations");
   res.json(data);
 });
 
@@ -436,7 +595,7 @@ app.get("/api/locations", requireAuth, async (req, res) => {
 // CONVERSATIONS & MESSAGE ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-app.get("/api/conversations", requireAuth, async (req, res) => {
+app.get("/api/conversations", requireAuth, require2FA, async (req, res) => {
   const userId = req.user.id;
 
   const { data: convos, error } = await supabase
@@ -444,7 +603,7 @@ app.get("/api/conversations", requireAuth, async (req, res) => {
     .select("*")
     .or(`participant_1.eq.${userId},participant_2.eq.${userId}`);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "GET /api/conversations");
   if (!convos || convos.length === 0) {
     return res.json({ conversations: [], profiles: {}, listings: {} });
   }
@@ -483,7 +642,7 @@ app.get("/api/conversations", requireAuth, async (req, res) => {
 });
 
 // Must be a participant to view
-app.get("/api/conversations/:id", requireAuth, requireConversationParticipant, async (req, res) => {
+app.get("/api/conversations/:id", requireAuth, require2FA, requireConversationParticipant, async (req, res) => {
   const { data, error } = await supabase
     .from("conversations")
     .select("*")
@@ -515,7 +674,7 @@ app.get("/api/conversations/:id", requireAuth, requireConversationParticipant, a
 });
 
 // Find or create — banned users cannot start conversations
-app.post("/api/conversations", writeLimiter, requireAuth, requireNotBanned, async (req, res) => {
+app.post("/api/conversations", writeLimiter, requireAuth, require2FA, requireNotBanned, async (req, res) => {
   const { listing_id, other_user_id } = req.body;
   const userId = req.user.id;
 
@@ -546,12 +705,12 @@ app.post("/api/conversations", writeLimiter, requireAuth, requireNotBanned, asyn
     .select("id")
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "POST /api/conversations");
   res.json({ id: created.id, created: true });
 });
 
 // Close convo — must be a participant
-app.delete("/api/conversations/:id", requireAuth, requireConversationParticipant, async (req, res) => {
+app.delete("/api/conversations/:id", requireAuth, require2FA, requireConversationParticipant, async (req, res) => {
   const convoId = req.params.id;
   const userId = req.user.id;
 
@@ -582,14 +741,14 @@ app.delete("/api/conversations/:id", requireAuth, requireConversationParticipant
 });
 
 // Get messages — must be a participant
-app.get("/api/conversations/:id/messages", requireAuth, requireConversationParticipant, async (req, res) => {
+app.get("/api/conversations/:id/messages", requireAuth, require2FA, requireConversationParticipant, async (req, res) => {
   const { data, error } = await supabase
     .from("messages")
     .select("*")
     .eq("conversation_id", req.params.id)
     .order("created_at", { ascending: true });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "GET /api/conversations/messages");
 
   const { count } = await supabase
     .from("hidden_conversations")
@@ -600,7 +759,7 @@ app.get("/api/conversations/:id/messages", requireAuth, requireConversationParti
 });
 
 // Send messages — must be a participant, must not be banned
-app.post("/api/conversations/:id/messages", writeLimiter, requireAuth, requireNotBanned, requireConversationParticipant, async (req, res) => {
+app.post("/api/conversations/:id/messages", writeLimiter, requireAuth, require2FA, requireNotBanned, requireConversationParticipant, async (req, res) => {
   const content = sanitize(req.body.content, 500);
 
   if (!content) {
@@ -617,7 +776,7 @@ app.post("/api/conversations/:id/messages", writeLimiter, requireAuth, requireNo
     .select("*")
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "POST /api/conversations/messages");
   res.json(data);
 });
 
@@ -625,7 +784,7 @@ app.post("/api/conversations/:id/messages", writeLimiter, requireAuth, requireNo
 // REPORTS ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-app.post("/api/reports", strictLimiter, requireAuth, requireNotBanned, async (req, res) => {
+app.post("/api/reports", strictLimiter, requireAuth, require2FA, requireNotBanned, async (req, res) => {
   const reason = sanitize(req.body.reason, 200);
   const details = sanitize(req.body.details, 2000) || null;
   const reported_listing_id = req.body.reported_listing_id || null;
@@ -669,17 +828,17 @@ app.post("/api/reports", strictLimiter, requireAuth, requireNotBanned, async (re
     .select("*")
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "POST /api/reports");
   res.json(data);
 });
 
-app.get("/api/reports", requireAuth, requireModerator, async (req, res) => {
+app.get("/api/reports", requireAuth, require2FA, requireModerator, async (req, res) => {
   const { data, error } = await supabase
     .from("reports")
     .select("*")
     .order("created_at", { ascending: false });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "GET /api/reports");
   if (!data || data.length === 0) return res.json({ reports: [], listings: {} });
 
   const userIds = new Set();
@@ -835,7 +994,9 @@ app.get("/api/reports", requireAuth, requireModerator, async (req, res) => {
   res.json({ reports: enriched, listings: listingMap });
 });
 
-app.patch("/api/reports/:id/status", requireAuth, requireModerator, async (req, res) => {
+app.patch("/api/reports/:id/status", requireAuth, require2FA, requireModerator, async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: "Invalid id" });
+
   const status = sanitize(req.body.status, 20);
   const validStatuses = ["pending", "reviewed", "dismissed"];
 
@@ -848,21 +1009,25 @@ app.patch("/api/reports/:id/status", requireAuth, requireModerator, async (req, 
     .update({ status })
     .eq("id", req.params.id);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "PATCH /api/reports/status");
   res.json({ success: true });
 });
 
-app.delete("/api/reports/:id", requireAuth, requireModerator, async (req, res) => {
+app.delete("/api/reports/:id", requireAuth, require2FA, requireModerator, async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: "Invalid id" });
+
   const { error } = await supabase
     .from("reports")
     .delete()
     .eq("id", req.params.id);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return dbError(res, error, "DELETE /api/reports");
   res.json({ success: true });
 });
 
-app.post("/api/reports/:id/decision", requireAuth, requireModerator, async (req, res) => {
+app.post("/api/reports/:id/decision", requireAuth, require2FA, requireModerator, async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: "Invalid id" });
+
   const { decision, mod_note } = req.body;
   const validDecisions = ["no_violation", "violation_3", "violation_30", "violation_permanent"];
 
@@ -950,7 +1115,9 @@ app.post("/api/reports/:id/decision", requireAuth, requireModerator, async (req,
   res.json({ success: true, action: "violation", banned_user_id: banUserId });
 });
 
-app.post("/api/reports/:id/reverse-ban", requireAuth, requireModerator, async (req, res) => {
+app.post("/api/reports/:id/reverse-ban", requireAuth, require2FA, requireModerator, async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: "Invalid id" });
+
   const { data: report, error: reportErr } = await supabase
     .from("reports")
     .select("*")
@@ -980,14 +1147,16 @@ app.post("/api/reports/:id/reverse-ban", requireAuth, requireModerator, async (r
     .update({ banned_until: null, ban_reason: null })
     .eq("id", banUserId);
 
-  if (unbanErr) return res.status(500).json({ error: "Failed to reverse ban" });
+  if (unbanErr) return dbError(res, unbanErr, "POST /api/reports/reverse-ban");
 
   await supabase.from("reports").update({ status: "pending" }).eq("id", report.id);
 
   res.json({ success: true });
 });
 
-app.get("/api/reports/ban-info/:userId", requireAuth, requireModerator, async (req, res) => {
+app.get("/api/reports/ban-info/:userId", requireAuth, require2FA, requireModerator, async (req, res) => {
+  if (!UUID_RE.test(req.params.userId)) return res.status(400).json({ error: "Invalid userId" });
+
   const { data, error } = await supabase
     .from("profiles")
     .select("id, first_name, last_name, banned_until, ban_reason")
@@ -1002,10 +1171,14 @@ app.get("/api/reports/ban-info/:userId", requireAuth, requireModerator, async (r
 // MOD MESSAGE VIEWER
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-app.get("/api/mod/messages", requireAuth, requireModerator, async (req, res) => {
+app.get("/api/mod/messages", requireAuth, require2FA, requireModerator, async (req, res) => {
   const { reporter, reported } = req.query;
   if (!reporter || !reported) {
     return res.status(400).json({ error: "Missing reporter/reported params" });
+  }
+
+  if (!UUID_RE.test(reporter) || !UUID_RE.test(reported)) {
+    return res.status(400).json({ error: "Invalid reporter or reported id" });
   }
 
   const { data: convos } = await supabase
