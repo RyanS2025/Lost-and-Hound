@@ -261,17 +261,18 @@ export default function LoginPage({
         }
         await doSignUp();
       } else {
-        onLoginSuccess?.();
+          const { error: signInError } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
 
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+          if (signInError) {
+            throw signInError;
+          }
 
-        if (signInError) {
-          throw signInError;
+          // Only trigger transition AFTER successful sign-in
+          onLoginSuccess?.();
         }
-      }
     } catch (err) {
       setError(cleanErrorMessage(err.message || err.code));
     }
