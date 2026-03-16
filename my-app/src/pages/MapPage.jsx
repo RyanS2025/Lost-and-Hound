@@ -70,9 +70,11 @@ function haversine(a, b) {
 
 // --- DetailModal ---
 function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
+  const { user } = useAuth();
   const navigate = useNavigate();
-  const [claimed, setClaimed] = useState(false);
+  const [returning, setReturning] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const isOwner = user?.id && item?.poster_id === user.id;
   if (!item) return null;
   return (
     <Modal open={!!item} onClose={onClose}>
@@ -124,41 +126,51 @@ function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAUL
           <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} lineHeight={1.65}>{item.description}</Typography>
         </Box>
 
-        {!item.resolved && (
+        {!item.resolved && !isOwner && (
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, px: 1.25, py: 0.75, mb: 1.5, borderRadius: 1.5, background: isDark ? "#3a2f22" : "#fff3cd", border: isDark ? "1px solid rgba(245,158,11,0.5)" : "1px solid #ffc107" }}>
             <Typography variant="caption" sx={{ color: isDark ? "#f6c66a" : "#7d4e00", fontWeight: 600, lineHeight: 1.4 }}>
-              ⚠️ Falsely claiming an item violates the Northeastern Code of Student Conduct and may result in disciplinary action.
+              Only the original poster can mark this item as returned.
             </Typography>
           </Box>
         )}
         <Box sx={{ display: "flex", gap: 1.5 }}>
-          <Button
-            variant="contained" fullWidth disabled={item.resolved}
-            onClick={async () => { setClaimed(true); await onClaim(item.item_id); }}
-            sx={{ background: claimed ? "#16a34a" : "#A84D48", "&:hover": { background: claimed ? "#15803d" : "#8f3e3a" }, fontWeight: 800, borderRadius: 2 }}
-          >
-            {item.resolved ? "Already Resolved" : claimed ? "Marked as Found!" : "This is Mine!"}
-          </Button>
-          <Button
-            variant="outlined"
-            sx={{ borderColor: isDark ? "rgba(255,255,255,0.2)" : "#ecdcdc", color: "#A84D48", fontWeight: 800, borderRadius: 2, flexShrink: 0 }}
-            onClick={async () => {
-              try {
-                const result = await apiFetch("/api/conversations", {
-                  method: "POST",
-                  body: JSON.stringify({
-                    listing_id: item.item_id,
-                    other_user_id: item.poster_id,
-                  }),
-                });
-                if (result?.id) navigate(`/messages?conversation=${result.id}`);
-              } catch (err) {
-                console.error("Failed to open conversation:", err);
-              }
-            }}
-          >
-            Message
-          </Button>
+          {isOwner && (
+            <Button
+              variant="contained"
+              fullWidth
+              disabled={item.resolved || returning}
+              onClick={async () => {
+                setReturning(true);
+                await onClaim(item.item_id);
+                setReturning(false);
+              }}
+              sx={{ background: item.resolved ? "#16a34a" : "#A84D48", "&:hover": { background: item.resolved ? "#15803d" : "#8f3e3a" }, fontWeight: 800, borderRadius: 2 }}
+            >
+              {item.resolved ? "Already Returned" : returning ? "Marking..." : "Returned Item"}
+            </Button>
+          )}
+          {!isOwner && (
+            <Button
+              variant="outlined"
+              sx={{ borderColor: isDark ? "rgba(255,255,255,0.2)" : "#ecdcdc", color: "#A84D48", fontWeight: 800, borderRadius: 2, flexShrink: 0, width: "100%" }}
+              onClick={async () => {
+                try {
+                  const result = await apiFetch("/api/conversations", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      listing_id: item.item_id,
+                      other_user_id: item.poster_id,
+                    }),
+                  });
+                  if (result?.id) navigate(`/messages?conversation=${result.id}`);
+                } catch (err) {
+                  console.error("Failed to open conversation:", err);
+                }
+              }}
+            >
+              Message
+            </Button>
+          )}
         </Box>
         <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} type="post" targetId={item.item_id} targetLabel={item.title}/>
       </Box>

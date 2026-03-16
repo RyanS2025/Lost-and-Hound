@@ -9,6 +9,7 @@ import MessagePage from "./pages/MessagePage";
 import SettingsPage from "./pages/SettingsPage";
 import DashboardPage from "./pages/DashboardPage";
 import NotFoundPage from "./pages/NotFoundPage";
+import AppFooter from "./components/AppFooter";
 import { AppBar, Toolbar, Button, Typography, Container, Box, Paper } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -71,8 +72,6 @@ export default function App() {
 
   const navBg = effectiveTheme === "dark" ? "#1A1A1B" : "#A84D48";
   const navBorder = effectiveTheme === "dark" ? "1px solid rgba(255,255,255,0.12)" : "none";
-  const footerBg = effectiveTheme === "dark" ? "#121213" : "#fff";
-  const footerBorder = effectiveTheme === "dark" ? "1px solid rgba(255,255,255,0.12)" : "1px solid #ecdcdc";
 
   const appTheme = useMemo(
     () =>
@@ -241,7 +240,7 @@ export default function App() {
           />
           <Box sx={{
             display: "flex", justifyContent: "center", alignItems: "center",
-            minHeight: "calc(100vh - 100px)", p: 3,
+            minHeight: "calc(100vh - 120px)", p: 3,
             boxSizing: "border-box",
           }}>
               <Paper elevation={0} sx={{
@@ -275,30 +274,7 @@ export default function App() {
               </Button>
             </Paper>
           </Box>
-          <Box
-            component="footer"
-            sx={{
-              position: "fixed",
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: 36,
-              px: { xs: 1.5, sm: 3 },
-              borderTop: footerBorder,
-              background: footerBg,
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              zIndex: 1200,
-            }}
-          >
-            <Typography variant="caption" color="text.disabled" fontWeight={600} sx={{ display: { xs: "none", sm: "block" } }}>
-              🐾 Lost &amp; Hound · Built by Nahom Hailemelekot, Benjamin Haillu, Liam Pulsifer, and Ryan Sinha · Oasis @ Northeastern
-            </Typography>
-            <Typography variant="caption" color="text.disabled" fontWeight={700} sx={{ display: { xs: "block", sm: "none" } }}>
-              Lost &amp; Hound · Oasis
-            </Typography>
-          </Box>
+          <AppFooter effectiveTheme={effectiveTheme} />
         </>
         </ThemeProvider>
       );
@@ -424,7 +400,7 @@ export default function App() {
             : {}),
         }}
       >
-        <Box sx={{ mt: 0, pb: "48px" }}>
+        <Box sx={{ mt: 0, pb: { xs: "78px", sm: "64px" } }}>
           <Routes>
             <Route path="/" element={<FeedPage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
             <Route path="/map" element={<MapPage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
@@ -447,30 +423,7 @@ export default function App() {
         </Box>
       </Box>
 
-      <Box
-        component="footer"
-        sx={{
-          position: "fixed",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: 36,
-          px: { xs: 1.5, sm: 3 },
-          borderTop: footerBorder,
-          background: footerBg,
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          zIndex: 1200,
-        }}
-      >
-        <Typography variant="caption" color="text.disabled" fontWeight={600} sx={{ display: { xs: "none", sm: "block" } }}>
-          🐾 Lost &amp; Hound · Built by Nahom Hailemelekot, Benjamin Haillu, Liam Pulsifer, and Ryan Sinha · Oasis @ Northeastern
-        </Typography>
-        <Typography variant="caption" color="text.disabled" fontWeight={700} sx={{ display: { xs: "block", sm: "none" } }}>
-          Lost &amp; Hound · Oasis
-        </Typography>
-      </Box>
+      <AppFooter effectiveTheme={effectiveTheme} />
     </>
     </ThemeProvider>
   );

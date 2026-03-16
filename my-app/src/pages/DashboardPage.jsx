@@ -12,8 +12,10 @@ import CancelIcon from "@mui/icons-material/Cancel";
 import CloseIcon from "@mui/icons-material/Close";
 import DeleteIcon from "@mui/icons-material/Delete";
 import FlagIcon from "@mui/icons-material/Flag";
+import PriorityHighIcon from "@mui/icons-material/PriorityHigh";
 import BugReportIcon from "@mui/icons-material/BugReport";
 import FeedbackIcon from "@mui/icons-material/RateReview";
+import SupportAgentIcon from "@mui/icons-material/SupportAgent";
 import ShieldIcon from "@mui/icons-material/Shield";
 import PeopleIcon from "@mui/icons-material/People";
 import ArticleIcon from "@mui/icons-material/Article";
@@ -53,6 +55,19 @@ const DECISION_OPTIONS = [
   { value: "violation_30", label: "30 Day Ban", color: "#dc2626", description: "Remove content + ban user for 30 days" },
   { value: "violation_permanent", label: "Permanent Ban", color: "#7f1d1d", description: "Remove content + permanently ban user" },
 ];
+
+const STOLEN_DECISION_OPTIONS = [
+  { value: "no_violation", label: "Insufficient Theft Evidence", color: "#16a34a", description: "Dismiss theft claim and keep content active" },
+  { value: "violation_3", label: "Likely False Claim (3 Day Ban)", color: "#f59e0b", description: "Remove content and issue a short suspension for suspected false ownership claim" },
+  { value: "violation_30", label: "Confirmed Fraud Claim (30 Day Ban)", color: "#dc2626", description: "Remove content and apply longer suspension for confirmed fraudulent claim" },
+  { value: "violation_permanent", label: "Severe Theft/Fraud (Permanent Ban)", color: "#7f1d1d", description: "Remove content and permanently ban user for severe theft-related abuse" },
+];
+
+function isStolenReport(report) {
+  const reason = (report?.reason || "").toLowerCase();
+  const details = (report?.details || "").toLowerCase();
+  return reason.includes("stolen") || details.includes("stolen") || reason.includes("theft") || details.includes("theft");
+}
 
 function parseCoordinates(coordStr) {
   if (!coordStr || typeof coordStr !== "string") return null;
@@ -371,8 +386,10 @@ function DecisionPanel({ report, onDecision, processing, isDark = false }) {
   const [decision, setDecision] = useState("");
   const [modNote, setModNote] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const isStolenClaim = isStolenReport(report);
+  const decisionOptions = isStolenClaim ? STOLEN_DECISION_OPTIONS : DECISION_OPTIONS;
 
-  const selectedOption = DECISION_OPTIONS.find((o) => o.value === decision);
+  const selectedOption = decisionOptions.find((o) => o.value === decision);
   const isViolation = decision && decision !== "no_violation";
 
   const handleConfirm = () => {
@@ -386,7 +403,7 @@ function DecisionPanel({ report, onDecision, processing, isDark = false }) {
     <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2 }, borderRadius: 2, borderColor: isDark ? "rgba(255,255,255,0.16)" : "#ecdcdc", background: isDark ? "#1A1A1B" : "#fff" }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5 }}>
         <GavelIcon sx={{ color: "#A84D48", fontSize: 20 }} />
-        <Typography fontWeight={800} fontSize={14}>Make a Decision</Typography>
+        <Typography fontWeight={800} fontSize={14}>{isStolenClaim ? "Stolen Claim Decision" : "Make a Decision"}</Typography>
       </Box>
 
       <Box sx={{ display: "flex", gap: 1.5, alignItems: "stretch", flexDirection: { xs: "column", sm: "row" }, flexWrap: "wrap" }}>
@@ -397,11 +414,11 @@ function DecisionPanel({ report, onDecision, processing, isDark = false }) {
             displayEmpty
             renderValue={(val) => {
               if (!val) return <Typography variant="body2" color="text.disabled">Select action...</Typography>;
-              const opt = DECISION_OPTIONS.find((o) => o.value === val);
+              const opt = decisionOptions.find((o) => o.value === val);
               return <Typography variant="body2" fontWeight={700} sx={{ color: opt?.color }}>{opt?.label}</Typography>;
             }}
           >
-            {DECISION_OPTIONS.map((opt) => (
+            {decisionOptions.map((opt) => (
               <MenuItem key={opt.value} value={opt.value}>
                 <Box>
                   <Typography variant="body2" fontWeight={700} sx={{ color: opt.color }}>{opt.label}</Typography>
@@ -438,7 +455,9 @@ function DecisionPanel({ report, onDecision, processing, isDark = false }) {
 
       {isViolation && (
         <TextField
-          placeholder="Reason shown to banned user (optional — defaults to report reason)"
+          placeholder={isStolenClaim
+            ? "Moderator note for theft decision (optional — defaults to report reason)"
+            : "Reason shown to banned user (optional — defaults to report reason)"}
           value={modNote}
           onChange={(e) => setModNote(e.target.value)}
           fullWidth
@@ -460,12 +479,24 @@ function DecisionPanel({ report, onDecision, processing, isDark = false }) {
         onClose={() => setConfirmOpen(false)}
         PaperProps={{ sx: { background: isDark ? "#1A1A1B" : "#fff", border: isDark ? "1px solid rgba(255,255,255,0.16)" : "none", color: isDark ? "#D7DADC" : "inherit", m: 2 } }}
       >
-        <DialogTitle sx={{ fontWeight: 700 }}>Confirm Violation Action</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700 }}>{isStolenClaim ? "Confirm Stolen-Claim Action" : "Confirm Violation Action"}</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            This will <strong>permanently delete</strong> the reported content and{" "}
-            <strong>{decision === "violation_permanent" ? "permanently ban" : `ban for ${decision === "violation_3" ? "3 days" : "30 days"}`}</strong>{" "}
-            the offending user. This cannot be undone.
+            {isStolenClaim
+              ? (
+                <>
+                  This will apply a stolen-claim enforcement action: <strong>remove reported content</strong> and{" "}
+                  <strong>{decision === "violation_permanent" ? "permanently ban" : `ban for ${decision === "violation_3" ? "3 days" : "30 days"}`}</strong>{" "}
+                  the offending user. This cannot be undone.
+                </>
+              )
+              : (
+                <>
+                  This will <strong>permanently delete</strong> the reported content and{" "}
+                  <strong>{decision === "violation_permanent" ? "permanently ban" : `ban for ${decision === "violation_3" ? "3 days" : "30 days"}`}</strong>{" "}
+                  the offending user. This cannot be undone.
+                </>
+              )}
           </DialogContentText>
           {modNote.trim() && (
             <Box sx={{ mt: 2, p: 1.5, background: isDark ? "#232324" : "#fdf7f7", borderRadius: 1.5, border: isDark ? "1px solid rgba(255,255,255,0.14)" : "1px solid #ecdcdc" }}>
@@ -620,9 +651,13 @@ function ReverseBanPanel({ report, onReverseBan, processing, isDark = false, tim
 }
 
 // --- Report Card ---
-function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision, onReverseBan, processing, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
+function ReportCard({ report, fullListing, groupedReports = null, onUpdateStatus, onDelete, onDecision, onReverseBan, processing, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
   const [expanded, setExpanded] = useState(false);
+  const [groupExpanded, setGroupExpanded] = useState(false);
+  const [reviewModalReport, setReviewModalReport] = useState(null);
   const isPost = !!report.reported_listing_id;
+  const isStolen = isStolenReport(report);
+  const hasGroupedReports = isPost && Array.isArray(groupedReports) && groupedReports.length > 1;
   const statusStyle = isDark
     ? (STATUS_CONFIG_DARK[report.status] || STATUS_CONFIG_DARK.pending)
     : (STATUS_CONFIG[report.status] || STATUS_CONFIG.pending);
@@ -637,6 +672,19 @@ function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision,
               sx={{ fontWeight: 800, fontSize: 11, background: isPost ? (isDark ? "#343536" : "#f5eded") : (isDark ? "#31283f" : "#ede8f5"), color: isPost ? "#A84D48" : isDark ? "#c4a5ff" : "#6b21a8" }} />
             <Chip label={report.status} size="small"
               sx={{ fontWeight: 700, fontSize: 11, textTransform: "capitalize", background: statusStyle.bg, color: statusStyle.color, border: `1px solid ${statusStyle.border}` }} />
+            {hasGroupedReports && (
+              <Chip
+                label={`${groupedReports.length} reports`}
+                size="small"
+                sx={{
+                  fontWeight: 800,
+                  fontSize: 11,
+                  background: isDark ? "#2D2D2E" : "#f3f4f6",
+                  color: isDark ? "#D7DADC" : "#374151",
+                  border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1px solid #d1d5db",
+                }}
+              />
+            )}
           </Box>
           <Typography variant="caption" color="text.disabled" fontWeight={600} sx={{ fontSize: 11 }}>{formatDateTime(report.created_at, timeZone)}</Typography>
         </Box>
@@ -664,6 +712,195 @@ function ReportCard({ report, fullListing, onUpdateStatus, onDelete, onDecision,
             </Typography>
           </Box>
         </Box>
+
+        {isStolen && (
+          <Paper
+            variant="outlined"
+            sx={{
+              mb: 1.5,
+              p: 1.25,
+              borderRadius: 2,
+              background: isDark ? "rgba(146,64,14,0.2)" : "#fffbeb",
+              borderColor: isDark ? "rgba(245,158,11,0.5)" : "#fcd34d",
+            }}
+          >
+            <Typography variant="caption" fontWeight={800} sx={{ color: isDark ? "#f6c66a" : "#92400e", letterSpacing: 0.4, display: "block", mb: 0.5 }}>
+              STOLEN REPORT CONTACTS
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block">
+              Reported person: {report.stolenContext?.reportedPersonEmail || "Email unavailable"}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block">
+              Claimed "This is Mine": {report.stolenContext?.claimedMinePersonEmail || "Email unavailable"}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block">
+              Reporter: {report.stolenContext?.reporterEmail || "Email unavailable"}
+            </Typography>
+          </Paper>
+        )}
+
+        {hasGroupedReports && (
+          <>
+            <Button
+              size="small"
+              onClick={() => setGroupExpanded((v) => !v)}
+              sx={{
+                color: "#A84D48",
+                fontWeight: 700,
+                fontSize: 12,
+                mb: 0.75,
+                px: 0,
+                minWidth: 0,
+                "&:hover": { background: "transparent", textDecoration: "underline" },
+              }}
+            >
+              {groupExpanded ? "Hide related reports" : `Show all reports for this post (${groupedReports.length})`}
+            </Button>
+
+            <Collapse in={groupExpanded}>
+              <Paper
+                variant="outlined"
+                sx={{
+                  mb: 1.5,
+                  p: 1.25,
+                  borderRadius: 2,
+                  background: isDark ? "#232324" : "#faf8f8",
+                  borderColor: isDark ? "rgba(255,255,255,0.14)" : "#ecdcdc",
+                }}
+              >
+                <Typography variant="caption" fontWeight={800} color={isDark ? "#B8BABD" : "#a07070"} sx={{ letterSpacing: 0.4, display: "block", mb: 0.75 }}>
+                  ALL REPORTS FOR THIS POST
+                </Typography>
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+                  {groupedReports.map((r) => (
+                    <Box
+                      key={r.id}
+                      onClick={() => setReviewModalReport(r)}
+                      sx={{
+                        p: 1,
+                        borderRadius: 1.5,
+                        background: isDark ? "#1A1A1B" : "#fff",
+                        border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid #ece1e1",
+                        cursor: "pointer",
+                        transition: "border-color 0.15s ease, transform 0.15s ease",
+                        "&:hover": {
+                          borderColor: isDark ? "rgba(255,255,255,0.26)" : "#d8b2b0",
+                          transform: "translateY(-1px)",
+                        },
+                      }}
+                    >
+                      <Box sx={{ display: "flex", justifyContent: "space-between", gap: 1, flexWrap: "wrap", mb: 0.4 }}>
+                        <Typography variant="caption" fontWeight={700} color="text.secondary">
+                          {r.reporter ? `${r.reporter.first_name} ${r.reporter.last_name}` : "Unknown reporter"}
+                        </Typography>
+                        <Typography variant="caption" color="text.disabled">
+                          {formatDateTime(r.created_at, timeZone)}
+                        </Typography>
+                      </Box>
+                      <Typography variant="body2" fontWeight={700} sx={{ fontSize: 12.5, lineHeight: 1.4 }}>
+                        {r.reason}
+                      </Typography>
+                      {r.details && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.3 }}>
+                          {r.details}
+                        </Typography>
+                      )}
+                      <Typography variant="caption" sx={{ display: "block", mt: 0.6, color: "#A84D48", fontWeight: 700 }}>
+                        Click to review this report
+                      </Typography>
+                    </Box>
+                  ))}
+                </Box>
+              </Paper>
+            </Collapse>
+          </>
+        )}
+
+        <Dialog
+          open={!!reviewModalReport}
+          onClose={() => setReviewModalReport(null)}
+          fullWidth
+          maxWidth="sm"
+          PaperProps={{
+            sx: {
+              background: isDark ? "#1A1A1B" : "#fff",
+              border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1px solid #ecdcdc",
+              m: 2,
+            },
+          }}
+        >
+          <DialogTitle sx={{ pr: 6, fontWeight: 800 }}>
+            Review Report
+            <IconButton
+              onClick={() => setReviewModalReport(null)}
+              size="small"
+              sx={{ position: "absolute", right: 12, top: 12 }}
+              aria-label="Close"
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </DialogTitle>
+          <DialogContent dividers sx={{ borderColor: isDark ? "rgba(255,255,255,0.12)" : "#ecdcdc" }}>
+            <Typography variant="caption" color="text.secondary" fontWeight={700} display="block" sx={{ mb: 0.25 }}>
+              Reporter
+            </Typography>
+            <Typography variant="body2" fontWeight={700} sx={{ mb: 1.25 }}>
+              {reviewModalReport?.reporter ? `${reviewModalReport.reporter.first_name} ${reviewModalReport.reporter.last_name}` : "Unknown"}
+            </Typography>
+
+            <Typography variant="caption" color="text.secondary" fontWeight={700} display="block" sx={{ mb: 0.25 }}>
+              Submitted
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 1.25 }}>
+              {reviewModalReport?.created_at ? formatDateTime(reviewModalReport.created_at, timeZone) : "Unknown"}
+            </Typography>
+
+            <Typography variant="caption" color="text.secondary" fontWeight={700} display="block" sx={{ mb: 0.25 }}>
+              Reason
+            </Typography>
+            <Typography variant="body2" fontWeight={700} sx={{ mb: 1.25 }}>
+              {reviewModalReport?.reason || "No reason provided"}
+            </Typography>
+
+            <Typography variant="caption" color="text.secondary" fontWeight={700} display="block" sx={{ mb: 0.25 }}>
+              Details
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "pre-wrap", mb: 1.25 }}>
+              {reviewModalReport?.details || "No additional details provided."}
+            </Typography>
+
+            {isStolenReport(reviewModalReport) && (
+              <Paper
+                variant="outlined"
+                sx={{
+                  mt: 0.5,
+                  p: 1.25,
+                  borderRadius: 1.5,
+                  background: isDark ? "rgba(146,64,14,0.2)" : "#fffbeb",
+                  borderColor: isDark ? "rgba(245,158,11,0.45)" : "#fcd34d",
+                }}
+              >
+                <Typography variant="caption" fontWeight={800} sx={{ color: isDark ? "#f6c66a" : "#92400e", display: "block", mb: 0.4 }}>
+                  STOLEN REPORT CONTACTS
+                </Typography>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Reported person: {reviewModalReport?.stolenContext?.reportedPersonEmail || "Email unavailable"}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Claimed "This is Mine": {reviewModalReport?.stolenContext?.claimedMinePersonEmail || "Email unavailable"}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Reporter: {reviewModalReport?.stolenContext?.reporterEmail || "Email unavailable"}
+                </Typography>
+              </Paper>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => setReviewModalReport(null)} sx={{ color: "text.secondary" }}>
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {/* Expand toggle */}
         <Button
@@ -828,14 +1065,61 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
   };
 
   // --- Derived ---
+  const stolenReports = reports.filter(isStolenReport);
+  const regularReports = reports.filter((r) => !isStolenReport(r));
+
   const counts = {
-    pending: reports.filter((r) => r.status === "pending").length,
-    reviewed: reports.filter((r) => r.status === "reviewed").length,
-    dismissed: reports.filter((r) => r.status === "dismissed").length,
+    pending: regularReports.filter((r) => r.status === "pending").length,
+    reviewed: regularReports.filter((r) => r.status === "reviewed").length,
+    dismissed: regularReports.filter((r) => r.status === "dismissed").length,
   };
-  const filteredReports = reports.filter((r) => r.status === reportTab);
-  const postReports = reports.filter((r) => !!r.reported_listing_id).length;
-  const userReports = reports.filter((r) => !!r.reported_user_id).length;
+  const stolenCounts = {
+    pending: stolenReports.filter((r) => r.status === "pending").length,
+    reviewed: stolenReports.filter((r) => r.status === "reviewed").length,
+    dismissed: stolenReports.filter((r) => r.status === "dismissed").length,
+  };
+
+  const activeCollection = section === "stolen" ? stolenReports : regularReports;
+  const activeCounts = section === "stolen" ? stolenCounts : counts;
+  const filteredReports = activeCollection.filter((r) => r.status === reportTab);
+  const allPostReportsByPostId = activeCollection.reduce((acc, report) => {
+    if (!report.reported_listing_id) return acc;
+    const key = String(report.reported_listing_id);
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(report);
+    return acc;
+  }, {});
+
+  const groupedRenderItems = (() => {
+    const byPost = new Map();
+    const singles = [];
+
+    for (const report of filteredReports) {
+      if (report.reported_listing_id) {
+        const key = String(report.reported_listing_id);
+        if (!byPost.has(key)) byPost.set(key, report);
+      } else {
+        singles.push(report);
+      }
+    }
+
+    const groupedPosts = [...byPost.entries()].map(([postId, primaryReport]) => ({
+      primaryReport,
+      relatedReports: (allPostReportsByPostId[postId] || [primaryReport]).slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
+      sortDate: new Date(primaryReport.created_at).getTime(),
+    }));
+
+    const groupedSingles = singles.map((report) => ({
+      primaryReport: report,
+      relatedReports: null,
+      sortDate: new Date(report.created_at).getTime(),
+    }));
+
+    return [...groupedPosts, ...groupedSingles].sort((a, b) => b.sortDate - a.sortDate);
+  })();
+  const postReports = regularReports.filter((r) => !!r.reported_listing_id).length;
+  const userReports = regularReports.filter((r) => !!r.reported_user_id).length;
+  const stolenPending = stolenCounts.pending;
 
   // --- Guard ---
   if (!profile) return null;
@@ -843,8 +1127,10 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
 
   const sections = [
     { id: "reports", label: "Reports", icon: <FlagIcon sx={{ fontSize: 18 }} /> },
+    { id: "stolen", label: "Stolen", icon: <PriorityHighIcon sx={{ fontSize: 18 }} /> },
     { id: "feedback", label: "Feedback", icon: <FeedbackIcon sx={{ fontSize: 18 }} /> },
     { id: "bugs", label: "Bugs", icon: <BugReportIcon sx={{ fontSize: 18 }} /> },
+    { id: "support-categories", label: "Support", icon: <SupportAgentIcon sx={{ fontSize: 18 }} /> },
   ];
 
   return (
@@ -882,7 +1168,7 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
         {/* ====== Stat Cards — 2x2 grid on mobile, 4-col on desktop ====== */}
         <Box sx={{
           display: "grid",
-          gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(4, 1fr)" },
+          gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(5, 1fr)" },
           gap: { xs: 1, sm: 2 },
           my: { xs: 2, sm: 3 },
         }}>
@@ -890,6 +1176,7 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
           <StatCard icon={<ArticleIcon sx={{ color: "#A84D48", fontSize: isMobile ? 18 : 22 }} />} label="Post Reports" value={postReports} color="#A84D48" isDark={isDark} compact={isMobile} />
           <StatCard icon={<PeopleIcon sx={{ color: "#6b21a8", fontSize: isMobile ? 18 : 22 }} />} label="User Reports" value={userReports} color="#6b21a8" isDark={isDark} compact={isMobile} />
           <StatCard icon={<CheckCircleIcon sx={{ color: "#16a34a", fontSize: isMobile ? 18 : 22 }} />} label="Reviewed" value={counts.reviewed} color="#16a34a" isDark={isDark} compact={isMobile} />
+          <StatCard icon={<PriorityHighIcon sx={{ color: "#dc2626", fontSize: isMobile ? 18 : 22 }} />} label="Stolen Pending" value={stolenPending} color="#dc2626" isDark={isDark} compact={isMobile} />
         </Box>
 
         {/* ====== Section tabs ====== */}
@@ -915,9 +1202,23 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
         </Box>
 
         {/* ====== Reports section ====== */}
-        {section === "reports" && (
+        {(section === "reports" || section === "stolen") && (
           <>
             {actionError && <Alert severity="error" sx={{ mb: 2 }}>{actionError}</Alert>}
+
+            {section === "stolen" && (
+              <Alert
+                severity="warning"
+                sx={{
+                  mb: 2,
+                  border: isDark ? "1px solid rgba(245,158,11,0.45)" : "1px solid #fcd34d",
+                  background: isDark ? "rgba(146,64,14,0.22)" : "#fffbeb",
+                  "& .MuiAlert-message": { fontWeight: 600 },
+                }}
+              >
+                Theft-related reports are high priority and should be reviewed first.
+              </Alert>
+            )}
 
             <Box sx={{
               display: "flex", justifyContent: "space-between",
@@ -942,9 +1243,9 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
                   "& .MuiTabs-indicator": { backgroundColor: "#A84D48" },
                 }}
               >
-                <Tab value="pending" label={`Pending (${counts.pending})`} />
-                <Tab value="reviewed" label={`Reviewed (${counts.reviewed})`} />
-                <Tab value="dismissed" label={`Dismissed (${counts.dismissed})`} />
+                <Tab value="pending" label={`Pending (${activeCounts.pending})`} />
+                <Tab value="reviewed" label={`Reviewed (${activeCounts.reviewed})`} />
+                <Tab value="dismissed" label={`Dismissed (${activeCounts.dismissed})`} />
               </Tabs>
               <Button
                 size="small"
@@ -959,14 +1260,23 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
 
             {loading ? (
               <Box sx={{ display: "flex", justifyContent: "center", mt: 6 }}><CircularProgress sx={{ color: "#A84D48" }} /></Box>
-            ) : filteredReports.length === 0 ? (
-              <EmptySection icon={<FlagIcon sx={{ color: "#A84D48", fontSize: 28 }} />} title={`No ${reportTab} reports`} description="All clear! Check back later or switch tabs." isDark={isDark} />
+            ) : groupedRenderItems.length === 0 ? (
+              <EmptySection
+                icon={section === "stolen" ? <PriorityHighIcon sx={{ color: "#dc2626", fontSize: 28 }} /> : <FlagIcon sx={{ color: "#A84D48", fontSize: 28 }} />}
+                title={section === "stolen" ? `No ${reportTab} stolen reports` : `No ${reportTab} reports`}
+                description={section === "stolen"
+                  ? "No theft-related reports in this status right now."
+                  : "All clear! Check back later or switch tabs."}
+                isDark={isDark}
+              />
             ) : (
               <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                {filteredReports.map((report) => (
+                {groupedRenderItems.map(({ primaryReport, relatedReports }) => (
                   <ReportCard
-                    key={report.id} report={report}
-                    fullListing={fullListings[report.reported_listing_id] || null}
+                    key={primaryReport.id}
+                    report={primaryReport}
+                    groupedReports={relatedReports}
+                    fullListing={fullListings[primaryReport.reported_listing_id] || null}
                     onUpdateStatus={updateStatus} onDelete={setDeleteTarget}
                     onDecision={handleDecision} onReverseBan={handleReverseBan}
                     processing={processing} isDark={isDark} timeZone={timeZone}
@@ -982,6 +1292,14 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
         )}
         {section === "bugs" && (
           <EmptySection icon={<BugReportIcon sx={{ color: "#A84D48", fontSize: 28 }} />} title="Bug Reports — Coming Soon" description="This section will display bug reports with status tracking." isDark={isDark} />
+        )}
+        {section === "support-categories" && (
+          <EmptySection
+            icon={<SupportAgentIcon sx={{ color: "#A84D48", fontSize: 28 }} />}
+            title="Support Ticket Categories — Coming Soon"
+            description="This section will include moderator-managed support ticket categories and routing rules."
+            isDark={isDark}
+          />
         )}
       </Box>
 

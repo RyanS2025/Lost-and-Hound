@@ -11,6 +11,7 @@ const REPORT_REASON_MAX_LENGTH = 50;
 const REPORT_DETAILS_MAX_LENGTH = 250;
 
 const POST_REASONS = [
+  "Stolen item / theft concern",
   "False or misleading listing",
   "Inappropriate content",
   "Spam",
@@ -19,6 +20,7 @@ const POST_REASONS = [
 ];
 
 const USER_REASONS = [
+  "Stolen item / theft concern",
   "Harassment or threatening behavior",
   "Scam or fraud attempt",
   "Impersonation",
@@ -48,6 +50,7 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
 
   const reasons = type === "post" ? POST_REASONS : USER_REASONS;
   const isOtherReason = reason === "Other";
+  const isStolenReason = reason === "Stolen item / theft concern";
 
   const handleSubmit = async () => {
     if (!reason) return;
@@ -158,11 +161,45 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
                   key={r}
                   value={r}
                   control={<Radio size="small" sx={{ color: BRAND.accent, "&.Mui-checked": { color: BRAND.accent } }} />}
-                  label={<Typography variant="body2">{r}</Typography>}
-                  sx={{ mb: -0.5 }}
+                  label={
+                    <Typography
+                      variant="body2"
+                      fontWeight={r === "Stolen item / theft concern" ? 800 : 500}
+                      sx={{ color: r === "Stolen item / theft concern" ? "#dc2626" : "inherit" }}
+                    >
+                      {r}
+                    </Typography>
+                  }
+                  sx={{
+                    mb: -0.5,
+                    px: 1,
+                    py: 0.25,
+                    borderRadius: 1.5,
+                    border: r === "Stolen item / theft concern"
+                      ? (isDark ? "1px solid rgba(248,113,113,0.5)" : "1px solid #fecaca")
+                      : "1px solid transparent",
+                    background: r === "Stolen item / theft concern"
+                      ? (isDark ? "rgba(127,29,29,0.22)" : "#fef2f2")
+                      : "transparent",
+                  }}
                 />
               ))}
             </RadioGroup>
+
+            {isStolenReason && (
+              <Alert
+                severity="warning"
+                sx={{
+                  mt: 1,
+                  mb: 1,
+                  border: isDark ? "1px solid rgba(245,158,11,0.45)" : "1px solid #fcd34d",
+                  background: isDark ? "rgba(146,64,14,0.22)" : "#fffbeb",
+                  "& .MuiAlert-message": { fontWeight: 600 },
+                }}
+              >
+                High priority: select this only if theft is suspected. Include any identifying details below.
+              </Alert>
+            )}
 
             {isOtherReason && (
               <TextField

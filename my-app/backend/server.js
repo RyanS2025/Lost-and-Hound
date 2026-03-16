@@ -326,6 +326,20 @@ app.post("/api/listings", writeLimiter, requireAuth, requireNotBanned, async (re
 });
 
 app.patch("/api/listings/:item_id/resolve", requireAuth, requireNotBanned, async (req, res) => {
+  const { data: listing } = await supabase
+    .from("listings")
+    .select("item_id, poster_id, resolved")
+    .eq("item_id", req.params.item_id)
+    .maybeSingle();
+
+  if (!listing) {
+    return res.status(404).json({ error: "Listing not found" });
+  }
+
+  if (listing.poster_id !== req.user.id) {
+    return res.status(403).json({ error: "Only the original poster can mark an item as returned" });
+  }
+
   const { error } = await supabase
     .from("listings")
     .update({ resolved: true })
@@ -394,7 +408,6 @@ app.post("/api/upload-url", writeLimiter, requireAuth, requireNotBanned, async (
 
   res.json({
     signedUrl: data.signedUrl,
-    token: data.token,
     publicUrl: publicUrlData.publicUrl,
     path,
   });
@@ -616,7 +629,7 @@ app.post("/api/reports", strictLimiter, requireAuth, requireNotBanned, async (re
   const reason = sanitize(req.body.reason, 200);
   const details = sanitize(req.body.details, 2000) || null;
   const reported_listing_id = req.body.reported_listing_id || null;
-  const reported_user_id = req.body.reported_user_id || null;
+  let reported_user_id = req.body.reported_user_id || null;
 
   if (!reason) {
     return res.status(400).json({ error: "Reason is required" });
@@ -624,6 +637,19 @@ app.post("/api/reports", strictLimiter, requireAuth, requireNotBanned, async (re
 
   if (!reported_listing_id && !reported_user_id) {
     return res.status(400).json({ error: "Must report either a listing or a user" });
+  }
+
+  if (reported_listing_id && !reported_user_id) {
+    const { data: listingTarget } = await supabase
+      .from("listings")
+      .select("poster_id")
+      .eq("item_id", reported_listing_id)
+      .maybeSingle();
+
+    // Snapshot the reported user for listing reports so email lookups survive later listing deletion.
+    if (listingTarget?.poster_id) {
+      reported_user_id = listingTarget.poster_id;
+    }
   }
 
   if (reported_user_id === req.user.id) {
@@ -680,11 +706,130 @@ app.get("/api/reports", requireAuth, requireModerator, async (req, res) => {
     (listingsData || []).forEach((l) => { listingMap[l.item_id] = l; });
   }
 
+  const isStolenReport = (report) => {
+    const reason = (report?.reason || "").toLowerCase();
+    const details = (report?.details || "").toLowerCase();
+    return reason.includes("stolen") || details.includes("stolen") || reason.includes("theft") || details.includes("theft");
+  };
+
+  const stolenListingIds = data
+    .filter((r) => isStolenReport(r) && r.reported_listing_id)
+    .map((r) => r.reported_listing_id);
+
+  const stolenClaimantByListingId = {};
+  const firstConvoByListingId = {};
+  if (stolenListingIds.length > 0) {
+    const { data: convoData } = await supabase
+      .from("conversations")
+      .select("listing_id, participant_1, participant_2, created_at")
+      .in("listing_id", stolenListingIds)
+      .order("created_at", { ascending: true });
+
+    for (const convo of convoData || []) {
+      if (convo?.listing_id && !firstConvoByListingId[convo.listing_id]) {
+        firstConvoByListingId[convo.listing_id] = convo;
+      }
+
+      if (!convo?.listing_id || stolenClaimantByListingId[convo.listing_id]) continue;
+      const listingPosterId = listingMap[convo.listing_id]?.poster_id || null;
+
+      if (listingPosterId && convo.participant_1 !== listingPosterId) {
+        stolenClaimantByListingId[convo.listing_id] = convo.participant_1;
+      } else if (listingPosterId && convo.participant_2 !== listingPosterId) {
+        stolenClaimantByListingId[convo.listing_id] = convo.participant_2;
+      } else {
+        stolenClaimantByListingId[convo.listing_id] = convo.participant_1 || convo.participant_2 || null;
+      }
+    }
+  }
+
+  const emailUserIds = new Set();
+  for (const r of data) {
+    if (r.reporter_id) emailUserIds.add(r.reporter_id);
+    if (r.reported_user_id) emailUserIds.add(r.reported_user_id);
+    if (r.reported_listing_id && listingMap[r.reported_listing_id]?.poster_id) {
+      emailUserIds.add(listingMap[r.reported_listing_id].poster_id);
+    }
+    if (r.reported_listing_id && stolenClaimantByListingId[r.reported_listing_id]) {
+      emailUserIds.add(stolenClaimantByListingId[r.reported_listing_id]);
+    }
+  }
+
+  const emailMap = {};
+  const unresolvedEmailIds = new Set();
+  await Promise.all(
+    [...emailUserIds].map(async (uid) => {
+      try {
+        const { data: userData, error: userErr } = await supabase.auth.admin.getUserById(uid);
+        if (!userErr && userData?.user?.email) {
+          emailMap[uid] = userData.user.email;
+          return;
+        }
+        unresolvedEmailIds.add(uid);
+      } catch {
+        // Keep missing emails as null so dashboard can render a fallback label.
+        unresolvedEmailIds.add(uid);
+      }
+    })
+  );
+
+  // Fallback for any unresolved IDs: scan auth users pages and map matching IDs.
+  if (unresolvedEmailIds.size > 0) {
+    let page = 1;
+    const perPage = 200;
+
+    while (unresolvedEmailIds.size > 0) {
+      const { data: usersPage, error: usersErr } = await supabase.auth.admin.listUsers({ page, perPage });
+      if (usersErr) break;
+
+      const users = usersPage?.users || [];
+      if (users.length === 0) break;
+
+      for (const u of users) {
+        if (u?.id && unresolvedEmailIds.has(u.id) && u.email) {
+          emailMap[u.id] = u.email;
+          unresolvedEmailIds.delete(u.id);
+        }
+      }
+
+      if (users.length < perPage) break;
+      page += 1;
+    }
+  }
+
   const enriched = data.map((r) => ({
     ...r,
     reporter: profileMap[r.reporter_id] || null,
     reportedUser: profileMap[r.reported_user_id] || null,
     reportedListing: listingMap[r.reported_listing_id] || null,
+    stolenContext: (() => {
+      if (!isStolenReport(r)) return null;
+
+      const listingId = r.reported_listing_id;
+      const listingPosterId = listingMap[listingId]?.poster_id || null;
+      const firstConvo = listingId ? firstConvoByListingId[listingId] : null;
+
+      const inferredReportedFromConvo = firstConvo
+        ? (firstConvo.participant_1 === r.reporter_id
+          ? firstConvo.participant_2
+          : (firstConvo.participant_2 === r.reporter_id ? firstConvo.participant_1 : null))
+        : null;
+
+      const reportedPersonId = r.reported_user_id || listingPosterId || inferredReportedFromConvo || null;
+      const claimedMinePersonId = listingId
+        ? (stolenClaimantByListingId[listingId] || r.reporter_id || null)
+        : (r.reporter_id || null);
+      const reporterId = r.reporter_id || null;
+
+      return {
+        reportedPersonId,
+        claimedMinePersonId,
+        reporterId,
+        reportedPersonEmail: reportedPersonId ? (emailMap[reportedPersonId] || null) : null,
+        claimedMinePersonEmail: claimedMinePersonId ? (emailMap[claimedMinePersonId] || null) : null,
+        reporterEmail: reporterId ? (emailMap[reporterId] || null) : null,
+      };
+    })(),
   }));
 
   res.json({ reports: enriched, listings: listingMap });
