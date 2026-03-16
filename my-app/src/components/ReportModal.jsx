@@ -7,6 +7,9 @@ import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import apiFetch from "../utils/apiFetch";
 
+const REPORT_REASON_MAX_LENGTH = 50;
+const REPORT_DETAILS_MAX_LENGTH = 250;
+
 const POST_REASONS = [
   "False or misleading listing",
   "Inappropriate content",
@@ -37,20 +40,27 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
   };
 
   const [reason, setReason] = useState("");
+  const [customReason, setCustomReason] = useState("");
   const [details, setDetails] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
 
   const reasons = type === "post" ? POST_REASONS : USER_REASONS;
+  const isOtherReason = reason === "Other";
 
   const handleSubmit = async () => {
     if (!reason) return;
+    const normalizedCustomReason = customReason.trim();
+    if (isOtherReason && !normalizedCustomReason) {
+      setError("Please enter a reason.");
+      return;
+    }
     setSubmitting(true);
     setError("");
 
     const row = {
-      reason,
+      reason: isOtherReason ? normalizedCustomReason : reason,
       details: details.trim() || null,
     };
 
@@ -78,6 +88,7 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
     // Reset state after animation
     setTimeout(() => {
       setReason("");
+      setCustomReason("");
       setDetails("");
       setSubmitted(false);
       setError("");
@@ -153,19 +164,48 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
               ))}
             </RadioGroup>
 
+            {isOtherReason && (
+              <TextField
+                placeholder="Enter report reason"
+                value={customReason}
+                onChange={(e) => setCustomReason(e.target.value.slice(0, REPORT_REASON_MAX_LENGTH))}
+                fullWidth
+                size="small"
+                inputProps={{ maxLength: REPORT_REASON_MAX_LENGTH }}
+                helperText={`${customReason.length}/${REPORT_REASON_MAX_LENGTH}`}
+                sx={{
+                  mt: 1.25,
+                  mb: 1,
+                  "& .MuiOutlinedInput-root": {
+                    bgcolor: BRAND.inputBg,
+                  },
+                  "& .MuiFormHelperText-root": {
+                    textAlign: "right",
+                    mr: 0.5,
+                  },
+                }}
+              />
+            )}
+
             <TextField
               placeholder="Additional details (optional)"
               value={details}
-              onChange={(e) => setDetails(e.target.value)}
+              onChange={(e) => setDetails(e.target.value.slice(0, REPORT_DETAILS_MAX_LENGTH))}
               multiline
-              rows={2}
+              rows={3}
               fullWidth
               size="small"
+              inputProps={{ maxLength: REPORT_DETAILS_MAX_LENGTH }}
+              helperText={`${details.length}/${REPORT_DETAILS_MAX_LENGTH}`}
               sx={{
                 mt: 2,
                 mb: 2,
                 "& .MuiOutlinedInput-root": {
                   bgcolor: BRAND.inputBg,
+                },
+                "& .MuiFormHelperText-root": {
+                  textAlign: "right",
+                  mr: 0.5,
                 },
               }}
             />
@@ -177,7 +217,7 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
             <Button
               variant="contained"
               fullWidth
-              disabled={!reason || submitting}
+              disabled={!reason || submitting || (isOtherReason && !customReason.trim())}
               onClick={handleSubmit}
               sx={{
                 background: BRAND.accent,

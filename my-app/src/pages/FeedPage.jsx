@@ -16,6 +16,7 @@ import apiFetch from "../utils/apiFetch";
 import { useAuth } from "../AuthContext";
 import MapPinPicker from "../components/MapPinPicker";
 import { CAMPUSES } from "../constants/campuses";
+import { DEFAULT_TIME_ZONE, formatRelativeDate } from "../utils/timezone";
 
 // --- Constants ---
 const CATEGORIES = ["All", "Husky Card", "Jacket", "Wallet/Purse", "Bag", "Keys", "Electronics", "Other"];
@@ -24,13 +25,8 @@ const IMPORTANCE_LABELS = { 3: "High", 2: "Medium", 1: "Low" };
 const IMPORTANCE_COLORS = { 3: "#b91c1c", 2: "#a16207", 1: "#1d4ed8" };
 const IMPORTANCE_MARKS = [{ value: 1, label: "Low" }, { value: 2, label: "Medium" }, { value: 3, label: "High" }];
 
-// --- Helpers ---
-function formatDate(d) {
-  const diff = Math.floor((new Date() - new Date(d)) / 86400000);
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Yesterday";
-  return `${diff} days ago`;
-}
+// --- Character limits ---
+const LIMITS = { title: 50, found_at: 50, description: 250 };
 
 function parseCoordinates(coordStr) {
   if (!coordStr || typeof coordStr !== "string") return null;
@@ -96,7 +92,7 @@ function ImageUpload({ image, onChange, isDark = false }) {
 }
 
 // --- ItemCard ---
-function ItemCard({ item, onClick, isDark = false }) {
+function ItemCard({ item, onClick, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
   return (
     <Paper
       elevation={1}
@@ -132,7 +128,7 @@ function ItemCard({ item, onClick, isDark = false }) {
               {item.locations?.name ?? "Unknown location"} · {item.found_at}
             </Typography>
             <Typography variant="caption" sx={{ color: isDark ? "#818384" : "#aaa", fontWeight: 600 }}>
-              {item.poster_name} · {formatDate(item.date)}
+              {item.poster_name} · {formatRelativeDate(item.date, timeZone)}
             </Typography>
           </Box>
           <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0.75, flexShrink: 0 }}>
@@ -153,7 +149,7 @@ function ItemCard({ item, onClick, isDark = false }) {
 }
 
 // --- DetailModal ---
-function DetailModal({ item, onClose, onClaim, isDark = false }) {
+function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [claimed, setClaimed] = useState(false);
@@ -171,15 +167,20 @@ function DetailModal({ item, onClose, onClaim, isDark = false }) {
         background: isDark ? "#1A1A1B" : "#fff", borderRadius: 4, p: "26px", width: "100%", maxWidth: 520,
         maxHeight: "90vh", overflowY: "auto", outline: "none",
         border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
+        mx: 1.5,
+        boxSizing: "border-box",
+        width: { xs: "calc(100% - 24px)", sm: "100%" },
       }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 2 }}>
-          <Box>
-            <Typography variant="h6" fontWeight={900}>{item.title}</Typography>
+          <Box sx={{ flex: 1, minWidth: 0, pr: 1 }}>
+            <Typography variant="h6" fontWeight={900} sx={{ lineHeight: 1.25, overflowWrap: "anywhere", wordBreak: "break-word" }}>
+              {item.title}
+            </Typography>
             <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600}>
-              Posted by {item.poster_name} · {formatDate(item.date)}
+              Posted by {item.poster_name} · {formatRelativeDate(item.date, timeZone)}
             </Typography>
           </Box>
-          <Box sx={{ display: "flex", gap: 0.5 }}>
+          <Box sx={{ display: "flex", gap: 0.5, flexShrink: 0 }}>
             <IconButton onClick={() => setReportOpen(true)} size="small" sx={{ color: isDark ? "#818384" : "#999", "&:hover": { color: "#A84D48" } }}>
               <FlagIcon fontSize="small" />
             </IconButton>
@@ -225,7 +226,9 @@ function DetailModal({ item, onClose, onClaim, isDark = false }) {
 
         <Box sx={{ mb: 3 }}>
           <Typography variant="caption" fontWeight={800} color={isDark ? "#B8BABD" : "#a07070"} sx={{ letterSpacing: 0.5, display: "block", mb: 0.75 }}>DESCRIPTION</Typography>
-          <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} lineHeight={1.65}>{item.description}</Typography>
+          <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} lineHeight={1.65} sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
+            {item.description}
+          </Typography>
         </Box>
 
         {!item.resolved && (
@@ -336,7 +339,6 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
 
     let image_url = null;
 
-    // Two-step image upload: get signed URL from server, then upload directly to storage
     if (form.image?.file) {
       try {
         const uploadData = await apiFetch("/api/upload-url", {
@@ -400,7 +402,16 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
         </Box>
 
-        <TextField label="Item Name" value={form.title} onChange={e => set("title", e.target.value)} placeholder="e.g. Blue Husky Card" fullWidth sx={{ mb: 2 }} />
+        <TextField
+          label="Item Name"
+          value={form.title}
+          onChange={e => set("title", e.target.value)}
+          placeholder="e.g. Blue Husky Card"
+          fullWidth
+          sx={{ mb: 2 }}
+          inputProps={{ maxLength: LIMITS.title }}
+          helperText={`${form.title.length}/${LIMITS.title}`}
+        />
 
         {/* Campus chips */}
         <Box sx={{ mb: 0.5 }}>
@@ -460,8 +471,29 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           </FormControl>
         </Box>
 
-        <TextField label="Found At (specific spot)" value={form.found_at} onChange={e => set("found_at", e.target.value)} placeholder="e.g. Table near window, Room 204" fullWidth sx={{ mb: 2 }} />
-        <TextField label="Description" value={form.description} onChange={e => set("description", e.target.value)} placeholder="Color, markings, contents..." multiline rows={3} fullWidth sx={{ mb: 2 }} />
+        <TextField
+          label="Found At (specific spot)"
+          value={form.found_at}
+          onChange={e => set("found_at", e.target.value)}
+          placeholder="e.g. Table near window, Room 204"
+          fullWidth
+          sx={{ mb: 2 }}
+          inputProps={{ maxLength: LIMITS.found_at }}
+          helperText={`${form.found_at.length}/${LIMITS.found_at}`}
+        />
+
+        <TextField
+          label="Description"
+          value={form.description}
+          onChange={e => set("description", e.target.value)}
+          placeholder="Color, markings, contents..."
+          multiline
+          rows={3}
+          fullWidth
+          sx={{ mb: 2 }}
+          inputProps={{ maxLength: LIMITS.description }}
+          helperText={`${form.description.length}/${LIMITS.description}`}
+        />
 
         {/* Map pin */}
         <Box sx={{ mb: 2 }}>
@@ -523,7 +555,7 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
 }
 
 // --- FeedPage ---
-export default function FeedPage({ effectiveTheme = "light" }) {
+export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE }) {
   const isDark = effectiveTheme === "dark";
   const pageBg = isDark ? "#101214" : "#f9f5f4";
   const pageDot = isDark ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
@@ -540,10 +572,7 @@ export default function FeedPage({ effectiveTheme = "light" }) {
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
-    const data = await apiFetch("/api/listings");
-    console.log("listings response:", data);
 
-    // Server-side cleanup of old resolved listings
     try {
       await apiFetch("/api/listings/cleanup", { method: "POST" });
     } catch (err) {
@@ -718,12 +747,12 @@ export default function FeedPage({ effectiveTheme = "light" }) {
           : filtered.length === 0
             ? <Typography textAlign="center" color={isDark ? "#818384" : "text.disabled"} fontWeight={700} sx={{ mt: 8 }}>No items found.</Typography>
             : <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                {filtered.map(item => <ItemCard key={item.item_id} item={item} onClick={setSelected} isDark={isDark} />)}
+                {filtered.map(item => <ItemCard key={item.item_id} item={item} onClick={setSelected} isDark={isDark} timeZone={timeZone} />)}
               </Box>
         }
       </Box>
 
-      <DetailModal item={selected} onClose={() => setSelected(null)} onClaim={handleClaim} isDark={isDark} />
+      <DetailModal item={selected} onClose={() => setSelected(null)} onClaim={handleClaim} isDark={isDark} timeZone={timeZone} />
       <NewItemModal open={showNew} onClose={() => setShowNew(false)} onAdd={item => setItems(prev => [item, ...prev])} isDark={isDark} />
       </Box>
     </>
