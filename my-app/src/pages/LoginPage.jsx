@@ -655,6 +655,7 @@ export default function LoginPage({
       <TermsModal
         open={termsOpen}
         onClose={() => setTermsOpen(false)}
+        effectiveTheme={effectiveTheme}
         onAccept={() => {
           setTermsAccepted(true);
           // Run sign-up now that terms are accepted

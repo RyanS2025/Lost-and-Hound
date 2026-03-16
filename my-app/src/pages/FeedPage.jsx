@@ -152,8 +152,9 @@ function ItemCard({ item, onClick, isDark = false, timeZone = DEFAULT_TIME_ZONE 
 function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [claimed, setClaimed] = useState(false);
+  const [returning, setReturning] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const isOwner = user?.id && item?.poster_id === user.id;
 
   if (!item) return null;
   const pinCoords = (item.lat && item.lng)
@@ -231,7 +232,7 @@ function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAUL
           </Typography>
         </Box>
 
-        {!item.resolved && (
+        {!item.resolved && !isOwner && (
           <Box
             sx={{
               display: "flex", alignItems: "center", gap: 0.75,
@@ -240,43 +241,48 @@ function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAUL
             }}
           >
             <Typography variant="caption" sx={{ color: isDark ? "#f6c66a" : "#7d4e00", fontWeight: 600, lineHeight: 1.4 }}>
-              ⚠️ Falsely claiming an item violates the Northeastern Code of Student Conduct and may result in disciplinary action.
+              Only the original poster can mark this item as returned.
             </Typography>
           </Box>
         )}
         <Box sx={{ display: "flex", gap: 1.5 }}>
-          <Button
-            variant="contained"
-            fullWidth
-            disabled={item.resolved}
-            onClick={async () => {
-              setClaimed(true);
-              await onClaim(item.item_id);
-            }}
-            sx={{ background: claimed ? "#16a34a" : "#A84D48", "&:hover": { background: claimed ? "#15803d" : "#8f3e3a" }, fontWeight: 800, borderRadius: 2 }}
-          >
-            {item.resolved ? "Already Resolved" : claimed ? "Marked as Found!" : "This is Mine!"}
-          </Button>
-          <Button
-            variant="outlined"
-            sx={{ borderColor: isDark ? "rgba(255,255,255,0.2)" : "#ecdcdc", color: "#A84D48", fontWeight: 800, borderRadius: 2, flexShrink: 0 }}
-            onClick={async () => {
-              try {
-                const result = await apiFetch("/api/conversations", {
-                  method: "POST",
-                  body: JSON.stringify({
-                    listing_id: item.item_id,
-                    other_user_id: item.poster_id,
-                  }),
-                });
-                navigate(`/messages?conversation=${result.id}`);
-              } catch (err) {
-                console.error("Create conversation error:", err);
-              }
-            }}
-          >
-            Message
-          </Button>
+          {isOwner && (
+            <Button
+              variant="contained"
+              fullWidth
+              disabled={item.resolved || returning}
+              onClick={async () => {
+                setReturning(true);
+                await onClaim(item.item_id);
+                setReturning(false);
+              }}
+              sx={{ background: item.resolved ? "#16a34a" : "#A84D48", "&:hover": { background: item.resolved ? "#15803d" : "#8f3e3a" }, fontWeight: 800, borderRadius: 2 }}
+            >
+              {item.resolved ? "Already Returned" : returning ? "Marking..." : "Returned Item"}
+            </Button>
+          )}
+          {!isOwner && (
+            <Button
+              variant="outlined"
+              sx={{ borderColor: isDark ? "rgba(255,255,255,0.2)" : "#ecdcdc", color: "#A84D48", fontWeight: 800, borderRadius: 2, flexShrink: 0, width: "100%" }}
+              onClick={async () => {
+                try {
+                  const result = await apiFetch("/api/conversations", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      listing_id: item.item_id,
+                      other_user_id: item.poster_id,
+                    }),
+                  });
+                  navigate(`/messages?conversation=${result.id}`);
+                } catch (err) {
+                  console.error("Create conversation error:", err);
+                }
+              }}
+            >
+              Message
+            </Button>
+          )}
         </Box>
         <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} type="post" targetId={item.item_id} targetLabel={item.title}/>
       </Box>
@@ -559,7 +565,7 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
   const isDark = effectiveTheme === "dark";
   const pageBg = isDark ? "#101214" : "#f9f5f4";
   const pageDot = isDark ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -568,6 +574,7 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
   const [selected, setSelected] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [showResolved, setShowResolved] = useState(false);
+  const [showMyPosts, setShowMyPosts] = useState(false);
   const [selectedCampus, setSelectedCampus] = useState(profile?.default_campus || "boston");
 
   const fetchItems = useCallback(async () => {
@@ -606,6 +613,7 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
   const filtered = items
     .filter(i => selectedCampus === "all" || i.locations?.campus === selectedCampus)
     .filter(i => showResolved || !i.resolved)
+    .filter(i => !showMyPosts || (user?.id && i.poster_id === user.id))
     .filter(i => category === "All" || i.category === category)
     .filter(i =>
       i.title?.toLowerCase().includes(search.toLowerCase()) ||
@@ -621,16 +629,6 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
 
   return (
     <>
-      <Box
-        sx={{
-          position: "fixed",
-          inset: 0,
-          zIndex: -1,
-          backgroundColor: pageBg,
-          backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`,
-          backgroundSize: "24px 24px",
-        }}
-      />
       <Box
         sx={{
           display: "flex",
@@ -731,6 +729,18 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
                 color: showResolved ? (isDark ? "#6ee7b7" : "#16a34a") : isDark ? "#818384" : "#999",
                 border: `1.5px solid ${showResolved ? (isDark ? "rgba(110,231,183,0.42)" : "#86efac") : isDark ? "rgba(255,255,255,0.18)" : "#e0e0e0"}`,
                 "&:hover": { background: showResolved ? (isDark ? "#27412f" : "#bbf7d0") : isDark ? "#343536" : "#ececec" },
+              }}
+            />
+            <Chip
+              label={showMyPosts ? "My Posts: On" : "My Posts"}
+              clickable
+              onClick={() => setShowMyPosts(v => !v)}
+              sx={{
+                fontWeight: 800, fontSize: 12,
+                background: showMyPosts ? (isDark ? "#2a2520" : "#fff3cd") : isDark ? "#2D2D2E" : "#f5f5f5",
+                color: showMyPosts ? (isDark ? "#f6c66a" : "#7d4e00") : isDark ? "#818384" : "#999",
+                border: `1.5px solid ${showMyPosts ? (isDark ? "rgba(245,158,11,0.5)" : "#ffc107") : isDark ? "rgba(255,255,255,0.18)" : "#e0e0e0"}`,
+                "&:hover": { background: showMyPosts ? (isDark ? "#3a2f22" : "#ffe8a3") : isDark ? "#343536" : "#ececec" },
               }}
             />
             <FormControl size="small" sx={{ minWidth: { xs: 140, sm: 150 } }}>

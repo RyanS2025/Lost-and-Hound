@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import {
   Modal, Box, Typography, Button, IconButton, Checkbox,
   FormControlLabel, Divider,
@@ -69,10 +69,41 @@ const SECTIONS = [
   },
 ];
 
-export default function TermsModal({ open, onClose, onAccept }) {
+export default function TermsModal({
+  open,
+  onClose,
+  onAccept = () => {},
+  readOnly = false,
+  effectiveTheme = "light",
+}) {
   const [accepted, setAccepted] = useState(false);
   const [scrolledToBottom, setScrolledToBottom] = useState(false);
   const scrollRef = useRef(null);
+  const isDark = effectiveTheme === "dark";
+
+  const styles = useMemo(
+    () => ({
+      panelBg: isDark ? "#1A1A1B" : "#fff",
+      panelBorder: isDark ? "1px solid rgba(255,255,255,0.14)" : "1px solid #ecdcdc",
+      title: isDark ? "#F3F4F5" : "#2f1c1c",
+      secondary: isDark ? "#A9AAAB" : "#6f6f6f",
+      body: isDark ? "#C8CACC" : "#5e5e5e",
+      sectionTitle: isDark ? "#FFBEA4" : "#3d2020",
+      accent: isDark ? "#FF4500" : "#A84D48",
+      accentHover: isDark ? "#E03D00" : "#8f3e3a",
+      divider: isDark ? "rgba(255,255,255,0.1)" : "#f0e8e8",
+      hint: isDark ? "#BE8C79" : "#a07070",
+      noticeBg: isDark ? "#232324" : "#fdf7f7",
+      noticeBorder: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc",
+      footerBg: isDark ? "#161617" : "#faf8f8",
+      iconBg: isDark ? "rgba(255,69,0,0.16)" : "#A84D4815",
+      checkboxDisabled: isDark ? "#4A4A4B" : "#ddd",
+      checkboxLabelDisabled: isDark ? "#787A7C" : "#bbb",
+      buttonDisabledBg: isDark ? "#37383A" : "#e0d6d6",
+      buttonDisabledText: isDark ? "#808285" : "#aaa",
+    }),
+    [isDark]
+  );
 
   // Reset state when modal opens
   useEffect(() => {
@@ -98,7 +129,8 @@ export default function TermsModal({ open, onClose, onAccept }) {
           top: "50%",
           left: "50%",
           transform: "translate(-50%, -50%)",
-          background: "#fff",
+          background: styles.panelBg,
+          border: styles.panelBorder,
           borderRadius: 4,
           width: "100%",
           maxWidth: 560,
@@ -120,7 +152,7 @@ export default function TermsModal({ open, onClose, onAccept }) {
             justifyContent: "space-between",
             px: 3,
             py: 2.5,
-            borderBottom: "1.5px solid #ecdcdc",
+            borderBottom: `1.5px solid ${styles.divider}`,
             flexShrink: 0,
           }}
         >
@@ -130,24 +162,24 @@ export default function TermsModal({ open, onClose, onAccept }) {
                 width: 40,
                 height: 40,
                 borderRadius: 2,
-                background: "#A84D4815",
+                background: styles.iconBg,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <GavelIcon sx={{ color: "#A84D48", fontSize: 22 }} />
+              <GavelIcon sx={{ color: styles.accent, fontSize: 22 }} />
             </Box>
             <Box>
-              <Typography variant="h6" fontWeight={900} sx={{ lineHeight: 1.2 }}>
+              <Typography variant="h6" fontWeight={900} sx={{ lineHeight: 1.2, color: styles.title }}>
                 Terms & Conditions
               </Typography>
-              <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                Please read before creating your account
+              <Typography variant="caption" sx={{ color: styles.secondary }} fontWeight={600}>
+                {readOnly ? "Please review the full terms" : "Please read before creating your account"}
               </Typography>
             </Box>
           </Box>
-          <IconButton onClick={onClose} size="small">
+          <IconButton onClick={onClose} size="small" sx={{ color: styles.secondary }}>
             <CloseIcon />
           </IconButton>
         </Box>
@@ -166,12 +198,11 @@ export default function TermsModal({ open, onClose, onAccept }) {
         >
           <Typography
             variant="body2"
-            color="text.secondary"
-            sx={{ mb: 2.5, lineHeight: 1.6 }}
+            sx={{ mb: 2.5, lineHeight: 1.6, color: styles.body }}
           >
-            Welcome to Lost & Hound — Northeastern University's community-powered
-            lost and found platform. By creating an account, you agree to the
-            following terms. Please read them carefully.
+            {readOnly
+              ? "Welcome to Lost & Hound — Northeastern University's community-powered lost and found platform. Please review the full terms and conditions below."
+              : "Welcome to Lost & Hound — Northeastern University's community-powered lost and found platform. By creating an account, you agree to the following terms. Please read them carefully."}
           </Typography>
 
           {SECTIONS.map((section, i) => (
@@ -179,19 +210,18 @@ export default function TermsModal({ open, onClose, onAccept }) {
               <Typography
                 fontWeight={800}
                 fontSize={14}
-                sx={{ mb: 0.75, color: "#3d2020" }}
+                sx={{ mb: 0.75, color: styles.sectionTitle }}
               >
                 {section.title}
               </Typography>
               <Typography
                 variant="body2"
-                color="text.secondary"
-                sx={{ lineHeight: 1.7, fontSize: 13 }}
+                sx={{ lineHeight: 1.7, fontSize: 13, color: styles.body }}
               >
                 {section.content}
               </Typography>
               {i < SECTIONS.length - 1 && (
-                <Divider sx={{ mt: 2.5, borderColor: "#f0e8e8" }} />
+                <Divider sx={{ mt: 2.5, borderColor: styles.divider }} />
               )}
             </Box>
           ))}
@@ -202,42 +232,41 @@ export default function TermsModal({ open, onClose, onAccept }) {
               mb: 1,
               p: 2,
               borderRadius: 2,
-              background: "#fdf7f7",
-              border: "1.5px solid #ecdcdc",
+              background: styles.noticeBg,
+              border: styles.noticeBorder,
             }}
           >
             <Typography
               variant="caption"
               fontWeight={700}
-              color="text.secondary"
-              sx={{ display: "block", mb: 0.5 }}
+              sx={{ display: "block", mb: 0.5, color: styles.secondary }}
             >
               Last updated: March 2026
             </Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" sx={{ color: styles.secondary }}>
               If you have questions about these Terms, contact the Lost & Hound
               team or Northeastern University's Office of Student Conduct.
             </Typography>
           </Box>
         </Box>
 
-        {/* Footer — checkbox + accept button */}
+        {/* Footer — checkbox + accept button (or read-only close) */}
         <Box
           sx={{
             px: 3,
             py: 2,
-            borderTop: "1.5px solid #ecdcdc",
-            background: "#faf8f8",
+            borderTop: `1.5px solid ${styles.divider}`,
+            background: styles.footerBg,
             flexShrink: 0,
           }}
         >
-          {!scrolledToBottom && (
+          {!readOnly && !scrolledToBottom && (
             <Typography
               variant="caption"
               sx={{
                 display: "block",
                 textAlign: "center",
-                color: "#a07070",
+                color: styles.hint,
                 fontWeight: 600,
                 mb: 1,
                 fontSize: 11,
@@ -247,55 +276,80 @@ export default function TermsModal({ open, onClose, onAccept }) {
             </Typography>
           )}
 
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={accepted}
-                onChange={(e) => setAccepted(e.target.checked)}
-                disabled={!scrolledToBottom}
-                sx={{
-                  color: "#A84D48",
-                  "&.Mui-checked": { color: "#A84D48" },
-                  "&.Mui-disabled": { color: "#ddd" },
-                }}
+          {readOnly ? (
+            <Button
+              variant="contained"
+              fullWidth
+              onClick={onClose}
+              sx={{
+                mt: 1,
+                  background: styles.accent,
+                  "&:hover": { background: styles.accentHover },
+                fontWeight: 800,
+                borderRadius: 2,
+                py: 1.25,
+                fontSize: 15,
+                textTransform: "none",
+              }}
+            >
+              Close
+            </Button>
+          ) : (
+            <>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={accepted}
+                    onChange={(e) => setAccepted(e.target.checked)}
+                    disabled={!scrolledToBottom}
+                    sx={{
+                      color: styles.accent,
+                      "&.Mui-checked": { color: styles.accent },
+                      "&.Mui-disabled": { color: styles.checkboxDisabled },
+                    }}
+                  />
+                }
+                label={
+                  <Typography
+                    variant="body2"
+                    fontWeight={600}
+                    sx={{
+                      color: scrolledToBottom ? styles.sectionTitle : styles.checkboxLabelDisabled,
+                      fontSize: 13,
+                    }}
+                  >
+                    I have read and agree to the Terms & Conditions
+                  </Typography>
+                }
               />
-            }
-            label={
-              <Typography
-                variant="body2"
-                fontWeight={600}
+
+              <Button
+                variant="contained"
+                fullWidth
+                disabled={!accepted}
+                onClick={() => {
+                  onAccept();
+                  onClose();
+                }}
                 sx={{
-                  color: scrolledToBottom ? "#3d2020" : "#bbb",
-                  fontSize: 13,
+                  mt: 1,
+                  background: styles.accent,
+                  "&:hover": { background: styles.accentHover },
+                  "&.Mui-disabled": {
+                    background: styles.buttonDisabledBg,
+                    color: styles.buttonDisabledText,
+                  },
+                  fontWeight: 800,
+                  borderRadius: 2,
+                  py: 1.25,
+                  fontSize: 15,
+                  textTransform: "none",
                 }}
               >
-                I have read and agree to the Terms & Conditions
-              </Typography>
-            }
-          />
-
-          <Button
-            variant="contained"
-            fullWidth
-            disabled={!accepted}
-            onClick={() => {
-              onAccept();
-              onClose();
-            }}
-            sx={{
-              mt: 1,
-              background: "#A84D48",
-              "&:hover": { background: "#8f3e3a" },
-              "&.Mui-disabled": { background: "#e0d6d6", color: "#aaa" },
-              fontWeight: 800,
-              borderRadius: 2,
-              py: 1.25,
-              fontSize: 15,
-              textTransform: "none",
-            }}
-          >
-            Accept & Create Account
-          </Button>
+                Accept & Create Account
+              </Button>
+            </>
+          )}
         </Box>
       </Box>
     </Modal>
