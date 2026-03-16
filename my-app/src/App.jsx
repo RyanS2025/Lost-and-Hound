@@ -168,8 +168,9 @@ export default function App() {
     setTimeout(() => setLoginTransition(false), 1200);
   }, []);
 
-  // Show LoginPage if not logged in OR if the login animation is still playing
-  if (!user || loginTransition) {
+  // Keep showing LoginPage while auth/MFA is in progress.
+  // This avoids a blank screen if /api/profile is blocked by require2FA.
+  if (!user || loginTransition || !profile) {
     return (
       <ThemeProvider theme={appTheme}>
         <CssBaseline />
@@ -180,11 +181,6 @@ export default function App() {
         />
       </ThemeProvider>
     );
-  }
-
-  // Show nothing while profile is loading
-  if (!profile) {
-    return null;
   }
 
   // Ban check
@@ -390,8 +386,7 @@ export default function App() {
         sx={{
           ...(shouldFadeIn
             ? {
-                opacity: 0,
-                animation: "appFadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.15s forwards",
+                animation: "appFadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.15s both",
                 "@keyframes appFadeIn": {
                   "0%": { opacity: 0, transform: "translateY(6px)" },
                   "100%": { opacity: 1, transform: "translateY(0)" },

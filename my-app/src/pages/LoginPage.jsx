@@ -8,8 +8,14 @@ import {
   Box,
   Alert,
   Link as MuiLink,
+  Checkbox,
+  FormControlLabel,
+  CircularProgress,
+  LinearProgress,
 } from "@mui/material";
 import TermsModal from "../components/TermsModal";
+import { storeDeviceToken, getStoredDeviceToken, clearDeviceToken, API_BASE } from "../utils/apiFetch";
+import apiFetch from "../utils/apiFetch";
 
 const NAME_MAX_LENGTH = 25;
 const PASSWORD_MAX_LENGTH = 32;
@@ -114,6 +120,17 @@ export default function LoginPage({
   const [isSignUp, setIsSignUp] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+
+  // 2FA state
+  const [authStep, setAuthStep] = useState("credentials"); // "credentials" | "mfa"
+  const [otpCode, setOtpCode] = useState("");
+  const [rememberDevice, setRememberDevice] = useState(false);
+  const [mfaFactorId, setMfaFactorId] = useState("");
+  const [mfaChallengeId, setMfaChallengeId] = useState("");
+  const [mfaQrCodeSvg, setMfaQrCodeSvg] = useState("");
+  const [mfaUri, setMfaUri] = useState("");
+  const [mfaLoading, setMfaLoading] = useState(false);
+  const [mfaVerifying, setMfaVerifying] = useState(false);
 
   // Terms modal state
   const [termsOpen, setTermsOpen] = useState(false);
@@ -240,6 +257,65 @@ export default function LoginPage({
     }
   };
 
+  const startMfaFlow = async (existingFactorsData = null) => {
+    let factorsData = existingFactorsData;
+    if (!factorsData) {
+      const { data, error } = await supabase.auth.mfa.listFactors();
+      if (error) throw error;
+      factorsData = data;
+    }
+
+    const totpFactors =
+      factorsData?.all?.filter((f) => f.factor_type === "totp") ||
+      factorsData?.totp ||
+      [];
+    const verifiedFactor = totpFactors.find((f) => f.status === "verified") || null;
+
+    if (verifiedFactor?.id) {
+      const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
+        factorId: verifiedFactor.id,
+      });
+      if (challengeError) throw challengeError;
+
+      setMfaFactorId(verifiedFactor.id);
+      setMfaChallengeId(challengeData.id);
+      setMfaQrCodeSvg("");
+      setMfaUri("");
+      setOtpCode("");
+      setAuthStep("mfa");
+      setMessage("Open your authenticator app and enter the current 6-digit code.");
+      return;
+    }
+
+    // If only unverified factors exist, remove them and create a fresh enrollment
+    // so the user always gets a valid QR setup screen.
+    for (const factor of totpFactors) {
+      if (factor?.id) {
+        await supabase.auth.mfa.unenroll({ factorId: factor.id }).catch(() => null);
+      }
+    }
+
+    const { data: enrollData, error: enrollError } = await supabase.auth.mfa.enroll({
+      factorType: "totp",
+      // Use a unique friendly name to avoid duplicate-name conflicts.
+      friendlyName: `Lost & Hound ${new Date().toISOString().slice(0, 10)}`,
+    });
+    if (enrollError) throw enrollError;
+
+    const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
+      factorId: enrollData.id,
+    });
+    if (challengeError) throw challengeError;
+
+    setMfaFactorId(enrollData.id);
+    setMfaChallengeId(challengeData.id);
+    setMfaQrCodeSvg(enrollData.totp?.qr_code || "");
+    setMfaUri(enrollData.totp?.uri || "");
+    setOtpCode("");
+    setAuthStep("mfa");
+    setMessage("Set up your authenticator app, then enter the 6-digit code to complete login.");
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -274,7 +350,7 @@ export default function LoginPage({
         }
         await doSignUp();
       } else {
-          const { error: signInError } = await supabase.auth.signInWithPassword({
+          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
             email,
             password,
           });
@@ -283,8 +359,66 @@ export default function LoginPage({
             throw signInError;
           }
 
-          // Only trigger transition AFTER successful sign-in
-          onLoginSuccess?.();
+          // Force MFA setup when no verified factor exists, regardless of old trusted devices.
+          const { data: factorsData, error: factorsError } = await supabase.auth.mfa.listFactors();
+          if (factorsError) throw factorsError;
+
+          const hasVerifiedTotp =
+            (factorsData?.all || []).some((f) => f.factor_type === "totp" && f.status === "verified") ||
+            (factorsData?.totp || []).some((f) => f.status === "verified");
+
+          if (!hasVerifiedTotp) {
+            clearDeviceToken();
+            setMfaLoading(true);
+            try {
+              await startMfaFlow(factorsData);
+            } catch (mfaErr) {
+              setError(mfaErr.message || "Failed to start MFA. Please try again.");
+              await supabase.auth.signOut();
+            } finally {
+              setMfaLoading(false);
+            }
+            return;
+          }
+
+          // 2FA gate: check whether this device is already trusted
+          const storedToken = getStoredDeviceToken();
+          const accessToken = signInData?.session?.access_token;
+
+          let deviceTrusted = false;
+          if (storedToken && accessToken) {
+            try {
+              const checkRes = await fetch(`${API_BASE}/api/auth/check-device`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify({ deviceToken: storedToken }),
+              });
+              const checkData = await checkRes.json();
+              deviceTrusted = checkData.trusted === true;
+            } catch {
+              deviceTrusted = false;
+            }
+          }
+
+          if (deviceTrusted) {
+            // Already trusted — proceed straight into the app
+            onLoginSuccess?.();
+          } else {
+            // Device not trusted — start Supabase MFA challenge/enrollment flow.
+            setMfaLoading(true);
+            try {
+              await startMfaFlow();
+            } catch (mfaErr) {
+              setError(mfaErr.message || "Failed to start MFA. Please try again.");
+              // Sign the user out so they aren't partially authenticated
+              await supabase.auth.signOut();
+            } finally {
+              setMfaLoading(false);
+            }
+          }
         }
     } catch (err) {
       setError(cleanErrorMessage(err.message || err.code));
@@ -306,6 +440,83 @@ export default function LoginPage({
       setError(cleanErrorMessage(err.message || err.code));
     }
   };
+
+  const handleOtpSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!/^\d{6}$/.test(otpCode)) {
+      setError("Please enter a valid 6-digit authenticator code.");
+      return;
+    }
+    if (!mfaFactorId || !mfaChallengeId) {
+      setError("MFA challenge is missing. Please go back and sign in again.");
+      return;
+    }
+
+    setMfaVerifying(true);
+    try {
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId: mfaFactorId,
+        challengeId: mfaChallengeId,
+        code: otpCode,
+      });
+      if (verifyError) throw verifyError;
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) throw new Error("Session expired. Please sign in again.");
+
+      const res = await fetch(`${API_BASE}/api/auth/trust-device`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ rememberDevice }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Verification failed");
+
+      // Persist trusted-device token for future logins
+      storeDeviceToken(data.deviceToken, rememberDevice);
+      onLoginSuccess?.();
+    } catch (err) {
+      setError(err.message || "Verification failed. Please try again.");
+    } finally {
+      setMfaVerifying(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setError("");
+    setMessage("");
+    if (!mfaFactorId) {
+      setError("No MFA factor found. Please go back and sign in again.");
+      return;
+    }
+    setMfaLoading(true);
+    try {
+      const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
+        factorId: mfaFactorId,
+      });
+      if (challengeError) throw challengeError;
+      setMfaChallengeId(challengeData.id);
+      setMessage("Challenge refreshed. Enter the current code from your authenticator app.");
+      setOtpCode("");
+    } catch (err) {
+      setError(err.message || "Failed to refresh MFA challenge");
+    } finally {
+      setMfaLoading(false);
+    }
+  };
+
+  const isSvgMarkup = typeof mfaQrCodeSvg === "string" && mfaQrCodeSvg.trim().startsWith("<svg");
+  const isDataUri = typeof mfaQrCodeSvg === "string" && mfaQrCodeSvg.trim().startsWith("data:image");
+  const qrImgSrc = !mfaQrCodeSvg
+    ? ""
+    : isDataUri
+      ? mfaQrCodeSvg
+      : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(mfaQrCodeSvg)}`;
 
   return (
     <>
@@ -464,8 +675,26 @@ export default function LoginPage({
               display: "flex",
               flexDirection: "column",
               justifyContent: "center",
+              position: "relative",
             }}
           >
+            {/* Loading bar — shown while MFA is being set up */}
+            <LinearProgress
+              sx={{
+                position: "absolute",
+                bottom: 0,
+                left: 0,
+                right: 0,
+                borderRadius: "0 0 12px 12px",
+                height: 3,
+                opacity: mfaLoading ? 1 : 0,
+                transition: "opacity 0.3s ease",
+                "& .MuiLinearProgress-bar": {
+                  background: `linear-gradient(90deg, ${BRAND.accent}, ${BRAND.accentHover})`,
+                },
+                backgroundColor: "transparent",
+              }}
+            />
             {loginTransition ? (
               <Box
                 sx={{
@@ -498,6 +727,138 @@ export default function LoginPage({
                 <Typography variant="body2" sx={{ color: "text.secondary" }}>
                   Signing you in…
                 </Typography>
+              </Box>
+            ) : authStep === "mfa" ? (
+              /* ── Supabase authenticator MFA step ── */
+              <Box component="form" onSubmit={handleOtpSubmit} noValidate>
+                <Typography variant="h5" fontWeight={800} sx={{ color: BRAND.title, mb: 0.5 }}>
+                  {mfaQrCodeSvg ? "Set up your authenticator app" : "Enter authenticator code"}
+                </Typography>
+                <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
+                  {mfaQrCodeSvg
+                    ? "Scan the QR code in your authenticator app (Duo is highly reccomnded) then enter the 6-digit code below."
+                    : "Use the 6-digit code from your authenticator app to finish signing in."}
+                </Typography>
+
+                {mfaQrCodeSvg && (
+                  <Box sx={{ mb: 2, display: "flex", justifyContent: "center" }}>
+                    {isSvgMarkup ? (
+                      <Box
+                        aria-label="Authenticator QR code"
+                        sx={{
+                          width: 200,
+                          height: 200,
+                          borderRadius: 2,
+                          border: `1px solid ${BRAND.border}`,
+                          p: 1,
+                          background: "#fff",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          "& svg": { width: "100%", height: "100%" },
+                        }}
+                        dangerouslySetInnerHTML={{ __html: mfaQrCodeSvg }}
+                      />
+                    ) : (
+                      <Box
+                        component="img"
+                        alt="Authenticator QR code"
+                        src={qrImgSrc}
+                        sx={{ width: 200, height: 200, borderRadius: 2, border: `1px solid ${BRAND.border}`, p: 1, background: "#fff" }}
+                      />
+                    )}
+                  </Box>
+                )}
+
+                {mfaUri && (
+                  <Typography variant="caption" sx={{ display: "block", mb: 2, color: "text.secondary", wordBreak: "break-all" }}>
+                    Trouble scanning? Use this setup URI: {mfaUri}
+                  </Typography>
+                )}
+
+                <TextField
+                  required
+                  fullWidth
+                  size="small"
+                  label="Verification code"
+                  placeholder="000000"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  inputProps={{ maxLength: 6, inputMode: "numeric", pattern: "\\d{6}" }}
+                  autoFocus
+                  sx={{ ...autofillTextFieldSx, mb: 2 }}
+                />
+
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={rememberDevice}
+                      onChange={(e) => setRememberDevice(e.target.checked)}
+                      sx={{ color: BRAND.accent, "&.Mui-checked": { color: BRAND.accent } }}
+                    />
+                  }
+                  label={
+                    <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                      Remember this device for 30 days
+                    </Typography>
+                  }
+                  sx={{ mb: 2 }}
+                />
+
+                <Button
+                  type="submit"
+                  fullWidth
+                  variant="contained"
+                  disabled={mfaVerifying || otpCode.length !== 6}
+                  sx={{
+                    py: 1.25,
+                    background: BRAND.accent,
+                    "&:hover": { background: BRAND.accentHover },
+                    fontWeight: 700,
+                    borderRadius: 2,
+                    fontSize: 15,
+                    textTransform: "none",
+                    mb: 1.5,
+                  }}
+                >
+                  {mfaVerifying ? <CircularProgress size={20} sx={{ color: "#fff" }} /> : "Verify"}
+                </Button>
+
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <MuiLink
+                    component="button"
+                    type="button"
+                    variant="body2"
+                    onClick={handleResendOtp}
+                    disabled={mfaLoading}
+                    sx={{ cursor: "pointer", color: BRAND.accent, fontWeight: 600 }}
+                  >
+                    {mfaLoading ? "Refreshing…" : "Refresh challenge"}
+                  </MuiLink>
+                  <Typography variant="body2" sx={{ color: "text.secondary" }}>·</Typography>
+                  <MuiLink
+                    component="button"
+                    type="button"
+                    variant="body2"
+                    onClick={async () => {
+                      await supabase.auth.signOut();
+                      setAuthStep("credentials");
+                      setOtpCode("");
+                      setMfaFactorId("");
+                      setMfaChallengeId("");
+                      setMfaQrCodeSvg("");
+                      setMfaUri("");
+                      setError("");
+                      setMessage("");
+                    }}
+                    sx={{ cursor: "pointer", color: BRAND.accent, fontWeight: 600 }}
+                  >
+                    Back to sign in
+                  </MuiLink>
+                </Box>
+
+                {error   && <Alert severity="error"   sx={{ mt: 2 }}>{error}</Alert>}
+                {message && <Alert severity="success" sx={{ mt: 2 }}>{message}</Alert>}
               </Box>
             ) : (
               <>
