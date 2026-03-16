@@ -4,6 +4,7 @@ import helmet from "helmet";
 import dotenv from "dotenv";
 import rateLimit from "express-rate-limit";
 import { createClient } from "@supabase/supabase-js";
+import cookieParser from "cookie-parser";
 import crypto from "crypto";
 
 dotenv.config();
@@ -22,8 +23,10 @@ app.use(cors({
     "https://thelostandhound.com",
     "https://www.thelostandhound.com",
   ],
+  credentials: true,
 }));
-app.use(express.json());
+app.use(cookieParser());
+app.use(express.json({ limit: "100kb" }));
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // RATE LIMITING
@@ -95,6 +98,26 @@ function dbError(res, error, label = "") {
   return res.status(500).json({ error: "Internal server error" });
 }
 
+function logModAction(modUserId, action, targetId, details) {
+  console.log(JSON.stringify({
+    timestamp: new Date().toISOString(),
+    mod_user_id: modUserId,
+    action,
+    target_id: targetId,
+    details,
+  }));
+}
+
+function buildDeviceTokenCookieOptions(maxAge) {
+  return {
+    httpOnly: true,
+    secure: true,
+    sameSite: "strict",
+    maxAge,
+    path: "/",
+  };
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AUTH MIDDLEWARE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -140,7 +163,7 @@ function isAal2Token(token) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async function require2FA(req, res, next) {
-  const raw = req.headers["x-device-token"];
+  const raw = req.cookies?.device_token;
   if (raw && typeof raw === "string" && raw.length >= 10) {
     const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
 
@@ -230,7 +253,7 @@ async function requireConversationParticipant(req, res, next) {
 // Check whether the device token in the request is still trusted.
 // If it is, the client can skip showing the OTP screen.
 app.post("/api/auth/check-device", requireAuth, async (req, res) => {
-  const raw = req.body?.deviceToken;
+  const raw = req.cookies?.device_token;
   if (!raw || typeof raw !== "string") return res.json({ trusted: false });
 
   const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
@@ -280,7 +303,14 @@ app.post("/api/auth/trust-device", requireAuth, async (req, res) => {
     return res.status(500).json({ error: "Failed to issue device token" });
   }
 
-  res.json({ verified: true, deviceToken: rawToken, rememberDevice: !!rememberDevice });
+  res.cookie("device_token", rawToken, buildDeviceTokenCookieOptions(ttlMs));
+
+  res.json({ verified: true, rememberDevice: !!rememberDevice });
+});
+
+app.post("/api/auth/clear-device", requireAuth, async (req, res) => {
+  res.clearCookie("device_token", buildDeviceTokenCookieOptions(0));
+  res.json({ success: true });
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -509,6 +539,7 @@ app.delete("/api/listings/:item_id", requireAuth, require2FA, requireModerator, 
     .eq("item_id", req.params.item_id);
 
   if (error) return dbError(res, error, "DELETE /api/listings");
+  logModAction(req.user.id, "delete_listing", req.params.item_id, { deleted_listing_id: req.params.item_id });
   res.json({ success: true });
 });
 
@@ -522,15 +553,25 @@ app.post("/api/listings/cleanup", requireAuth, require2FA, async (req, res) => {
 
   lastCleanupTime = now;
 
-  const cutoff = new Date(now - 30 * 86400000).toISOString();
+  const resolvedCutoff   = new Date(now - 30 * 86400000).toISOString();
+  const unresolvedCutoff = new Date(now - 10 * 86400000).toISOString();
 
-  const { error } = await supabase
+  const { error: resolvedError } = await supabase
     .from("listings")
     .delete()
     .eq("resolved", true)
-    .lt("date", cutoff);
+    .lt("date", resolvedCutoff);
 
-  if (error) return dbError(res, error, "POST /api/listings/cleanup");
+  if (resolvedError) return dbError(res, resolvedError, "POST /api/listings/cleanup");
+
+  const { error: unresolvedError } = await supabase
+    .from("listings")
+    .delete()
+    .eq("resolved", false)
+    .lt("date", unresolvedCutoff);
+
+  if (unresolvedError) return dbError(res, unresolvedError, "POST /api/listings/cleanup");
+
   res.json({ success: true });
 });
 
@@ -1022,6 +1063,7 @@ app.delete("/api/reports/:id", requireAuth, require2FA, requireModerator, async 
     .eq("id", req.params.id);
 
   if (error) return dbError(res, error, "DELETE /api/reports");
+  logModAction(req.user.id, "delete_report", req.params.id, { deleted_report_id: req.params.id });
   res.json({ success: true });
 });
 
@@ -1045,6 +1087,11 @@ app.post("/api/reports/:id/decision", requireAuth, require2FA, requireModerator,
 
   if (decision === "no_violation") {
     await supabase.from("reports").update({ status: "dismissed" }).eq("id", report.id);
+    logModAction(req.user.id, "report_decision", req.params.id, {
+      decision,
+      banned_user_id: null,
+      mod_note: mod_note ?? null,
+    });
     return res.json({ success: true, action: "dismissed" });
   }
 
@@ -1112,6 +1159,12 @@ app.post("/api/reports/:id/decision", requireAuth, require2FA, requireModerator,
     .update({ status: "reviewed" })
     .eq(column, targetId);
 
+  logModAction(req.user.id, "report_decision", req.params.id, {
+    decision,
+    banned_user_id: banUserId ?? null,
+    mod_note: mod_note ?? null,
+  });
+
   res.json({ success: true, action: "violation", banned_user_id: banUserId });
 });
 
@@ -1150,6 +1203,8 @@ app.post("/api/reports/:id/reverse-ban", requireAuth, require2FA, requireModerat
   if (unbanErr) return dbError(res, unbanErr, "POST /api/reports/reverse-ban");
 
   await supabase.from("reports").update({ status: "pending" }).eq("id", report.id);
+
+  logModAction(req.user.id, "reverse_ban", req.params.id, { unbanned_user_id: banUserId });
 
   res.json({ success: true });
 });
