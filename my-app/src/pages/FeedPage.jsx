@@ -12,11 +12,10 @@ import UploadIcon from "@mui/icons-material/UploadFile";
 import MapIcon from "@mui/icons-material/PinDrop";
 import FlagIcon from "@mui/icons-material/Flag";
 import ReportModal from "../components/ReportModal";
-import { supabase } from "../supabaseClient";
+import apiFetch from "../utils/apiFetch";
 import { useAuth } from "../AuthContext";
 import MapPinPicker from "../components/MapPinPicker";
 import { CAMPUSES } from "../constants/campuses";
-import { removeExpiredUnresolvedListings } from "../utils/listingExpiry";
 
 // --- Constants ---
 const CATEGORIES = ["All", "Husky Card", "Jacket", "Wallet/Purse", "Bag", "Keys", "Electronics", "Other"];
@@ -186,7 +185,6 @@ function DetailModal({ item, onClose, onClaim, isDark = false }) {
             </IconButton>
             <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
           </Box>
-
         </Box>
 
         {item.image_url
@@ -260,26 +258,17 @@ function DetailModal({ item, onClose, onClaim, isDark = false }) {
             variant="outlined"
             sx={{ borderColor: isDark ? "rgba(255,255,255,0.2)" : "#ecdcdc", color: "#A84D48", fontWeight: 800, borderRadius: 2, flexShrink: 0 }}
             onClick={async () => {
-              const { data } = await supabase
-                .from("conversations")
-                .select("id")
-                .eq("listing_id", item.item_id)
-                .eq("participant_1", user.id)
-                .maybeSingle();
-
-              if (data != null) {
-                navigate(`/messages?conversation=${data.id}`);
-                return;
-              }
-
-              else {
-                const {data: created } = await supabase
-                  .from("conversations")
-                  .insert({ listing_id: item.item_id, participant_1: user.id, participant_2: item.poster_id })
-                  .select("id")
-                  .single();
-                  
-                if (created) navigate(`/messages?conversation=${created.id}`);
+              try {
+                const result = await apiFetch("/api/conversations", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    listing_id: item.item_id,
+                    other_user_id: item.poster_id,
+                  }),
+                });
+                navigate(`/messages?conversation=${result.id}`);
+              } catch (err) {
+                console.error("Create conversation error:", err);
               }
             }}
           >
@@ -309,14 +298,15 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
 
   useEffect(() => {
     if (!open) return;
-    supabase
-      .from("locations")
-      .select("location_id, name, coordinates")
-      .eq("campus", selectedCampus)
-      .order("name", { ascending: true })
-      .then(({ data }) => {
-        if (data) setLocations(data);
-      });
+    const fetchLocations = async () => {
+      try {
+        const data = await apiFetch(`/api/locations?campus=${selectedCampus}`);
+        setLocations(data);
+      } catch (err) {
+        console.error("Fetch locations error:", err);
+      }
+    };
+    fetchLocations();
   }, [open, selectedCampus]);
 
   const handleCampusChange = (campusId) => {
@@ -346,56 +336,55 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
 
     let image_url = null;
 
+    // Two-step image upload: get signed URL from server, then upload directly to storage
     if (form.image?.file) {
-      const ext = form.image.file.name.split(".").pop();
-      const path = `${user.id}/${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from("listing-images")
-        .upload(path, form.image.file);
-      if (!uploadError) {
-        const { data } = supabase.storage.from("listing-images").getPublicUrl(path);
-        image_url = data.publicUrl;
+      try {
+        const uploadData = await apiFetch("/api/upload-url", {
+          method: "POST",
+          body: JSON.stringify({ filename: form.image.file.name }),
+        });
+
+        const uploadRes = await fetch(uploadData.signedUrl, {
+          method: "PUT",
+          headers: { "Content-Type": form.image.file.type },
+          body: form.image.file,
+        });
+
+        if (uploadRes.ok) {
+          image_url = uploadData.publicUrl;
+        }
+      } catch (err) {
+        console.error("Image upload error:", err);
       }
     }
 
-    const posterName = profile?.first_name && profile?.last_name
-      ? `${profile.first_name} ${profile.last_name}`
-      : user.email;
+    try {
+      const data = await apiFetch("/api/listings", {
+        method: "POST",
+        body: JSON.stringify({
+          title: form.title,
+          category: form.category,
+          location_id: form.location_id,
+          found_at: form.found_at,
+          importance: form.importance,
+          description: form.description,
+          image_url,
+          lat: form.pin?.lat ?? null,
+          lng: form.pin?.lng ?? null,
+        }),
+      });
 
-    const insertData = {
-      title: form.title,
-      category: form.category,
-      location_id: form.location_id,
-      found_at: form.found_at,
-      importance: form.importance,
-      description: form.description,
-      image_url,
-      resolved: false,
-      poster_id: user.id,
-      poster_name: posterName,
-      date: new Date().toISOString(),
-    };
-
-    if (form.pin) {
-      insertData.lat = form.pin.lat;
-      insertData.lng = form.pin.lng;
-    }
-
-    const { data, error } = await supabase
-      .from("listings")
-      .insert([insertData])
-      .select(`*, locations(name, coordinates, campus)`)
-      .single();
-
-    setSubmitting(false);
-    if (!error && data) {
       onAdd(data);
       onClose();
       setForm({ title: "", category: "Other", location_id: "", found_at: "", importance: 2, description: "", image: null, pin: null });
       setShowMap(false);
       setFlyTo(null);
       setSelectedCampus(profile?.default_campus || "boston");
+    } catch (err) {
+      console.error("Create listing error:", err);
     }
+
+    setSubmitting(false);
   };
 
   return (
@@ -551,14 +540,23 @@ export default function FeedPage({ effectiveTheme = "light" }) {
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
-    await removeExpiredUnresolvedListings();
+    const data = await apiFetch("/api/listings");
+    console.log("listings response:", data);
 
-    const { data, error } = await supabase
-      .from("listings")
-      .select(`*, locations(name, coordinates, campus)`)
-      .order("date", { ascending: false });
+    // Server-side cleanup of old resolved listings
+    try {
+      await apiFetch("/api/listings/cleanup", { method: "POST" });
+    } catch (err) {
+      console.error("Cleanup error:", err);
+    }
 
-    if (!error) setItems(data ?? []);
+    try {
+      const data = await apiFetch("/api/listings");
+      setItems(data ?? []);
+    } catch (err) {
+      console.error("Fetch listings error:", err);
+    }
+
     setLoading(false);
   }, []);
 
@@ -567,9 +565,13 @@ export default function FeedPage({ effectiveTheme = "light" }) {
   }, [fetchItems]);
 
   const handleClaim = async (item_id) => {
-    await supabase.from("listings").update({ resolved: true }).eq("item_id", item_id);
-    setItems(prev => prev.map(i => i.item_id === item_id ? { ...i, resolved: true } : i));
-    if (selected?.item_id === item_id) setSelected(prev => ({ ...prev, resolved: true }));
+    try {
+      await apiFetch(`/api/listings/${item_id}/resolve`, { method: "PATCH" });
+      setItems(prev => prev.map(i => i.item_id === item_id ? { ...i, resolved: true } : i));
+      if (selected?.item_id === item_id) setSelected(prev => ({ ...prev, resolved: true }));
+    } catch (err) {
+      console.error("Claim error:", err);
+    }
   };
 
   const filtered = items

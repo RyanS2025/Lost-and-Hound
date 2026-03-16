@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "../backend/supabaseClient";
+import apiFetch from "./utils/apiFetch";
 
 const AuthContext = createContext();
 
@@ -38,37 +39,15 @@ export function AuthProvider({ children }) {
         setProfile(null);
         return;
       }
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('first_name, last_name, default_campus, is_moderator, banned_until, ban_reason')
-        .eq('id', user.id)
-        .single();
-
-      if (!error && data) {
+      try {
+        const data = await apiFetch("/api/profile");
         setProfile(data);
-        return;
+      } catch (err) {
+        console.error("Profile fetch error:", err);
+        setProfile(null);
       }
+      };
 
-      // Profile missing — try to create it from user metadata (set during sign-up)
-      const meta = user.user_metadata;
-      if (meta?.first_name && meta?.last_name) {
-        const { data: created, error: upsertErr } = await supabase
-          .from('profiles')
-          .upsert(
-            { id: user.id, first_name: meta.first_name, last_name: meta.last_name, default_campus: 'boston' },
-            { onConflict: 'id' }
-          )
-          .select('first_name, last_name, default_campus, is_moderator, banned_until, ban_reason')
-          .single();
-        if (!upsertErr && created) {
-          setProfile(created);
-          return;
-        }
-        console.error('Profile auto-create error:', upsertErr);
-      }
-
-      setProfile(null);
-    };
     fetchProfile();
   }, [user?.id]); // depend only on user ID, not the whole user object
 

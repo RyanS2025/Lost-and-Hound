@@ -20,8 +20,8 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import GavelIcon from "@mui/icons-material/Gavel";
 import UndoIcon from "@mui/icons-material/Undo";
-import { supabase } from "../supabaseClient";
 import { useAuth } from "../AuthContext";
+import apiFetch from "../utils/apiFetch";
 
 // --- Constants ---
 const STATUS_CONFIG = {
@@ -179,38 +179,18 @@ function MessageThread({ reporterId, reportedUserId, isDark = false }) {
     if (!reporterId || !reportedUserId) { setLoading(false); return; }
     const fetch = async () => {
       setLoading(true);
-      const { data: convos } = await supabase
-        .from("conversations")
-        .select("id")
-        .or(
-          `and(participant_1.eq.${reporterId},participant_2.eq.${reportedUserId}),and(participant_1.eq.${reportedUserId},participant_2.eq.${reporterId})`
+      try {
+        const payload = await apiFetch(
+          `/api/mod/messages?reporter=${encodeURIComponent(reporterId)}&reported=${encodeURIComponent(reportedUserId)}`
         );
-
-      if (!convos || convos.length === 0) {
+        setMessages(payload?.messages || []);
+        setProfiles(payload?.profiles || {});
+      } catch {
         setMessages([]);
+        setProfiles({});
+      } finally {
         setLoading(false);
-        return;
       }
-
-      const convoIds = convos.map((c) => c.id);
-      const { data: msgs } = await supabase
-        .from("messages")
-        .select("*")
-        .in("conversation_id", convoIds)
-        .order("created_at", { ascending: true })
-        .limit(50);
-
-      setMessages(msgs || []);
-
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("id, first_name, last_name")
-        .in("id", [reporterId, reportedUserId]);
-
-      const map = {};
-      (profileData || []).forEach((p) => { map[p.id] = p; });
-      setProfiles(map);
-      setLoading(false);
     };
     fetch();
   }, [reporterId, reportedUserId]);
@@ -419,13 +399,14 @@ function ReverseBanPanel({ report, onReverseBan, processing, isDark = false }) {
   useEffect(() => {
     if (!banUserId) { setLoading(false); return; }
     const fetchBanInfo = async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("id, first_name, last_name, banned_until, ban_reason")
-        .eq("id", banUserId)
-        .single();
-      setBanInfo(data);
-      setLoading(false);
+      try {
+        const data = await apiFetch(`/api/reports/ban-info/${encodeURIComponent(banUserId)}`);
+        setBanInfo(data);
+      } catch {
+        setBanInfo(null);
+      } finally {
+        setLoading(false);
+      }
     };
     fetchBanInfo();
   }, [banUserId]);
@@ -664,52 +645,45 @@ export default function DashboardPage({ effectiveTheme = "light" }) {
     setLoading(true);
     setActionError("");
 
-    const { data, error } = await supabase.from("reports").select("*").order("created_at", { ascending: false });
-
-    if (error) { setActionError("Failed to load reports."); setLoading(false); return; }
-    if (!data || data.length === 0) { setReports([]); setFullListings({}); setLoading(false); return; }
-
-    const userIds = new Set();
-    data.forEach((r) => {
-      if (r.reporter_id) userIds.add(r.reporter_id);
-      if (r.reported_user_id) userIds.add(r.reported_user_id);
-    });
-
-    const { data: profilesData } = await supabase.from("profiles").select("id, first_name, last_name").in("id", [...userIds]);
-    const profileMap = {};
-    (profilesData || []).forEach((p) => { profileMap[p.id] = p; });
-
-    const listingIds = data.map((r) => r.reported_listing_id).filter(Boolean);
-    let listingMap = {};
-    if (listingIds.length > 0) {
-      const { data: listingsData } = await supabase.from("listings").select("*, locations(name, coordinates, campus)").in("item_id", listingIds);
-      (listingsData || []).forEach((l) => { listingMap[l.item_id] = l; });
+    try {
+      const payload = await apiFetch("/api/reports");
+      const loadedReports = payload?.reports || [];
+      const loadedListings = payload?.listings || {};
+      setReports(loadedReports);
+      setFullListings(loadedListings);
+    } catch {
+      setActionError("Failed to load reports.");
+      setReports([]);
+      setFullListings({});
+    } finally {
+      setLoading(false);
     }
-
-    setReports(data.map((r) => ({
-      ...r,
-      reporter: profileMap[r.reporter_id] || null,
-      reportedUser: profileMap[r.reported_user_id] || null,
-      reportedListing: listingMap[r.reported_listing_id] || null,
-    })));
-    setFullListings(listingMap);
-    setLoading(false);
   };
 
   useEffect(() => { if (profile?.is_moderator) fetchReports(); }, [profile]);
 
   const updateStatus = async (reportId, newStatus) => {
     setActionError("");
-    const { error } = await supabase.from("reports").update({ status: newStatus }).eq("id", reportId);
-    if (error) { setActionError("Failed to update report."); return; }
-    setReports((prev) => prev.map((r) => (r.id === reportId ? { ...r, status: newStatus } : r)));
+    try {
+      await apiFetch(`/api/reports/${reportId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: newStatus }),
+      });
+      setReports((prev) => prev.map((r) => (r.id === reportId ? { ...r, status: newStatus } : r)));
+    } catch {
+      setActionError("Failed to update report.");
+    }
   };
 
   const deleteReport = async () => {
     if (!deleteTarget) return;
     setActionError("");
-    const { error } = await supabase.from("reports").delete().eq("id", deleteTarget);
-    if (error) { setActionError("Failed to delete report."); } else { setReports((prev) => prev.filter((r) => r.id !== deleteTarget)); }
+    try {
+      await apiFetch(`/api/reports/${deleteTarget}`, { method: "DELETE" });
+      setReports((prev) => prev.filter((r) => r.id !== deleteTarget));
+    } catch {
+      setActionError("Failed to delete report.");
+    }
     setDeleteTarget(null);
   };
 
@@ -717,119 +691,33 @@ export default function DashboardPage({ effectiveTheme = "light" }) {
     setProcessing(true);
     setActionError("");
 
-    const isPost = !!report.reported_listing_id;
-
-    if (decision === "no_violation") {
-      await updateStatus(report.id, "dismissed");
-      setProcessing(false);
-      return;
-    }
-
-    let bannedUntil;
-    if (decision === "violation_3") {
-      bannedUntil = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
-    } else if (decision === "violation_30") {
-      bannedUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    } else {
-      bannedUntil = "9999-12-31T23:59:59Z";
-    }
-
-    const banUserId = isPost
-      ? report.reportedListing?.poster_id
-      : report.reported_user_id;
-
-    if (isPost && report.reported_listing_id) {
-      await supabase.from("listings").delete().eq("item_id", report.reported_listing_id);
-      setFullListings((prev) => {
-        const copy = { ...prev };
-        delete copy[report.reported_listing_id];
-        return copy;
+    try {
+      await apiFetch(`/api/reports/${report.id}/decision`, {
+        method: "POST",
+        body: JSON.stringify({ decision, mod_note: modNote || null }),
       });
-    } else if (!isPost && report.reporter_id && report.reported_user_id) {
-      const { data: convos } = await supabase
-        .from("conversations")
-        .select("id")
-        .or(
-          `and(participant_1.eq.${report.reporter_id},participant_2.eq.${report.reported_user_id}),and(participant_1.eq.${report.reported_user_id},participant_2.eq.${report.reporter_id})`
-        );
-      if (convos) {
-        for (const c of convos) {
-          await supabase.from("messages").delete().eq("conversation_id", c.id);
-          await supabase.from("conversations").delete().eq("id", c.id);
-        }
-      }
-    }
-
-    if (banUserId) {
-      const banLabel = decision === "violation_3" ? "3-day ban" : decision === "violation_30" ? "30-day ban" : "Permanent ban";
-      const banReason = modNote
-        ? `${banLabel}: ${modNote}`
-        : `${banLabel}: ${report.reason}`;
-      await supabase
-        .from("profiles")
-        .update({
-          banned_until: bannedUntil,
-          ban_reason: banReason,
-        })
-        .eq("id", banUserId);
-    }
-
-    const relatedReports = reports.filter((r) =>
-      (isPost && r.reported_listing_id === report.reported_listing_id) ||
-      (!isPost && r.reported_user_id === report.reported_user_id)
-    );
-    const relatedIds = relatedReports.map((r) => r.id);
-
-    const { error: statusError } = await supabase
-      .from("reports")
-      .update({ status: "reviewed" })
-      .in("id", relatedIds);
-
-    if (statusError) {
-      setActionError("Content removed and user banned, but failed to update report status. Try refreshing.");
+      await fetchReports();
+      setReportTab(decision === "no_violation" ? "dismissed" : "reviewed");
+    } catch {
+      setActionError("Failed to apply decision. Please try again.");
+    } finally {
       setProcessing(false);
-      return;
     }
-
-    setReports((prev) =>
-      prev.map((r) =>
-        relatedIds.includes(r.id) ? { ...r, status: "reviewed" } : r
-      )
-    );
-
-    setReportTab("reviewed");
-    setProcessing(false);
   };
 
   const handleReverseBan = async (report) => {
     setProcessing(true);
     setActionError("");
 
-    const isPost = !!report.reported_listing_id;
-    const banUserId = isPost
-      ? report.reportedListing?.poster_id
-      : report.reported_user_id;
-
-    if (!banUserId) {
-      setActionError("Cannot determine which user to unban.");
-      setProcessing(false);
-      return;
-    }
-
-    const { error: unbanError } = await supabase
-      .from("profiles")
-      .update({ banned_until: null, ban_reason: null })
-      .eq("id", banUserId);
-
-    if (unbanError) {
+    try {
+      await apiFetch(`/api/reports/${report.id}/reverse-ban`, { method: "POST" });
+      await fetchReports();
+      setReportTab("pending");
+    } catch {
       setActionError("Failed to reverse ban. Please try again.");
+    } finally {
       setProcessing(false);
-      return;
     }
-
-    await updateStatus(report.id, "pending");
-    setReportTab("pending");
-    setProcessing(false);
   };
 
   // --- Derived ---

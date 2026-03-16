@@ -1,6 +1,6 @@
 import './App.css';
 import { Routes, Route, Link } from "react-router-dom";
-import { supabase } from "./supabaseClient";
+import { supabase } from "../backend/supabaseClient";
 import { useAuth } from "./AuthContext";
 import LoginPage from "./pages/LoginPage";
 import FeedPage from './pages/FeedPage';
