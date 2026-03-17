@@ -980,27 +980,36 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
   const [reports, setReports] = useState([]);
   const [fullListings, setFullListings] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [reportTab, setReportTab] = useState("pending");
   const [actionError, setActionError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [processing, setProcessing] = useState(false);
 
-  const fetchReports = async () => {
-    setLoading(true);
+  const fetchReports = async (page = 1, append = false) => {
+    if (page === 1) setLoading(true);
+    else setLoadingMore(true);
     setActionError("");
 
     try {
-      const payload = await apiFetch("/api/reports");
+      const payload = await apiFetch(`/api/reports?page=${page}&limit=10`);
       const loadedReports = payload?.reports || [];
       const loadedListings = payload?.listings || {};
-      setReports(loadedReports);
-      setFullListings(loadedListings);
+      setReports(prev => append ? [...prev, ...loadedReports] : loadedReports);
+      setFullListings(prev => append ? { ...prev, ...loadedListings } : loadedListings);
+      setHasMore(payload?.hasMore ?? false);
+      setCurrentPage(page);
     } catch {
       setActionError("Failed to load reports.");
-      setReports([]);
-      setFullListings({});
+      if (!append) {
+        setReports([]);
+        setFullListings({});
+      }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
@@ -1282,6 +1291,25 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
                     processing={processing} isDark={isDark} timeZone={timeZone}
                   />
                 ))}
+                {hasMore && (
+                  <Box sx={{ display: "flex", justifyContent: "center", mt: 2, mb: 1 }}>
+                    <Button
+                      variant="outlined"
+                      onClick={() => fetchReports(currentPage + 1, true)}
+                      disabled={loadingMore}
+                      sx={{
+                        color: isDark ? "#FF4500" : "#A84D48",
+                        borderColor: isDark ? "rgba(255,69,0,0.4)" : "#A84D48",
+                        fontWeight: 700,
+                        borderRadius: 2,
+                        textTransform: "none",
+                        "&:hover": { borderColor: isDark ? "#FF4500" : "#8f3e3a", background: isDark ? "rgba(255,69,0,0.08)" : "rgba(168,77,72,0.06)" },
+                      }}
+                    >
+                      {loadingMore ? <CircularProgress size={20} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} /> : "Load More Reports"}
+                    </Button>
+                  </Box>
+                )}
               </Box>
             )}
           </>

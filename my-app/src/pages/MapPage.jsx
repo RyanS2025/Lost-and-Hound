@@ -335,9 +335,19 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
 
     try {
       await apiFetch("/api/listings/cleanup", { method: "POST" });
-      const data = await apiFetch("/api/listings");
 
-      const normalized = (data || []).map((item) => {
+      // Fetch all pages for the map view
+      let allItems = [];
+      let page = 1;
+      let hasMore = true;
+      while (hasMore) {
+        const result = await apiFetch(`/api/listings?page=${page}&limit=100`);
+        allItems = [...allItems, ...(result?.data || [])];
+        hasMore = result?.hasMore ?? false;
+        page++;
+      }
+
+      const normalized = allItems.map((item) => {
         let lat = item.lat;
         let lng = item.lng;
         if (lat == null && item.locations?.coordinates) {

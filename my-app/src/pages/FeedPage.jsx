@@ -347,19 +347,43 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
 
     if (form.image?.file) {
       try {
+        const file = form.image.file;
+
+        // Client-side validation: check MIME type and size
+        const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+        if (!allowedTypes.includes(file.type)) {
+          setSubmitting(false);
+          return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+          setSubmitting(false);
+          return;
+        }
+
         const uploadData = await apiFetch("/api/upload-url", {
           method: "POST",
-          body: JSON.stringify({ filename: form.image.file.name }),
+          body: JSON.stringify({
+            filename: file.name,
+            contentType: file.type,
+            fileSize: file.size,
+          }),
         });
 
         const uploadRes = await fetch(uploadData.signedUrl, {
           method: "PUT",
-          headers: { "Content-Type": form.image.file.type },
-          body: form.image.file,
+          headers: { "Content-Type": file.type },
+          body: file,
         });
 
         if (uploadRes.ok) {
-          image_url = uploadData.publicUrl;
+          // Verify the uploaded file is actually an image (magic byte check)
+          const verify = await apiFetch("/api/verify-image", {
+            method: "POST",
+            body: JSON.stringify({ path: uploadData.path }),
+          });
+          if (verify?.valid) {
+            image_url = uploadData.publicUrl;
+          }
         }
       } catch (err) {
         console.error("Image upload error:", err);
@@ -568,6 +592,9 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
   const { user, profile } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [sort, setSort] = useState("Newest");
@@ -577,8 +604,9 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
   const [showMyPosts, setShowMyPosts] = useState(false);
   const [selectedCampus, setSelectedCampus] = useState(profile?.default_campus || "boston");
 
-  const fetchItems = useCallback(async () => {
-    setLoading(true);
+  const fetchItems = useCallback(async (page = 1, append = false) => {
+    if (page === 1) setLoading(true);
+    else setLoadingMore(true);
 
     try {
       await apiFetch("/api/listings/cleanup", { method: "POST" });
@@ -587,13 +615,17 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
     }
 
     try {
-      const data = await apiFetch("/api/listings");
-      setItems(data ?? []);
+      const result = await apiFetch(`/api/listings?page=${page}&limit=10`);
+      const newItems = result?.data ?? [];
+      setItems(prev => append ? [...prev, ...newItems] : newItems);
+      setHasMore(result?.hasMore ?? false);
+      setCurrentPage(page);
     } catch (err) {
       console.error("Fetch listings error:", err);
     }
 
     setLoading(false);
+    setLoadingMore(false);
   }, []);
 
   useEffect(() => {
@@ -758,6 +790,25 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
             ? <Typography textAlign="center" color={isDark ? "#818384" : "text.disabled"} fontWeight={700} sx={{ mt: 8 }}>No items found.</Typography>
             : <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
                 {filtered.map(item => <ItemCard key={item.item_id} item={item} onClick={setSelected} isDark={isDark} timeZone={timeZone} />)}
+                {hasMore && (
+                  <Box sx={{ display: "flex", justifyContent: "center", mt: 2, mb: 1 }}>
+                    <Button
+                      variant="outlined"
+                      onClick={() => fetchItems(currentPage + 1, true)}
+                      disabled={loadingMore}
+                      sx={{
+                        color: isDark ? "#FF4500" : "#A84D48",
+                        borderColor: isDark ? "rgba(255,69,0,0.4)" : "#A84D48",
+                        fontWeight: 700,
+                        borderRadius: 2,
+                        textTransform: "none",
+                        "&:hover": { borderColor: isDark ? "#FF4500" : "#8f3e3a", background: isDark ? "rgba(255,69,0,0.08)" : "rgba(168,77,72,0.06)" },
+                      }}
+                    >
+                      {loadingMore ? <CircularProgress size={20} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} /> : "Load More"}
+                    </Button>
+                  </Box>
+                )}
               </Box>
         }
       </Box>
