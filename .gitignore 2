@@ -1,0 +1,19 @@
+# Root-level ignore rules
+node_modules/
+
+# Environment files
+.env
+.env.*
+my-app/.env
+my-app/.env.*
+my-app/backend/.env
+my-app/backend/.env.*
+
+# Build artifacts
+my-app/dist/
+my-app/dist-ssr/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/

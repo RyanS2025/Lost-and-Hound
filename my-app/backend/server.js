@@ -407,12 +407,98 @@ app.patch("/api/profile/campus", requireAuth, require2FA, async (req, res) => {
 });
 
 app.delete("/api/profile", strictLimiter, requireAuth, require2FA, async (req, res) => {
-  const { error } = await supabase
+  const userId = req.user.id;
+  const errors = [];
+
+  // 1. Delete user's listings
+  const { error: listingsErr } = await supabase
+    .from("listings")
+    .delete()
+    .eq("poster_id", userId);
+  if (listingsErr) errors.push({ step: "listings", message: listingsErr.message });
+
+  // 2. Delete messages in conversations the user is part of, then the conversations
+  const { data: convos } = await supabase
+    .from("conversations")
+    .select("id")
+    .or(`participant_1.eq.${userId},participant_2.eq.${userId}`);
+
+  if (convos && convos.length > 0) {
+    const convoIds = convos.map((c) => c.id);
+
+    const { error: msgsErr } = await supabase
+      .from("messages")
+      .delete()
+      .in("conversation_id", convoIds);
+    if (msgsErr) errors.push({ step: "messages", message: msgsErr.message });
+
+    const { error: hiddenErr } = await supabase
+      .from("hidden_conversations")
+      .delete()
+      .in("conversation_id", convoIds);
+    if (hiddenErr) errors.push({ step: "hidden_conversations", message: hiddenErr.message });
+
+    const { error: convosErr } = await supabase
+      .from("conversations")
+      .delete()
+      .in("id", convoIds);
+    if (convosErr) errors.push({ step: "conversations", message: convosErr.message });
+  }
+
+  // 3. Delete any remaining hidden_conversations for this user
+  const { error: hiddenUserErr } = await supabase
+    .from("hidden_conversations")
+    .delete()
+    .eq("user_id", userId);
+  if (hiddenUserErr) errors.push({ step: "hidden_conversations_user", message: hiddenUserErr.message });
+
+  // 4. Delete reports filed by this user (reported-against reports are kept for mod history)
+  const { error: reportsErr } = await supabase
+    .from("reports")
+    .delete()
+    .eq("reporter_id", userId);
+  if (reportsErr) errors.push({ step: "reports", message: reportsErr.message });
+
+  // 5. Delete trusted devices
+  const { error: devicesErr } = await supabase
+    .from("trusted_devices")
+    .delete()
+    .eq("user_id", userId);
+  if (devicesErr) errors.push({ step: "trusted_devices", message: devicesErr.message });
+
+  // 6. Delete uploaded images from storage
+  const { data: storageFiles } = await supabase.storage
+    .from("listing-images")
+    .list(userId);
+
+  if (storageFiles && storageFiles.length > 0) {
+    const filePaths = storageFiles.map((f) => `${userId}/${f.name}`);
+    const { error: storageErr } = await supabase.storage
+      .from("listing-images")
+      .remove(filePaths);
+    if (storageErr) errors.push({ step: "storage", message: storageErr.message });
+  }
+
+  // 7. Delete profile
+  const { error: profileErr } = await supabase
     .from("profiles")
     .delete()
-    .eq("id", req.user.id);
+    .eq("id", userId);
+  if (profileErr) errors.push({ step: "profile", message: profileErr.message });
 
-  if (error) return dbError(res, error, "DELETE /api/profile");
+  // 8. Delete auth user from Supabase Auth
+  const { error: authErr } = await supabase.auth.admin.deleteUser(userId);
+  if (authErr) errors.push({ step: "auth_user", message: authErr.message });
+
+  if (errors.length > 0) {
+    console.error(`[Account deletion partial failure] user=${userId}`, errors);
+    // If the profile and auth user were deleted, still consider it a success
+    // but log the partial failures for manual cleanup
+    if (profileErr || authErr) {
+      return res.status(500).json({ error: "Failed to fully delete account. Please contact support." });
+    }
+  }
+
   res.json({ success: true });
 });
 

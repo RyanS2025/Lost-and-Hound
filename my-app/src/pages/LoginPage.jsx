@@ -249,7 +249,7 @@ export default function LoginPage({
         return;
       }
 
-      setMessage("Account created! Check your Northeastern email for a verification link.");
+      setMessage("SIGNUP_SUCCESS");
       setFirstName("");
       setLastName("");
     } catch (err) {
@@ -445,14 +445,14 @@ export default function LoginPage({
 
     setMfaVerifying(true);
     try {
+      onLoginSuccess?.();
+
       const { error: verifyError } = await supabase.auth.mfa.verify({
         factorId: mfaFactorId,
         challengeId: mfaChallengeId,
         code: otpCode,
       });
       if (verifyError) throw verifyError;
-
-      onLoginSuccess?.();
 
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData?.session?.access_token) throw new Error("Session expired. Please sign in again.");
@@ -980,12 +980,68 @@ export default function LoginPage({
 
                 {error && (
                   <Alert severity="error" sx={{ mt: 2, textAlign: "left" }}>
-                    {error}
+                    {error === "EMAIL_NOT_CONFIRMED" ? (
+                      <>
+                        <strong>Email not confirmed.</strong> Please check your inbox for the verification link.
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            display: "block",
+                            mt: 1,
+                            color: "inherit",
+                            opacity: 0.85,
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          Can't find it? Northeastern's email system may quarantine messages from new senders.
+                          Check your <strong>Junk/Spam</strong> folder, or visit{" "}
+                          <MuiLink
+                            href="https://security.microsoft.com/quarantine"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{ color: "inherit", fontWeight: 700 }}
+                          >
+                            Microsoft 365 Quarantine
+                          </MuiLink>{" "}
+                          and release the email from there.
+                        </Typography>
+                      </>
+                    ) : (
+                      error
+                    )}
                   </Alert>
                 )}
                 {message && (
                   <Alert severity="success" sx={{ mt: 2, textAlign: "left" }}>
-                    {message}
+                    {message === "SIGNUP_SUCCESS" ? (
+                      <>
+                        <strong>Account created!</strong> Check your Northeastern email for a verification link.
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            display: "block",
+                            mt: 1,
+                            color: "inherit",
+                            opacity: 0.85,
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          Can't find it? Northeastern's email system may quarantine messages from new senders.
+                          Check your <strong>Junk/Spam</strong> folder, or visit{" "}
+                          <MuiLink
+                            href="https://security.microsoft.com/quarantine"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{ color: "inherit", fontWeight: 700 }}
+                          >
+                            Microsoft 365 Quarantine
+                          </MuiLink>{" "}
+                          and release the email from there.
+                        </Typography>
+                      </>
+                    ) : (
+                      message
+                    )}
                   </Alert>
                 )}
               </>
@@ -1011,6 +1067,8 @@ export default function LoginPage({
 
 function cleanErrorMessage(errorMsg) {
   if (!errorMsg) return "Something went wrong. Please try again.";
+  if (errorMsg.toLowerCase().includes("email not confirmed"))
+    return "EMAIL_NOT_CONFIRMED";
   if (errorMsg.toLowerCase().includes("user already registered"))
     return "An account with this email already exists.";
   if (errorMsg.toLowerCase().includes("email already registered"))
