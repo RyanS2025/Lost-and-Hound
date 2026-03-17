@@ -53,11 +53,6 @@ export function AuthProvider({ children }) {
   }, [user?.id, sessionToken]);
 
   const logout = async () => {
-    try {
-      await apiFetch("/api/auth/clear-device", { method: "POST" });
-    } catch {
-      // Always continue with sign-out even if cookie clearing fails.
-    }
     setSessionToken(null);
     await supabase.auth.signOut();
   };

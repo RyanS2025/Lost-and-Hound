@@ -164,7 +164,7 @@ function isAal2Token(token) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async function require2FA(req, res, next) {
-  const raw = req.cookies?.device_token;
+  const raw = req.headers["x-device-token"];
   if (raw && typeof raw === "string" && raw.length >= 10) {
     const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
 
@@ -254,7 +254,7 @@ async function requireConversationParticipant(req, res, next) {
 // Check whether the device token in the request is still trusted.
 // If it is, the client can skip showing the OTP screen.
 app.post("/api/auth/check-device", requireAuth, async (req, res) => {
-  const raw = req.cookies?.device_token;
+  const raw = req.headers["x-device-token"];
   if (!raw || typeof raw !== "string") return res.json({ trusted: false });
 
   const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
@@ -304,13 +304,19 @@ app.post("/api/auth/trust-device", requireAuth, async (req, res) => {
     return res.status(500).json({ error: "Failed to issue device token" });
   }
 
-  res.cookie("device_token", rawToken, buildDeviceTokenCookieOptions(ttlMs));
-
-  res.json({ verified: true, rememberDevice: !!rememberDevice });
+  res.json({ verified: true, rememberDevice: !!rememberDevice, deviceToken: rawToken });
 });
 
 app.post("/api/auth/clear-device", requireAuth, async (req, res) => {
-  res.clearCookie("device_token", buildDeviceTokenCookieOptions(0));
+  const raw = req.headers["x-device-token"];
+  if (raw && typeof raw === "string") {
+    const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
+    await supabase
+      .from("trusted_devices")
+      .delete()
+      .eq("user_id", req.user.id)
+      .eq("token_hash", tokenHash);
+  }
   res.json({ success: true });
 });
 

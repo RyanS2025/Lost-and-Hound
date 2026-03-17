@@ -6,18 +6,19 @@ export default async function apiFetch(path, options = {}) {
   // 1. Get the current session from Supabase (this is still client-side auth)
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
+  const deviceToken = localStorage.getItem("device_token");
 
-  // 2. Build the headers — always include the Bearer token
+  // 2. Build the headers — always include the Bearer token and device token
   const headers = {
     "Content-Type": "application/json",
     ...(token       && { Authorization:    `Bearer ${token}` }),
+    ...(deviceToken && { "X-Device-Token": deviceToken }),
     ...options.headers, // allow overrides if needed
   };
 
   // 3. Make the fetch call
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
-    credentials: "include",
     headers,
   });
 

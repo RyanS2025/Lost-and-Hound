@@ -457,10 +457,13 @@ export default function LoginPage({
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData?.session?.access_token) throw new Error("Session expired. Please sign in again.");
 
-      await apiFetch("/api/auth/trust-device", {
+      const trustResult = await apiFetch("/api/auth/trust-device", {
         method: "POST",
         body: JSON.stringify({ rememberDevice }),
       });
+      if (trustResult?.deviceToken) {
+        localStorage.setItem("device_token", trustResult.deviceToken);
+      }
     } catch (err) {
       onLoginCancel?.();
       setError(err.message || "Verification failed. Please try again.");
