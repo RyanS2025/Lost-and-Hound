@@ -129,7 +129,8 @@ export default function SettingsPage({
     setDeleteMessage("");
     try {
       await apiFetch("/api/profile", { method: "DELETE" });
-      await supabase.auth.signOut();
+      // Auth user is already deleted server-side, sign out locally to clear session
+      await supabase.auth.signOut({ scope: "local" });
     } catch {
       setDeleteMessage("Error deleting account. Please contact support.");
       setDeleteOpen(false);

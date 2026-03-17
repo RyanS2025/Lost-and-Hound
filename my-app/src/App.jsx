@@ -162,6 +162,23 @@ export default function App() {
   const [loginTransition, setLoginTransition] = useState(false);
   const [awaitingProfile, setAwaitingProfile] = useState(false);
   const didLoginTransition = useRef(false);
+  // Tracks whether we're still waiting for the initial profile fetch on page refresh.
+  // Starts true and flips to false once we get a result (success or failure).
+  const [profileInitLoading, setProfileInitLoading] = useState(true);
+
+  useEffect(() => {
+    // Once we have a profile, or we know there's no user, initial load is done.
+    // Also if user exists but profile is null (2FA_REQUIRED), we give it a short
+    // window then stop showing the spinner so the MFA screen can appear.
+    if (profile || !user) {
+      setProfileInitLoading(false);
+    } else if (user && !profile) {
+      // User exists but no profile yet — could be loading or 2FA blocked.
+      // Set a timeout so we don't spin forever if 2FA is required.
+      const timer = setTimeout(() => setProfileInitLoading(false), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [profile, user]);
 
   const onLoginSuccess = useCallback(() => {
     setLoginTransition(true);
@@ -187,16 +204,39 @@ export default function App() {
     return (
       <ThemeProvider theme={appTheme}>
         <CssBaseline />
-        {awaitingProfile && !loginTransition && user && !profile ? (
+        {(awaitingProfile || profileInitLoading) && !loginTransition ? (
           <Box
             sx={{
               minHeight: '100vh',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              backgroundColor: effectiveTheme === "dark" ? darkBg : "#f5f0f0",
+              backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`,
+              backgroundSize: "24px 24px",
             }}
           >
-            <CircularProgress color="primary" />
+            <Box sx={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <CircularProgress
+                size={340}
+                thickness={1}
+                sx={{
+                  color: effectiveTheme === "dark" ? darkAccent : "#A84D48",
+                  position: "absolute",
+                }}
+              />
+              <Box
+                component="img"
+                src="/MainLogo.png"
+                alt="Lost & Hound"
+                sx={{
+                  width: 230,
+                  height: 230,
+                  objectFit: "contain",
+                  mt: 3,
+                }}
+              />
+            </Box>
           </Box>
         ) : (
           <LoginPage
