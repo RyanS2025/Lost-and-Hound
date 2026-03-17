@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Box, Typography, Paper, TextField, IconButton, Button } from "@mui/material";
+import { Box, Typography, Paper, TextField, IconButton, Button, CircularProgress } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import SendIcon from "@mui/icons-material/Send";
 import ChatIcon from "@mui/icons-material/ChatBubbleOutline";
@@ -28,6 +28,9 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
   const [conversations, setConversations] = useState([]);
   const [messages, setMessages] = useState([]);
   const [isClosed, setIsClosed] = useState(false);
+  const [msgHasMore, setMsgHasMore] = useState(false);
+  const [msgPage, setMsgPage] = useState(1);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [profiles, setProfiles] = useState({});
   const [listings, setListings] = useState({});
@@ -66,10 +69,10 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
     if (!user) return;
     const fetchConversations = async () => {
       try {
-        const { conversations: convos, profiles: profileData, listings: listingData } = await apiFetch("/api/conversations");
-        setConversations(convos);
-        setProfiles(profileData);
-        setListings(listingData);
+        const result = await apiFetch("/api/conversations");
+        setConversations(result?.conversations || []);
+        setProfiles(result?.profiles || {});
+        setListings(result?.listings || {});
       } catch (err) {
         console.error("Fetch conversations error:", err);
       }
@@ -81,6 +84,8 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
     if (!selectedConversation) {
       setMessages([]);
       setIsClosed(false);
+      setMsgHasMore(false);
+      setMsgPage(1);
       return;
     }
     setIsClosed(false);
@@ -91,12 +96,14 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
 
     const setup = async () => {
       try {
-        const { messages: msgs, isClosed: closed } = await apiFetch(
+        const result = await apiFetch(
           `/api/conversations/${selectedConversation.id}/messages`
         );
         if (active) {
-          setMessages(msgs);
-          setIsClosed(closed);
+          setMessages(result?.messages || []);
+          setIsClosed(result?.isClosed || false);
+          setMsgHasMore(result?.hasMore ?? false);
+          setMsgPage(1);
         }
       } catch (err) {
         console.error("Fetch messages error:", err);
@@ -336,6 +343,38 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
 
                   {/* Messages — scrollable area */}
                   <Box sx={{ flex: 1, overflowY: "auto", p: 2, display: "flex", flexDirection: "column", gap: 1, minHeight: 0 }}>
+                    {msgHasMore && (
+                      <Box sx={{ display: "flex", justifyContent: "center", mb: 1 }}>
+                        <Button
+                          size="small"
+                          onClick={async () => {
+                            setLoadingOlder(true);
+                            try {
+                              const nextPage = msgPage + 1;
+                              const result = await apiFetch(
+                                `/api/conversations/${selectedConversation.id}/messages?page=${nextPage}&limit=10`
+                              );
+                              const olderMsgs = result?.messages || [];
+                              setMessages(prev => [...olderMsgs, ...prev]);
+                              setMsgHasMore(result?.hasMore ?? false);
+                              setMsgPage(nextPage);
+                            } catch (err) {
+                              console.error("Load older messages error:", err);
+                            }
+                            setLoadingOlder(false);
+                          }}
+                          disabled={loadingOlder}
+                          sx={{
+                            color: isDark ? "#FF4500" : "#A84D48",
+                            fontWeight: 600,
+                            textTransform: "none",
+                            fontSize: 12,
+                          }}
+                        >
+                          {loadingOlder ? <CircularProgress size={16} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} /> : "Load older messages"}
+                        </Button>
+                      </Box>
+                    )}
                     {messages.map((msg) => {
                       if (msg.is_system) {
                         return (

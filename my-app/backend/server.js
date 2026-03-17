@@ -17,12 +17,13 @@ const supabase = createClient(
 const app = express();
 
 app.use(helmet());
+
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5173")
+  .split(",")
+  .map((o) => o.trim());
+
 app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    "https://thelostandhound.com",
-    "https://www.thelostandhound.com",
-  ],
+  origin: allowedOrigins,
   credentials: true,
 }));
 app.use(cookieParser());
@@ -507,13 +508,18 @@ app.delete("/api/profile", strictLimiter, requireAuth, require2FA, async (req, r
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 app.get("/api/listings", requireAuth, require2FA, async (req, res) => {
-  const { data, error } = await supabase
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 10));
+  const offset = (page - 1) * limit;
+
+  const { data, error, count } = await supabase
     .from("listings")
-    .select("*, locations(name, coordinates, campus)")
-    .order("date", { ascending: false });
+    .select("*, locations(name, coordinates, campus)", { count: "exact" })
+    .order("date", { ascending: false })
+    .range(offset, offset + limit - 1);
 
   if (error) return dbError(res, error, "GET /api/listings");
-  res.json(data);
+  res.json({ data: data || [], page, limit, total: count ?? 0, hasMore: offset + limit < (count ?? 0) });
 });
 
 app.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBanned, async (req, res) => {
@@ -540,9 +546,10 @@ app.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBanne
   }
 
   if (image_url !== null) {
-    const ALLOWED_IMAGE_ORIGINS = [
-      "https://lost-and-hound-backend-production.up.railway.app",
-    ];
+    const ALLOWED_IMAGE_ORIGINS = (process.env.ALLOWED_IMAGE_ORIGINS || "")
+      .split(",")
+      .map((o) => o.trim())
+      .filter(Boolean);
     let parsedUrl;
     try { parsedUrl = new URL(image_url); } catch { return res.status(400).json({ error: "Invalid image URL" }); }
     const allowed = ALLOWED_IMAGE_ORIGINS.some((o) => parsedUrl.origin === o) ||
@@ -639,8 +646,8 @@ app.post("/api/listings/cleanup", requireAuth, require2FA, async (req, res) => {
 
   lastCleanupTime = now;
 
-  const resolvedCutoff   = new Date(now - 30 * 86400000).toISOString();
-  const unresolvedCutoff = new Date(now - 10 * 86400000).toISOString();
+  const resolvedCutoff   = new Date(now - 10 * 86400000).toISOString();
+  const unresolvedCutoff = new Date(now - 30 * 86400000).toISOString();
 
   const { error: resolvedError } = await supabase
     .from("listings")
@@ -674,6 +681,19 @@ app.post("/api/upload-url", writeLimiter, requireAuth, require2FA, requireNotBan
     return res.status(400).json({ error: "Only image files are allowed (jpg, jpeg, png, webp, gif)" });
   }
 
+  // Validate MIME type from the client (first line of defense)
+  const contentType = sanitize(req.body.contentType, 100);
+  const allowedMimes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+  if (contentType && !allowedMimes.includes(contentType)) {
+    return res.status(400).json({ error: "Invalid image type" });
+  }
+
+  // Enforce max file size (5MB)
+  const fileSize = parseInt(req.body.fileSize);
+  if (fileSize && fileSize > 5 * 1024 * 1024) {
+    return res.status(400).json({ error: "Image must be under 5MB" });
+  }
+
   const path = `${req.user.id}/${Date.now()}.${ext}`;
 
   const { data, error } = await supabase.storage
@@ -691,6 +711,46 @@ app.post("/api/upload-url", writeLimiter, requireAuth, require2FA, requireNotBan
     publicUrl: publicUrlData.publicUrl,
     path,
   });
+});
+
+// Verify uploaded image is actually an image by checking magic bytes
+// Called after the file is uploaded to storage but before creating the listing
+app.post("/api/verify-image", requireAuth, require2FA, requireNotBanned, async (req, res) => {
+  const filePath = sanitize(req.body.path, 500);
+  if (!filePath) {
+    return res.status(400).json({ error: "File path is required" });
+  }
+
+  // Ensure user can only verify their own uploads
+  if (!filePath.startsWith(req.user.id + "/")) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const { data, error } = await supabase.storage
+    .from("listing-images")
+    .download(filePath);
+
+  if (error || !data) {
+    return res.status(404).json({ error: "File not found" });
+  }
+
+  // Read the first 12 bytes to check magic number signatures
+  const buffer = Buffer.from(await data.arrayBuffer());
+  const header = buffer.subarray(0, 12);
+
+  const isJpeg = header[0] === 0xFF && header[1] === 0xD8 && header[2] === 0xFF;
+  const isPng = header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47;
+  const isGif = header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46;
+  const isWebp = header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46
+              && header[8] === 0x57 && header[9] === 0x45 && header[10] === 0x42 && header[11] === 0x50;
+
+  if (!isJpeg && !isPng && !isGif && !isWebp) {
+    // Not a real image — delete it from storage
+    await supabase.storage.from("listing-images").remove([filePath]);
+    return res.status(400).json({ error: "File is not a valid image. Upload rejected." });
+  }
+
+  res.json({ valid: true });
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -724,15 +784,18 @@ app.get("/api/locations", requireAuth, require2FA, async (req, res) => {
 
 app.get("/api/conversations", requireAuth, require2FA, async (req, res) => {
   const userId = req.user.id;
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
 
   const { data: convos, error } = await supabase
     .from("conversations")
     .select("*")
-    .or(`participant_1.eq.${userId},participant_2.eq.${userId}`);
+    .or(`participant_1.eq.${userId},participant_2.eq.${userId}`)
+    .order("created_at", { ascending: false });
 
   if (error) return dbError(res, error, "GET /api/conversations");
   if (!convos || convos.length === 0) {
-    return res.json({ conversations: [], profiles: {}, listings: {} });
+    return res.json({ conversations: [], profiles: {}, listings: {}, page, limit, total: 0, hasMore: false });
   }
 
   const { data: hiddenData } = await supabase
@@ -743,7 +806,11 @@ app.get("/api/conversations", requireAuth, require2FA, async (req, res) => {
   const hiddenIds = new Set((hiddenData || []).map((h) => h.conversation_id));
   const visible = convos.filter((c) => !hiddenIds.has(c.id));
 
-  const otherIds = visible.map((c) =>
+  const total = visible.length;
+  const offset = (page - 1) * limit;
+  const paginated = visible.slice(offset, offset + limit);
+
+  const otherIds = paginated.map((c) =>
     c.participant_1 === userId ? c.participant_2 : c.participant_1
   );
 
@@ -755,7 +822,7 @@ app.get("/api/conversations", requireAuth, require2FA, async (req, res) => {
   const profileMap = {};
   (profileData || []).forEach((p) => { profileMap[p.id] = p; });
 
-  const listingIds = visible.map((c) => c.listing_id).filter(Boolean);
+  const listingIds = paginated.map((c) => c.listing_id).filter(Boolean);
   const listingMap = {};
   if (listingIds.length > 0) {
     const { data: listingData } = await supabase
@@ -765,7 +832,7 @@ app.get("/api/conversations", requireAuth, require2FA, async (req, res) => {
     (listingData || []).forEach((l) => { listingMap[l.item_id] = l; });
   }
 
-  res.json({ conversations: visible, profiles: profileMap, listings: listingMap });
+  res.json({ conversations: paginated, profiles: profileMap, listings: listingMap, page, limit, total, hasMore: offset + limit < total });
 });
 
 // Must be a participant to view
@@ -869,20 +936,26 @@ app.delete("/api/conversations/:id", requireAuth, require2FA, requireConversatio
 
 // Get messages — must be a participant
 app.get("/api/conversations/:id/messages", requireAuth, require2FA, requireConversationParticipant, async (req, res) => {
-  const { data, error } = await supabase
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 10));
+  const offset = (page - 1) * limit;
+
+  const { data, error, count } = await supabase
     .from("messages")
-    .select("*")
+    .select("*", { count: "exact" })
     .eq("conversation_id", req.params.id)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
 
   if (error) return dbError(res, error, "GET /api/conversations/messages");
 
-  const { count } = await supabase
+  const { count: hiddenCount } = await supabase
     .from("hidden_conversations")
     .select("id", { count: "exact", head: true })
     .eq("conversation_id", req.params.id);
 
-  res.json({ messages: data || [], isClosed: (count ?? 0) > 0 });
+  // Reverse so messages display oldest-first in the UI
+  res.json({ messages: (data || []).reverse(), isClosed: (hiddenCount ?? 0) > 0, page, limit, total: count ?? 0, hasMore: offset + limit < (count ?? 0) });
 });
 
 // Send messages — must be a participant, must not be banned
@@ -960,13 +1033,18 @@ app.post("/api/reports", strictLimiter, requireAuth, require2FA, requireNotBanne
 });
 
 app.get("/api/reports", requireAuth, require2FA, requireModerator, async (req, res) => {
-  const { data, error } = await supabase
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 10));
+  const offset = (page - 1) * limit;
+
+  const { data, error, count } = await supabase
     .from("reports")
-    .select("*")
-    .order("created_at", { ascending: false });
+    .select("*", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
 
   if (error) return dbError(res, error, "GET /api/reports");
-  if (!data || data.length === 0) return res.json({ reports: [], listings: {} });
+  if (!data || data.length === 0) return res.json({ reports: [], listings: {}, page, limit, total: count ?? 0, hasMore: false });
 
   const userIds = new Set();
   data.forEach((r) => {
@@ -1118,7 +1196,7 @@ app.get("/api/reports", requireAuth, require2FA, requireModerator, async (req, r
     })(),
   }));
 
-  res.json({ reports: enriched, listings: listingMap });
+  res.json({ reports: enriched, listings: listingMap, page, limit, total: count ?? 0, hasMore: offset + limit < (count ?? 0) });
 });
 
 app.patch("/api/reports/:id/status", requireAuth, require2FA, requireModerator, async (req, res) => {

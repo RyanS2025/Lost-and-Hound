@@ -1,9 +1,6 @@
 import { supabase } from "../../backend/supabaseClient";
 
-export const API_BASE = window.location.hostname === "localhost"
-  ? "http://localhost:3001"
-  : "https://lost-and-hound-backend-production.up.railway.app";
-// Change this to your deployed URL later, e.g. "https://api.myapp.com"
+export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 export default async function apiFetch(path, options = {}) {
   // 1. Get the current session from Supabase (this is still client-side auth)
