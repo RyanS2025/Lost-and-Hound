@@ -3,7 +3,7 @@
 A lost and found web application built for Northeastern University students. Users can post lost or found items, browse listings by category or location, view items on an interactive campus map, and message other students directly.
 
 # Link
-thelostandhound.com
+[thelostandhound.com](thelostandhound.com)
 
 ---
 
