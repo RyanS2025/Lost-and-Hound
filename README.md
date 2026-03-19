@@ -1,6 +1,8 @@
 # Lost & Hound
 
-A lost and found web application built for Northeastern University students. Users can post lost or found items, browse listings by category or location, view items on an interactive campus map, and message other students directly.
+A lost and found web application created by Northeastern University students. This platform is **not officially affiliated with or endorsed by Northeastern University**—it is an independent student-made project. Users can post lost or found items, browse listings by category or location, view items on an interactive campus map, and message other students directly.
+
+> **Disclaimer:** Lost & Hound is a student-made project and is not an official Northeastern University service.
 
 # Link
 [thelostandhound.com](thelostandhound.com)
@@ -123,6 +125,7 @@ npm run preview   # preview the production build locally
 - Theme preference supports **Light**, **Dark**, and **Default (auto/system)**
 - Real-time messaging uses Supabase Realtime on the frontend
 - All data operations go through the Express API
+- This is a student-made project and is not an official Northeastern University service
 
 ---
 
