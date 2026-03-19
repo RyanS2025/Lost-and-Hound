@@ -227,13 +227,12 @@ export default function App() {
               />
               <Box
                 component="img"
-                src="/MainLogo.png"
+                src="/TabLogo.png"
                 alt="Lost & Hound"
                 sx={{
                   width: 230,
                   height: 230,
                   objectFit: "contain",
-                  mt: 3,
                 }}
               />
             </Box>
