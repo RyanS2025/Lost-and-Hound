@@ -20,6 +20,13 @@ const MODAL_CONTENT = {
       "Project context: Oasis @ Northeastern University.",
     ],
   },
+  disclaimer: {
+    title: "Disclaimer",
+    body: [
+      "Lost & Hound is a student-made project created as part of Oasis @ Northeastern University.",
+      "This project is not affiliated with, endorsed by, or related to Northeastern University. It is an independent student initiative.",
+    ],
+  },
   privacy: {
     title: "Privacy & Data",
     body: [
@@ -94,6 +101,9 @@ export default function AppFooter({ effectiveTheme = "light" }) {
         >
           <Button size="small" sx={{ color: styles.accent, fontWeight: 700 }} onClick={() => setOpenModal("credits")}>
             Credits
+          </Button>
+          <Button size="small" sx={{ color: styles.accent, fontWeight: 700 }} onClick={() => setOpenModal("disclaimer")}>
+            Disclaimer
           </Button>
           <Button size="small" sx={{ color: styles.accent, fontWeight: 700 }} onClick={() => setTermsOpen(true)}>
             Terms
