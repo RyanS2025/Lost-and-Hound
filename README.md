@@ -4,6 +4,9 @@ A lost and found web application created by Northeastern University students. Th
 
 > **Disclaimer:** Lost & Hound is a student-made project and is not an official Northeastern University service.
 
+# Link
+[thelostandhound.com](thelostandhound.com)
+
 ---
 
 ## Features
@@ -128,4 +131,4 @@ npm run preview   # preview the production build locally
 
 ## License
 
-Created for Oasis @ Northeastern (student project)
+Made for Oasis @ Northeastern
