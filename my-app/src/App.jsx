@@ -368,9 +368,9 @@ export default function App() {
           >
             <Box
               component="img"
-              src="/LostandHoundLogo.PNG"
+              src="/TabLogo.png"
               alt="Lost & Hound logo"
-              sx={{ height: 32, width: 32, objectFit: "contain", filter: "brightness(0) invert(1)" }}
+              sx={{ height: 48, width: 48, objectFit: "contain"}}
             />
             <Typography variant="h6" fontWeight={900} sx={{ letterSpacing: 0.5, display: { xs: "none", sm: "block" } }}>
               Lost &amp; Hound
