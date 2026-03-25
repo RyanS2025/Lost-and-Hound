@@ -17,3 +17,4 @@ my-app/dist-ssr/
 .DS_Store
 .vscode/
 .idea/
+.claude/
