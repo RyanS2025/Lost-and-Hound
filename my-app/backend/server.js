@@ -33,7 +33,8 @@ app.use(express.json({ limit: "100kb" }));
 // RATE LIMITING
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// General: 100 requests per 15 minutes per IP
+// Three tiers: general (all routes), write (creating posts/messages), strict (reports/deletions).
+
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -42,7 +43,6 @@ const generalLimiter = rateLimit({
   message: { error: "Too many requests. Please try again later." },
 });
 
-// Strict: 20 requests per 15 minutes (for writes like creating posts, sending messages)
 const writeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -51,7 +51,6 @@ const writeLimiter = rateLimit({
   message: { error: "Too many requests. Please slow down." },
 });
 
-// Very strict: 5 requests per 15 minutes (for reports, account deletion)
 const strictLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
@@ -60,7 +59,6 @@ const strictLimiter = rateLimit({
   message: { error: "Too many requests. Please try again later." },
 });
 
-// Apply general limiter to all routes
 app.use("/api/", generalLimiter);
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -91,6 +89,10 @@ const VALID_CAMPUS_IDS = new Set([
 const VALID_CATEGORIES = new Set([
   "Husky Card", "Jacket", "Wallet/Purse", "Bag", "Keys", "Electronics", "Other",
 ]);
+
+// Valid listing types: 'found' = poster found someone else's item,
+// 'lost' = poster lost their own item and is looking for it.
+const VALID_LISTING_TYPES = new Set(["found", "lost"]);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -251,6 +253,10 @@ async function requireConversationParticipant(req, res, next) {
 // 2FA ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// After MFA verification, the client receives a device token (hashed before storage) that
+// lasts 24h (or 30 days if "remember me"). Subsequent requests send this token in
+// X-Device-Token so the user doesn't have to re-verify on every session.
+
 // Check whether the device token in the request is still trusted.
 // If it is, the client can skip showing the OTP screen.
 app.post("/api/auth/check-device", requireAuth, async (req, res) => {
@@ -286,7 +292,6 @@ app.post("/api/auth/trust-device", requireAuth, async (req, res) => {
   const expiresAt = new Date(Date.now() + ttlMs).toISOString();
   const deviceInfo = req.headers["user-agent"]?.slice(0, 200) || null;
 
-  // Clean up expired tokens for this user before inserting a new one
   await supabase
     .from("trusted_devices")
     .delete()
@@ -330,6 +335,8 @@ const CLEANUP_COOLDOWN = 60 * 60 * 1000; // 1 hour
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // PROFILE ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GET auto-creates a profile on first login using Supabase user metadata.
+// DELETE cascades through listings, messages, conversations, reports, devices, and storage.
 
 app.get("/api/profile", requireAuth, require2FA, async (req, res) => {
   const { data, error } = await supabase
@@ -512,17 +519,30 @@ app.delete("/api/profile", strictLimiter, requireAuth, require2FA, async (req, r
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LISTING ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Listings are either 'found' (poster found someone else's item) or 'lost' (poster lost their own).
+// The poster can mark their listing resolved. A cleanup job ages out old listings automatically.
 
 app.get("/api/listings", requireAuth, require2FA, async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 10));
   const offset = (page - 1) * limit;
 
-  const { data, error, count } = await supabase
+  // Optional ?listing_type=found|lost filter. Omitting it (or passing any other
+  // value) returns all listings, preserving the existing default behavior.
+  const listing_type = req.query.listing_type;
+
+  let query = supabase
     .from("listings")
     .select("*, locations(name, coordinates, campus)", { count: "exact" })
     .order("date", { ascending: false })
     .range(offset, offset + limit - 1);
+
+  // Only narrow the query when a valid type is explicitly requested.
+  if (VALID_LISTING_TYPES.has(listing_type)) {
+    query = query.eq("listing_type", listing_type);
+  }
+
+  const { data, error, count } = await query;
 
   if (error) return dbError(res, error, "GET /api/listings");
   res.json({ data: data || [], page, limit, total: count ?? 0, hasMore: offset + limit < (count ?? 0) });
@@ -538,6 +558,12 @@ app.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBanne
   const image_url = req.body.image_url || null;
   const lat = req.body.lat;
   const lng = req.body.lng;
+
+  // Default to 'found' if the client sends anything other than a valid type.
+  // This keeps all existing posts working without requiring them to send the field.
+  const listing_type = VALID_LISTING_TYPES.has(req.body.listing_type)
+    ? req.body.listing_type
+    : "found";
 
   if (!title || !category || !location_id || !found_at || !description) {
     return res.status(400).json({ error: "Missing required fields: title, category, location_id, found_at, description" });
@@ -588,6 +614,7 @@ app.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBanne
     importance,
     description,
     image_url,
+    listing_type,
     resolved: false,
     poster_id: req.user.id,
     poster_name,
@@ -694,7 +721,6 @@ app.post("/api/upload-url", writeLimiter, requireAuth, require2FA, requireNotBan
     return res.status(400).json({ error: "Invalid image type" });
   }
 
-  // Enforce max file size (5MB)
   const fileSize = parseInt(req.body.fileSize);
   if (fileSize && fileSize > 5 * 1024 * 1024) {
     return res.status(400).json({ error: "Image must be under 5MB" });
@@ -787,6 +813,9 @@ app.get("/api/locations", requireAuth, require2FA, async (req, res) => {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CONVERSATIONS & MESSAGE ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// POST /conversations is find-or-create: reopening an existing conversation returns its id.
+// Closing a conversation inserts a system message, then deletes it — hidden_conversations
+// records which users have "closed" a thread so it doesn't reappear in their inbox.
 
 app.get("/api/conversations", requireAuth, require2FA, async (req, res) => {
   const userId = req.user.id;
@@ -989,6 +1018,10 @@ app.post("/api/conversations/:id/messages", writeLimiter, requireAuth, require2F
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // REPORTS ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Users submit reports against a listing or another user. Moderators review them and
+// issue a decision: no violation, or a 3-day / 30-day / permanent ban. Bans can be reversed.
+// For theft reports, GET /reports enriches the response with conversation context so
+// moderators can see who first contacted the poster about the item.
 
 app.post("/api/reports", strictLimiter, requireAuth, require2FA, requireNotBanned, async (req, res) => {
   const reason = sanitize(req.body.reason, 200);
@@ -1395,6 +1428,8 @@ app.get("/api/reports/ban-info/:userId", requireAuth, require2FA, requireModerat
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // MOD MESSAGE VIEWER
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Moderator-only endpoint to read the conversation between a reporter and a reported user,
+// used to provide evidence context when reviewing harassment or theft reports.
 
 app.get("/api/mod/messages", requireAuth, require2FA, requireModerator, async (req, res) => {
   const { reporter, reported } = req.query;

@@ -25,6 +25,11 @@ const IMPORTANCE_LABELS = { 3: "High", 2: "Medium", 1: "Low" };
 const IMPORTANCE_COLORS = { 3: "#b91c1c", 2: "#a16207", 1: "#1d4ed8" };
 const IMPORTANCE_MARKS = [{ value: 1, label: "Low" }, { value: 2, label: "Medium" }, { value: 3, label: "High" }];
 
+// Display labels and accent colors for the two listing types.
+// These are used on badges in ItemCard, DetailModal, and the feed filter chips.
+const LISTING_TYPE_LABELS = { found: "Found", lost: "Lost" };
+const LISTING_TYPE_COLORS = { found: "#0891b2", lost: "#4f46e5" };
+
 // --- Character limits ---
 const LIMITS = { title: 50, found_at: 50, description: 250 };
 
@@ -122,6 +127,19 @@ function ItemCard({ item, onClick, isDark = false, timeZone = DEFAULT_TIME_ZONE 
           <Box>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
               <Typography fontWeight={800} fontSize={16}>{item.title}</Typography>
+              {/* Badge showing whether this is a found or lost item */}
+              {item.listing_type && (
+                <Chip
+                  label={LISTING_TYPE_LABELS[item.listing_type] ?? item.listing_type}
+                  size="small"
+                  sx={{
+                    background: (LISTING_TYPE_COLORS[item.listing_type] ?? "#888") + "22",
+                    color: LISTING_TYPE_COLORS[item.listing_type] ?? "#888",
+                    border: `1px solid ${(LISTING_TYPE_COLORS[item.listing_type] ?? "#888")}44`,
+                    fontWeight: 800, fontSize: 11,
+                  }}
+                />
+              )}
               {item.resolved && <Chip label="Resolved" size="small" sx={{ background: isDark ? "#1f3527" : "#dcfce7", color: isDark ? "#6ee7b7" : "#16a34a", border: isDark ? "1px solid rgba(110,231,183,0.42)" : "none", fontWeight: 800, fontSize: 11 }} />}
             </Box>
             <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600} display="block">
@@ -199,13 +217,28 @@ function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAUL
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mb: 2 }}>
           <Chip label={IMPORTANCE_LABELS[item.importance]} size="small" sx={{ background: IMPORTANCE_COLORS[item.importance] + "22", color: IMPORTANCE_COLORS[item.importance], fontWeight: 800 }} />
           <Chip label={item.category} size="small" sx={{ background: isDark ? "#343536" : "#f5eded", color: "#A84D48", fontWeight: 700 }} />
+          {/* Lost/Found badge */}
+          {item.listing_type && (
+            <Chip
+              label={LISTING_TYPE_LABELS[item.listing_type] ?? item.listing_type}
+              size="small"
+              sx={{
+                background: (LISTING_TYPE_COLORS[item.listing_type] ?? "#888") + "22",
+                color: LISTING_TYPE_COLORS[item.listing_type] ?? "#888",
+                border: `1px solid ${(LISTING_TYPE_COLORS[item.listing_type] ?? "#888")}44`,
+                fontWeight: 800,
+              }}
+            />
+          )}
           {item.resolved && <Chip label="Resolved" size="small" sx={{ background: isDark ? "#1f3527" : "#dcfce7", color: isDark ? "#6ee7b7" : "#16a34a", border: isDark ? "1px solid rgba(110,231,183,0.42)" : "none", fontWeight: 800 }} />}
         </Box>
 
         <Paper variant="outlined" sx={{ p: 2, mb: 2, background: isDark ? "#232324" : "#fdf7f7", borderColor: isDark ? "rgba(255,255,255,0.14)" : "#ecdcdc", borderRadius: 2 }}>
           <Typography variant="caption" fontWeight={800} color={isDark ? "#B8BABD" : "#a07070"} sx={{ letterSpacing: 0.5, display: "block", mb: 0.75 }}>LOCATION</Typography>
           <Typography fontWeight={700} fontSize={14}>{item.locations?.name ?? "Unknown location"}</Typography>
-          <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600}>Found at: {item.found_at}</Typography>
+          <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600}>
+            {item.listing_type === "lost" ? "Last seen at" : "Found at"}: {item.found_at}
+          </Typography>
 
           {pinCoords ? (
             <Box sx={{ mt: 1.5 }}>
@@ -241,7 +274,9 @@ function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAUL
             }}
           >
             <Typography variant="caption" sx={{ color: isDark ? "#f6c66a" : "#7d4e00", fontWeight: 600, lineHeight: 1.4 }}>
-              Only the original poster can mark this item as returned.
+              {item.listing_type === "lost"
+                ? "Only the original poster can mark this item as found."
+                : "Only the original poster can mark this item as returned."}
             </Typography>
           </Box>
         )}
@@ -258,7 +293,11 @@ function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAUL
               }}
               sx={{ background: item.resolved ? "#16a34a" : "#A84D48", "&:hover": { background: item.resolved ? "#15803d" : "#8f3e3a" }, fontWeight: 800, borderRadius: 2 }}
             >
-              {item.resolved ? "Already Returned" : returning ? "Marking..." : "Returned Item"}
+              {/* Label depends on whether this is a lost or found listing */}
+              {item.resolved
+                ? (item.listing_type === "lost" ? "Already Found" : "Already Returned")
+                : returning ? "Marking..."
+                : (item.listing_type === "lost" ? "I Found This!" : "Returned Item")}
             </Button>
           )}
           {!isOwner && (
@@ -302,6 +341,8 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
   const [submitting, setSubmitting] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [flyTo, setFlyTo] = useState(null);
+  // Controls whether the user is reporting something they found or something they lost.
+  const [listingType, setListingType] = useState("found");
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const valid = form.title.trim() && form.found_at.trim() && form.description.trim() && form.location_id;
 
@@ -401,6 +442,8 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           importance: form.importance,
           description: form.description,
           image_url,
+          // Send the listing type so the backend can store it.
+          listing_type: listingType,
           lat: form.pin?.lat ?? null,
           lng: form.pin?.lng ?? null,
         }),
@@ -409,6 +452,7 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
       onAdd(data);
       onClose();
       setForm({ title: "", category: "Other", location_id: "", found_at: "", importance: 2, description: "", image: null, pin: null });
+      setListingType("found");
       setShowMap(false);
       setFlyTo(null);
       setSelectedCampus(profile?.default_campus || "boston");
@@ -427,9 +471,39 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
         maxHeight: "92vh", overflowY: "auto", outline: "none",
         border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
       }}>
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2.5 }}>
-          <Typography variant="h6" fontWeight={900}>Report Found Item</Typography>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+          {/* Title updates based on which mode the user has selected */}
+          <Typography variant="h6" fontWeight={900}>
+            {listingType === "found" ? "Report Found Item" : "Report Lost Item"}
+          </Typography>
           <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+        </Box>
+
+        {/* Toggle between "I found something" and "I lost something".
+            Both flows use identical fields — only labels and the stored type differ. */}
+        <Box sx={{ display: "flex", gap: 1, mb: 2.5 }}>
+          {[
+            { value: "found", label: "I Found Something" },
+            { value: "lost",  label: "I Lost Something"  },
+          ].map(({ value, label }) => (
+            <Chip
+              key={value}
+              label={label}
+              onClick={() => setListingType(value)}
+              variant={listingType === value ? "filled" : "outlined"}
+              sx={{
+                flex: 1, fontWeight: 800, cursor: "pointer", height: 36, borderRadius: 2,
+                borderColor: listingType === value ? "#A84D48" : isDark ? "rgba(255,255,255,0.18)" : "#e0d8d8",
+                background: listingType === value ? "#A84D48" : "transparent",
+                color: listingType === value ? "#fff" : isDark ? "#B8BABD" : "#a07070",
+                "&:hover": {
+                  background: listingType === value ? "#8f3e3a" : isDark ? "#2D2D2E" : "#fdf7f7",
+                  borderColor: "#A84D48",
+                },
+                transition: "all 0.15s",
+              }}
+            />
+          ))}
         </Box>
 
         <TextField
@@ -502,10 +576,10 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
         </Box>
 
         <TextField
-          label="Found At (specific spot)"
+          label={listingType === "found" ? "Found At (specific spot)" : "Last Seen At (specific spot)"}
           value={form.found_at}
           onChange={e => set("found_at", e.target.value)}
-          placeholder="e.g. Table near window, Room 204"
+          placeholder={listingType === "found" ? "e.g. Table near window, Room 204" : "e.g. Library 2nd floor, Room 204"}
           fullWidth
           sx={{ mb: 2 }}
           inputProps={{ maxLength: LIMITS.found_at }}
@@ -603,6 +677,8 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
   const [showResolved, setShowResolved] = useState(false);
   const [showMyPosts, setShowMyPosts] = useState(false);
   const [selectedCampus, setSelectedCampus] = useState(profile?.default_campus || "boston");
+  // "all" shows both found and lost listings. "found" / "lost" narrows to one type.
+  const [listingTypeFilter, setListingTypeFilter] = useState("all");
 
   const fetchItems = useCallback(async (page = 1, append = false) => {
     if (page === 1) setLoading(true);
@@ -647,6 +723,8 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
     .filter(i => showResolved || !i.resolved)
     .filter(i => !showMyPosts || (user?.id && i.poster_id === user.id))
     .filter(i => category === "All" || i.category === category)
+    // Only apply the type filter when the user has selected found or lost specifically.
+    .filter(i => listingTypeFilter === "all" || i.listing_type === listingTypeFilter)
     .filter(i =>
       i.title?.toLowerCase().includes(search.toLowerCase()) ||
       i.locations?.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -744,6 +822,34 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
               "&:hover": { background: category === c ? "#8f3e3a" : isDark ? "#343536" : "#fdf7f7" },
             }} />
           ))}
+        </Box>
+
+        {/* Listing type filter — All / Found / Lost */}
+        <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
+          {[
+            { value: "all",   label: "All"   },
+            { value: "found", label: "Found" },
+            { value: "lost",  label: "Lost"  },
+          ].map(({ value, label }) => {
+            const isActive = listingTypeFilter === value;
+            // Active color: use the listing type accent, or the app primary for "All"
+            const activeColor = value === "all" ? "#A84D48" : LISTING_TYPE_COLORS[value];
+            return (
+              <Chip
+                key={value}
+                label={label}
+                clickable
+                onClick={() => setListingTypeFilter(value)}
+                sx={{
+                  fontWeight: 800,
+                  background: isActive ? activeColor : isDark ? "#2D2D2E" : "#fff",
+                  color: isActive ? "#fff" : isDark ? "#B8BABD" : "#a07070",
+                  border: `1.5px solid ${isActive ? activeColor : isDark ? "rgba(255,255,255,0.18)" : "#e0d8d8"}`,
+                  "&:hover": { background: isActive ? activeColor : isDark ? "#343536" : "#fdf7f7" },
+                }}
+              />
+            );
+          })}
         </Box>
 
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: { xs: "flex-start", sm: "center" }, flexDirection: { xs: "column", sm: "row" }, gap: 1, mb: 2 }}>
