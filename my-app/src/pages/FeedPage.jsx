@@ -824,51 +824,31 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
           ))}
         </Box>
 
-        {/* Listing type filter — All / Found / Lost */}
-        <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
-          {[
-            { value: "all",   label: "All"   },
-            { value: "found", label: "Found" },
-            { value: "lost",  label: "Lost"  },
-          ].map(({ value, label }) => {
-            const isActive = listingTypeFilter === value;
-            // Active color: use the listing type accent, or the app primary for "All"
-            const activeColor = value === "all" ? "#A84D48" : LISTING_TYPE_COLORS[value];
-            return (
-              <Chip
-                key={value}
-                label={label}
-                clickable
-                onClick={() => setListingTypeFilter(value)}
-                sx={{
-                  fontWeight: 800,
-                  background: isActive ? activeColor : isDark ? "#2D2D2E" : "#fff",
-                  color: isActive ? "#fff" : isDark ? "#B8BABD" : "#a07070",
-                  border: `1.5px solid ${isActive ? activeColor : isDark ? "rgba(255,255,255,0.18)" : "#e0d8d8"}`,
-                  "&:hover": { background: isActive ? activeColor : isDark ? "#343536" : "#fdf7f7" },
-                }}
-              />
-            );
-          })}
-        </Box>
-
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: { xs: "flex-start", sm: "center" }, flexDirection: { xs: "column", sm: "row" }, gap: 1, mb: 2 }}>
           <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={700}>
             {filtered.length} item{filtered.length !== 1 ? "s" : ""}
           </Typography>
           <Box sx={{ display: "flex", gap: 1, alignItems: "center", width: { xs: "100%", sm: "auto" }, justifyContent: { xs: "space-between", sm: "flex-end" } }}>
-            <Chip
-              label={showResolved ? "Hide Resolved" : "Show Resolved"}
-              clickable
-              onClick={() => setShowResolved(v => !v)}
-              sx={{
-                fontWeight: 800, fontSize: 12,
-                background: showResolved ? (isDark ? "#1f3527" : "#dcfce7") : isDark ? "#2D2D2E" : "#f5f5f5",
-                color: showResolved ? (isDark ? "#6ee7b7" : "#16a34a") : isDark ? "#818384" : "#999",
-                border: `1.5px solid ${showResolved ? (isDark ? "rgba(110,231,183,0.42)" : "#86efac") : isDark ? "rgba(255,255,255,0.18)" : "#e0e0e0"}`,
-                "&:hover": { background: showResolved ? (isDark ? "#27412f" : "#bbf7d0") : isDark ? "#343536" : "#ececec" },
-              }}
-            />
+            {/* Listing type toggle — cycles All → Lost → Found → All */}
+            {(() => {
+              const cycle = ["all", "lost", "found"];
+              const typeColor = listingTypeFilter === "all" ? "#A84D48" : LISTING_TYPE_COLORS[listingTypeFilter];
+              const typeLabel = listingTypeFilter === "all" ? "All" : LISTING_TYPE_LABELS[listingTypeFilter];
+              return (
+                <Chip
+                  label={`Type: ${typeLabel}`}
+                  clickable
+                  onClick={() => setListingTypeFilter(cycle[(cycle.indexOf(listingTypeFilter) + 1) % cycle.length])}
+                  sx={{
+                    fontWeight: 800, fontSize: 12,
+                    background: typeColor,
+                    color: "#fff",
+                    border: `1.5px solid ${typeColor}`,
+                    "&:hover": { background: typeColor, opacity: 0.85 },
+                  }}
+                />
+              );
+            })()}
             <Chip
               label={showMyPosts ? "My Posts: On" : "My Posts"}
               clickable
@@ -879,6 +859,18 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
                 color: showMyPosts ? (isDark ? "#f6c66a" : "#7d4e00") : isDark ? "#818384" : "#999",
                 border: `1.5px solid ${showMyPosts ? (isDark ? "rgba(245,158,11,0.5)" : "#ffc107") : isDark ? "rgba(255,255,255,0.18)" : "#e0e0e0"}`,
                 "&:hover": { background: showMyPosts ? (isDark ? "#3a2f22" : "#ffe8a3") : isDark ? "#343536" : "#ececec" },
+              }}
+            />
+            <Chip
+              label={showResolved ? "Hide Resolved" : "Show Resolved"}
+              clickable
+              onClick={() => setShowResolved(v => !v)}
+              sx={{
+                fontWeight: 800, fontSize: 12,
+                background: showResolved ? (isDark ? "#1f3527" : "#dcfce7") : isDark ? "#2D2D2E" : "#f5f5f5",
+                color: showResolved ? (isDark ? "#6ee7b7" : "#16a34a") : isDark ? "#818384" : "#999",
+                border: `1.5px solid ${showResolved ? (isDark ? "rgba(110,231,183,0.42)" : "#86efac") : isDark ? "rgba(255,255,255,0.18)" : "#e0e0e0"}`,
+                "&:hover": { background: showResolved ? (isDark ? "#27412f" : "#bbf7d0") : isDark ? "#343536" : "#ececec" },
               }}
             />
             <FormControl size="small" sx={{ minWidth: { xs: 140, sm: 150 } }}>
