@@ -16,6 +16,7 @@ import apiFetch from "../utils/apiFetch";
 import { useAuth } from "../AuthContext";
 import MapPinPicker from "../components/MapPinPicker";
 import { CAMPUSES } from "../constants/campuses";
+import { DEFAULT_TIME_ZONE, formatRelativeDate } from "../utils/timezone";
 
 // --- Constants ---
 const CATEGORIES = ["All", "Husky Card", "Jacket", "Wallet/Purse", "Bag", "Keys", "Electronics", "Other"];
@@ -24,13 +25,8 @@ const IMPORTANCE_LABELS = { 3: "High", 2: "Medium", 1: "Low" };
 const IMPORTANCE_COLORS = { 3: "#b91c1c", 2: "#a16207", 1: "#1d4ed8" };
 const IMPORTANCE_MARKS = [{ value: 1, label: "Low" }, { value: 2, label: "Medium" }, { value: 3, label: "High" }];
 
-// --- Helpers ---
-function formatDate(d) {
-  const diff = Math.floor((new Date() - new Date(d)) / 86400000);
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Yesterday";
-  return `${diff} days ago`;
-}
+// --- Character limits ---
+const LIMITS = { title: 50, found_at: 50, description: 250 };
 
 function parseCoordinates(coordStr) {
   if (!coordStr || typeof coordStr !== "string") return null;
@@ -96,7 +92,7 @@ function ImageUpload({ image, onChange, isDark = false }) {
 }
 
 // --- ItemCard ---
-function ItemCard({ item, onClick, isDark = false }) {
+function ItemCard({ item, onClick, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
   return (
     <Paper
       elevation={1}
@@ -132,7 +128,7 @@ function ItemCard({ item, onClick, isDark = false }) {
               {item.locations?.name ?? "Unknown location"} · {item.found_at}
             </Typography>
             <Typography variant="caption" sx={{ color: isDark ? "#818384" : "#aaa", fontWeight: 600 }}>
-              {item.poster_name} · {formatDate(item.date)}
+              {item.poster_name} · {formatRelativeDate(item.date, timeZone)}
             </Typography>
           </Box>
           <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0.75, flexShrink: 0 }}>
@@ -153,11 +149,12 @@ function ItemCard({ item, onClick, isDark = false }) {
 }
 
 // --- DetailModal ---
-function DetailModal({ item, onClose, onClaim, isDark = false }) {
+function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [claimed, setClaimed] = useState(false);
+  const [returning, setReturning] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const isOwner = user?.id && item?.poster_id === user.id;
 
   if (!item) return null;
   const pinCoords = (item.lat && item.lng)
@@ -171,15 +168,20 @@ function DetailModal({ item, onClose, onClaim, isDark = false }) {
         background: isDark ? "#1A1A1B" : "#fff", borderRadius: 4, p: "26px", width: "100%", maxWidth: 520,
         maxHeight: "90vh", overflowY: "auto", outline: "none",
         border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
+        mx: 1.5,
+        boxSizing: "border-box",
+        width: { xs: "calc(100% - 24px)", sm: "100%" },
       }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 2 }}>
-          <Box>
-            <Typography variant="h6" fontWeight={900}>{item.title}</Typography>
+          <Box sx={{ flex: 1, minWidth: 0, pr: 1 }}>
+            <Typography variant="h6" fontWeight={900} sx={{ lineHeight: 1.25, overflowWrap: "anywhere", wordBreak: "break-word" }}>
+              {item.title}
+            </Typography>
             <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600}>
-              Posted by {item.poster_name} · {formatDate(item.date)}
+              Posted by {item.poster_name} · {formatRelativeDate(item.date, timeZone)}
             </Typography>
           </Box>
-          <Box sx={{ display: "flex", gap: 0.5 }}>
+          <Box sx={{ display: "flex", gap: 0.5, flexShrink: 0 }}>
             <IconButton onClick={() => setReportOpen(true)} size="small" sx={{ color: isDark ? "#818384" : "#999", "&:hover": { color: "#A84D48" } }}>
               <FlagIcon fontSize="small" />
             </IconButton>
@@ -225,10 +227,12 @@ function DetailModal({ item, onClose, onClaim, isDark = false }) {
 
         <Box sx={{ mb: 3 }}>
           <Typography variant="caption" fontWeight={800} color={isDark ? "#B8BABD" : "#a07070"} sx={{ letterSpacing: 0.5, display: "block", mb: 0.75 }}>DESCRIPTION</Typography>
-          <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} lineHeight={1.65}>{item.description}</Typography>
+          <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} lineHeight={1.65} sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
+            {item.description}
+          </Typography>
         </Box>
 
-        {!item.resolved && (
+        {!item.resolved && !isOwner && (
           <Box
             sx={{
               display: "flex", alignItems: "center", gap: 0.75,
@@ -237,43 +241,48 @@ function DetailModal({ item, onClose, onClaim, isDark = false }) {
             }}
           >
             <Typography variant="caption" sx={{ color: isDark ? "#f6c66a" : "#7d4e00", fontWeight: 600, lineHeight: 1.4 }}>
-              ⚠️ Falsely claiming an item violates the Northeastern Code of Student Conduct and may result in disciplinary action.
+              Only the original poster can mark this item as returned.
             </Typography>
           </Box>
         )}
         <Box sx={{ display: "flex", gap: 1.5 }}>
-          <Button
-            variant="contained"
-            fullWidth
-            disabled={item.resolved}
-            onClick={async () => {
-              setClaimed(true);
-              await onClaim(item.item_id);
-            }}
-            sx={{ background: claimed ? "#16a34a" : "#A84D48", "&:hover": { background: claimed ? "#15803d" : "#8f3e3a" }, fontWeight: 800, borderRadius: 2 }}
-          >
-            {item.resolved ? "Already Resolved" : claimed ? "Marked as Found!" : "This is Mine!"}
-          </Button>
-          <Button
-            variant="outlined"
-            sx={{ borderColor: isDark ? "rgba(255,255,255,0.2)" : "#ecdcdc", color: "#A84D48", fontWeight: 800, borderRadius: 2, flexShrink: 0 }}
-            onClick={async () => {
-              try {
-                const result = await apiFetch("/api/conversations", {
-                  method: "POST",
-                  body: JSON.stringify({
-                    listing_id: item.item_id,
-                    other_user_id: item.poster_id,
-                  }),
-                });
-                navigate(`/messages?conversation=${result.id}`);
-              } catch (err) {
-                console.error("Create conversation error:", err);
-              }
-            }}
-          >
-            Message
-          </Button>
+          {isOwner && (
+            <Button
+              variant="contained"
+              fullWidth
+              disabled={item.resolved || returning}
+              onClick={async () => {
+                setReturning(true);
+                await onClaim(item.item_id);
+                setReturning(false);
+              }}
+              sx={{ background: item.resolved ? "#16a34a" : "#A84D48", "&:hover": { background: item.resolved ? "#15803d" : "#8f3e3a" }, fontWeight: 800, borderRadius: 2 }}
+            >
+              {item.resolved ? "Already Returned" : returning ? "Marking..." : "Returned Item"}
+            </Button>
+          )}
+          {!isOwner && (
+            <Button
+              variant="outlined"
+              sx={{ borderColor: isDark ? "rgba(255,255,255,0.2)" : "#ecdcdc", color: "#A84D48", fontWeight: 800, borderRadius: 2, flexShrink: 0, width: "100%" }}
+              onClick={async () => {
+                try {
+                  const result = await apiFetch("/api/conversations", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      listing_id: item.item_id,
+                      other_user_id: item.poster_id,
+                    }),
+                  });
+                  navigate(`/messages?conversation=${result.id}`);
+                } catch (err) {
+                  console.error("Create conversation error:", err);
+                }
+              }}
+            >
+              Message
+            </Button>
+          )}
         </Box>
         <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} type="post" targetId={item.item_id} targetLabel={item.title}/>
       </Box>
@@ -336,22 +345,45 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
 
     let image_url = null;
 
-    // Two-step image upload: get signed URL from server, then upload directly to storage
     if (form.image?.file) {
       try {
+        const file = form.image.file;
+
+        // Client-side validation: check MIME type and size
+        const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+        if (!allowedTypes.includes(file.type)) {
+          setSubmitting(false);
+          return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+          setSubmitting(false);
+          return;
+        }
+
         const uploadData = await apiFetch("/api/upload-url", {
           method: "POST",
-          body: JSON.stringify({ filename: form.image.file.name }),
+          body: JSON.stringify({
+            filename: file.name,
+            contentType: file.type,
+            fileSize: file.size,
+          }),
         });
 
         const uploadRes = await fetch(uploadData.signedUrl, {
           method: "PUT",
-          headers: { "Content-Type": form.image.file.type },
-          body: form.image.file,
+          headers: { "Content-Type": file.type },
+          body: file,
         });
 
         if (uploadRes.ok) {
-          image_url = uploadData.publicUrl;
+          // Verify the uploaded file is actually an image (magic byte check)
+          const verify = await apiFetch("/api/verify-image", {
+            method: "POST",
+            body: JSON.stringify({ path: uploadData.path }),
+          });
+          if (verify?.valid) {
+            image_url = uploadData.publicUrl;
+          }
         }
       } catch (err) {
         console.error("Image upload error:", err);
@@ -400,7 +432,16 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
         </Box>
 
-        <TextField label="Item Name" value={form.title} onChange={e => set("title", e.target.value)} placeholder="e.g. Blue Husky Card" fullWidth sx={{ mb: 2 }} />
+        <TextField
+          label="Item Name"
+          value={form.title}
+          onChange={e => set("title", e.target.value)}
+          placeholder="e.g. Blue Husky Card"
+          fullWidth
+          sx={{ mb: 2 }}
+          inputProps={{ maxLength: LIMITS.title }}
+          helperText={`${form.title.length}/${LIMITS.title}`}
+        />
 
         {/* Campus chips */}
         <Box sx={{ mb: 0.5 }}>
@@ -460,8 +501,29 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           </FormControl>
         </Box>
 
-        <TextField label="Found At (specific spot)" value={form.found_at} onChange={e => set("found_at", e.target.value)} placeholder="e.g. Table near window, Room 204" fullWidth sx={{ mb: 2 }} />
-        <TextField label="Description" value={form.description} onChange={e => set("description", e.target.value)} placeholder="Color, markings, contents..." multiline rows={3} fullWidth sx={{ mb: 2 }} />
+        <TextField
+          label="Found At (specific spot)"
+          value={form.found_at}
+          onChange={e => set("found_at", e.target.value)}
+          placeholder="e.g. Table near window, Room 204"
+          fullWidth
+          sx={{ mb: 2 }}
+          inputProps={{ maxLength: LIMITS.found_at }}
+          helperText={`${form.found_at.length}/${LIMITS.found_at}`}
+        />
+
+        <TextField
+          label="Description"
+          value={form.description}
+          onChange={e => set("description", e.target.value)}
+          placeholder="Color, markings, contents..."
+          multiline
+          rows={3}
+          fullWidth
+          sx={{ mb: 2 }}
+          inputProps={{ maxLength: LIMITS.description }}
+          helperText={`${form.description.length}/${LIMITS.description}`}
+        />
 
         {/* Map pin */}
         <Box sx={{ mb: 2 }}>
@@ -523,27 +585,29 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
 }
 
 // --- FeedPage ---
-export default function FeedPage({ effectiveTheme = "light" }) {
+export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE }) {
   const isDark = effectiveTheme === "dark";
   const pageBg = isDark ? "#101214" : "#f9f5f4";
   const pageDot = isDark ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [sort, setSort] = useState("Newest");
   const [selected, setSelected] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [showResolved, setShowResolved] = useState(false);
+  const [showMyPosts, setShowMyPosts] = useState(false);
   const [selectedCampus, setSelectedCampus] = useState(profile?.default_campus || "boston");
 
-  const fetchItems = useCallback(async () => {
-    setLoading(true);
-    const data = await apiFetch("/api/listings");
-    console.log("listings response:", data);
+  const fetchItems = useCallback(async (page = 1, append = false) => {
+    if (page === 1) setLoading(true);
+    else setLoadingMore(true);
 
-    // Server-side cleanup of old resolved listings
     try {
       await apiFetch("/api/listings/cleanup", { method: "POST" });
     } catch (err) {
@@ -551,13 +615,17 @@ export default function FeedPage({ effectiveTheme = "light" }) {
     }
 
     try {
-      const data = await apiFetch("/api/listings");
-      setItems(data ?? []);
+      const result = await apiFetch(`/api/listings?page=${page}&limit=10`);
+      const newItems = result?.data ?? [];
+      setItems(prev => append ? [...prev, ...newItems] : newItems);
+      setHasMore(result?.hasMore ?? false);
+      setCurrentPage(page);
     } catch (err) {
       console.error("Fetch listings error:", err);
     }
 
     setLoading(false);
+    setLoadingMore(false);
   }, []);
 
   useEffect(() => {
@@ -577,6 +645,7 @@ export default function FeedPage({ effectiveTheme = "light" }) {
   const filtered = items
     .filter(i => selectedCampus === "all" || i.locations?.campus === selectedCampus)
     .filter(i => showResolved || !i.resolved)
+    .filter(i => !showMyPosts || (user?.id && i.poster_id === user.id))
     .filter(i => category === "All" || i.category === category)
     .filter(i =>
       i.title?.toLowerCase().includes(search.toLowerCase()) ||
@@ -592,16 +661,6 @@ export default function FeedPage({ effectiveTheme = "light" }) {
 
   return (
     <>
-      <Box
-        sx={{
-          position: "fixed",
-          inset: 0,
-          zIndex: -1,
-          backgroundColor: pageBg,
-          backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`,
-          backgroundSize: "24px 24px",
-        }}
-      />
       <Box
         sx={{
           display: "flex",
@@ -704,6 +763,18 @@ export default function FeedPage({ effectiveTheme = "light" }) {
                 "&:hover": { background: showResolved ? (isDark ? "#27412f" : "#bbf7d0") : isDark ? "#343536" : "#ececec" },
               }}
             />
+            <Chip
+              label={showMyPosts ? "My Posts: On" : "My Posts"}
+              clickable
+              onClick={() => setShowMyPosts(v => !v)}
+              sx={{
+                fontWeight: 800, fontSize: 12,
+                background: showMyPosts ? (isDark ? "#2a2520" : "#fff3cd") : isDark ? "#2D2D2E" : "#f5f5f5",
+                color: showMyPosts ? (isDark ? "#f6c66a" : "#7d4e00") : isDark ? "#818384" : "#999",
+                border: `1.5px solid ${showMyPosts ? (isDark ? "rgba(245,158,11,0.5)" : "#ffc107") : isDark ? "rgba(255,255,255,0.18)" : "#e0e0e0"}`,
+                "&:hover": { background: showMyPosts ? (isDark ? "#3a2f22" : "#ffe8a3") : isDark ? "#343536" : "#ececec" },
+              }}
+            />
             <FormControl size="small" sx={{ minWidth: { xs: 140, sm: 150 } }}>
               <InputLabel>Sort by</InputLabel>
               <Select value={sort} label="Sort by" onChange={e => setSort(e.target.value)} sx={{ background: isDark ? "#2D2D2E" : "#fff" }}>
@@ -718,12 +789,31 @@ export default function FeedPage({ effectiveTheme = "light" }) {
           : filtered.length === 0
             ? <Typography textAlign="center" color={isDark ? "#818384" : "text.disabled"} fontWeight={700} sx={{ mt: 8 }}>No items found.</Typography>
             : <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                {filtered.map(item => <ItemCard key={item.item_id} item={item} onClick={setSelected} isDark={isDark} />)}
+                {filtered.map(item => <ItemCard key={item.item_id} item={item} onClick={setSelected} isDark={isDark} timeZone={timeZone} />)}
+                {hasMore && (
+                  <Box sx={{ display: "flex", justifyContent: "center", mt: 2, mb: 1 }}>
+                    <Button
+                      variant="outlined"
+                      onClick={() => fetchItems(currentPage + 1, true)}
+                      disabled={loadingMore}
+                      sx={{
+                        color: isDark ? "#FF4500" : "#A84D48",
+                        borderColor: isDark ? "rgba(255,69,0,0.4)" : "#A84D48",
+                        fontWeight: 700,
+                        borderRadius: 2,
+                        textTransform: "none",
+                        "&:hover": { borderColor: isDark ? "#FF4500" : "#8f3e3a", background: isDark ? "rgba(255,69,0,0.08)" : "rgba(168,77,72,0.06)" },
+                      }}
+                    >
+                      {loadingMore ? <CircularProgress size={20} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} /> : "Load More"}
+                    </Button>
+                  </Box>
+                )}
               </Box>
         }
       </Box>
 
-      <DetailModal item={selected} onClose={() => setSelected(null)} onClaim={handleClaim} isDark={isDark} />
+      <DetailModal item={selected} onClose={() => setSelected(null)} onClaim={handleClaim} isDark={isDark} timeZone={timeZone} />
       <NewItemModal open={showNew} onClose={() => setShowNew(false)} onAdd={item => setItems(prev => [item, ...prev])} isDark={isDark} />
       </Box>
     </>

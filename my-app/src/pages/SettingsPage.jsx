@@ -30,10 +30,15 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import { CAMPUSES } from "../constants/campuses";
+import { TIME_ZONE_OPTIONS } from "../utils/timezone";
+
+const NAME_MAX_LENGTH = 25;
 
 export default function SettingsPage({
   themeMode = "auto",
   setThemeMode = () => {},
+  timeZone,
+  setTimeZone = () => {},
   effectiveTheme = "light",
 }) {
   const isDark = effectiveTheme === "dark";
@@ -97,6 +102,15 @@ export default function SettingsPage({
   const handleSaveName = async () => {
     if (!user?.id) return;
     setNameMessage("");
+
+    if (
+      firstName.trim().length > NAME_MAX_LENGTH ||
+      lastName.trim().length > NAME_MAX_LENGTH
+    ) {
+      setNameMessage(`First and last name must be ${NAME_MAX_LENGTH} characters or fewer.`);
+      return;
+    }
+
     try {
       await apiFetch("/api/profile", {
         method: "PATCH",
@@ -115,7 +129,8 @@ export default function SettingsPage({
     setDeleteMessage("");
     try {
       await apiFetch("/api/profile", { method: "DELETE" });
-      await supabase.auth.signOut();
+      // Auth user is already deleted server-side, sign out locally to clear session
+      await supabase.auth.signOut({ scope: "local" });
     } catch {
       setDeleteMessage("Error deleting account. Please contact support.");
       setDeleteOpen(false);
@@ -316,7 +331,7 @@ export default function SettingsPage({
                     borderRadius: 2,
                     px: 2,
                     py: 1.5,
-                    mb: 1,
+                    mb: 2,
                   }}
                 >
                   <Typography
@@ -331,18 +346,25 @@ export default function SettingsPage({
                         <TextField
                           label="First Name"
                           value={firstName}
-                          onChange={(e) => setFirstName(e.target.value)}
+                          onChange={(e) => setFirstName(e.target.value.slice(0, NAME_MAX_LENGTH))}
                           size="small"
+                          inputProps={{ maxLength: NAME_MAX_LENGTH }}
+                          helperText={`${firstName.length}/${NAME_MAX_LENGTH}`}
                           sx={{ flex: 1, borderRadius: 2, ...textFieldSx }}
                         />
                         <TextField
                           label="Last Name"
                           value={lastName}
-                          onChange={(e) => setLastName(e.target.value)}
+                          onChange={(e) => setLastName(e.target.value.slice(0, NAME_MAX_LENGTH))}
                           size="small"
+                          inputProps={{ maxLength: NAME_MAX_LENGTH }}
+                          helperText={`${lastName.length}/${NAME_MAX_LENGTH}`}
                           sx={{ flex: 1, borderRadius: 2, ...textFieldSx }}
                         />
                       </Box>
+                      <Typography variant="caption" sx={{ color: BRAND.textSecondary, display: "block", mb: 1 }}>
+                        Max {NAME_MAX_LENGTH} characters for first and last name.
+                      </Typography>
                       <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
                         <Button
                           variant="contained"
@@ -554,6 +576,63 @@ export default function SettingsPage({
                       ))}
                     </Select>
                   </FormControl>
+                </Box>
+
+                <Box
+                  sx={{
+                    bgcolor: BRAND.maroonFaint,
+                    borderRadius: 2,
+                    px: 2,
+                    py: 1.5,
+                    mb: 1,
+                  }}
+                >
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: BRAND.textSecondary,
+                      fontWeight: 500,
+                      mb: 0.75,
+                      display: "block",
+                    }}
+                  >
+                    Time zone
+                  </Typography>
+                  <FormControl size="small" fullWidth>
+                    <Select
+                      value={timeZone}
+                      onChange={(e) => setTimeZone(e.target.value)}
+                      sx={{
+                        bgcolor: BRAND.inputBg,
+                        color: BRAND.textPrimary,
+                        borderRadius: 2,
+                        "& .MuiOutlinedInput-notchedOutline": {
+                          borderColor: BRAND.cardBorder,
+                        },
+                        "&:hover .MuiOutlinedInput-notchedOutline": {
+                          borderColor: BRAND.maroon,
+                        },
+                        "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                          borderColor: BRAND.maroon,
+                        },
+                        "& .MuiSvgIcon-root": {
+                          color: BRAND.textSecondary,
+                        },
+                      }}
+                    >
+                      {TIME_ZONE_OPTIONS.map((option) => (
+                        <MenuItem key={option.value} value={option.value}>
+                          {option.label} ({option.description})
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: BRAND.textSecondary, mt: 1, display: "block" }}
+                  >
+                    All listing, message, and moderation times follow this setting. Eastern Time is the default.
+                  </Typography>
                 </Box>
                 {campusMessage && (
                   <Alert

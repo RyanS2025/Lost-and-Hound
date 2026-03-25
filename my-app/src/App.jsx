@@ -9,7 +9,8 @@ import MessagePage from "./pages/MessagePage";
 import SettingsPage from "./pages/SettingsPage";
 import DashboardPage from "./pages/DashboardPage";
 import NotFoundPage from "./pages/NotFoundPage";
-import { AppBar, Toolbar, Button, Typography, Container, Box, Paper } from '@mui/material';
+import AppFooter from "./components/AppFooter";
+import { AppBar, Toolbar, Button, Typography, Container, Box, Paper, CircularProgress } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import HomeIcon from '@mui/icons-material/Home';
@@ -24,6 +25,7 @@ import MessageIcon from '@mui/icons-material/Message';
 import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/timezone';
 
 // --- App: Main application component with routing and navigation ---
 export default function App() {
@@ -35,6 +37,9 @@ export default function App() {
     const saved = localStorage.getItem("themeMode");
     return saved === "light" || saved === "dark" || saved === "auto" ? saved : "auto";
   });
+  const [timeZone, setTimeZone] = useState(() =>
+    resolveTimeZone(localStorage.getItem("timeZone") || DEFAULT_TIME_ZONE)
+  );
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches
   );
@@ -50,6 +55,10 @@ export default function App() {
     localStorage.setItem("themeMode", themeMode);
   }, [themeMode]);
 
+  useEffect(() => {
+    localStorage.setItem("timeZone", timeZone);
+  }, [timeZone]);
+
   const effectiveTheme = themeMode === "auto" ? (systemPrefersDark ? "dark" : "light") : themeMode;
   const darkAccent = "#FF4500";
   const darkAccentHover = "#E03D00";
@@ -63,8 +72,6 @@ export default function App() {
 
   const navBg = effectiveTheme === "dark" ? "#1A1A1B" : "#A84D48";
   const navBorder = effectiveTheme === "dark" ? "1px solid rgba(255,255,255,0.12)" : "none";
-  const footerBg = effectiveTheme === "dark" ? "#121213" : "#fff";
-  const footerBorder = effectiveTheme === "dark" ? "1px solid rgba(255,255,255,0.12)" : "1px solid #ecdcdc";
 
   const appTheme = useMemo(
     () =>
@@ -153,31 +160,93 @@ export default function App() {
   // LoginPage calls onLoginSuccess right before signing in.
   // This holds the LoginPage on screen for 1.8s so the animation can play.
   const [loginTransition, setLoginTransition] = useState(false);
+  const [awaitingProfile, setAwaitingProfile] = useState(false);
   const didLoginTransition = useRef(false);
+  // Tracks whether we're still waiting for the initial profile fetch on page refresh.
+  // Starts true and flips to false once we get a result (success or failure).
+  const [profileInitLoading, setProfileInitLoading] = useState(true);
+
+  useEffect(() => {
+    // Once we have a profile, or we know there's no user, initial load is done.
+    // Also if user exists but profile is null (2FA_REQUIRED), we give it a short
+    // window then stop showing the spinner so the MFA screen can appear.
+    if (profile || !user) {
+      setProfileInitLoading(false);
+    } else if (user && !profile) {
+      // User exists but no profile yet — could be loading or 2FA blocked.
+      // Set a timeout so we don't spin forever if 2FA is required.
+      const timer = setTimeout(() => setProfileInitLoading(false), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [profile, user]);
 
   const onLoginSuccess = useCallback(() => {
     setLoginTransition(true);
+    setAwaitingProfile(true);
     didLoginTransition.current = true;
     setTimeout(() => setLoginTransition(false), 1200);
   }, []);
 
-  // Show LoginPage if not logged in OR if the login animation is still playing
-  if (!user || loginTransition) {
+  const onLoginCancel = useCallback(() => {
+    setLoginTransition(false);
+    setAwaitingProfile(false);
+  }, []);
+
+  useEffect(() => {
+    if (profile || !user) {
+      setAwaitingProfile(false);
+    }
+  }, [profile, user]);
+
+  // Keep showing LoginPage while auth/MFA is in progress.
+  // This avoids a blank screen if /api/profile is blocked by require2FA.
+  if (!user || loginTransition || !profile) {
     return (
       <ThemeProvider theme={appTheme}>
         <CssBaseline />
-        <LoginPage
-          loginTransition={loginTransition}
-          onLoginSuccess={onLoginSuccess}
-          effectiveTheme={effectiveTheme}
-        />
+        {(awaitingProfile || profileInitLoading) && !loginTransition ? (
+          <Box
+            sx={{
+              minHeight: '100vh',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: effectiveTheme === "dark" ? darkBg : "#f5f0f0",
+              backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`,
+              backgroundSize: "24px 24px",
+            }}
+          >
+            <Box sx={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <CircularProgress
+                size={340}
+                thickness={1}
+                sx={{
+                  color: effectiveTheme === "dark" ? darkAccent : "#A84D48",
+                  position: "absolute",
+                }}
+              />
+              <Box
+                component="img"
+                src="/TabLogo.png"
+                alt="Lost & Hound"
+                sx={{
+                  width: 230,
+                  height: 230,
+                  objectFit: "contain",
+                }}
+              />
+            </Box>
+          </Box>
+        ) : (
+          <LoginPage
+            loginTransition={loginTransition}
+            onLoginSuccess={onLoginSuccess}
+            onLoginCancel={onLoginCancel}
+            effectiveTheme={effectiveTheme}
+          />
+        )}
       </ThemeProvider>
     );
-  }
-
-  // Show nothing while profile is loading
-  if (!profile) {
-    return null;
   }
 
   // Ban check
@@ -233,7 +302,7 @@ export default function App() {
           />
           <Box sx={{
             display: "flex", justifyContent: "center", alignItems: "center",
-            minHeight: "calc(100vh - 100px)", p: 3,
+            minHeight: "calc(100vh - 120px)", p: 3,
             boxSizing: "border-box",
           }}>
               <Paper elevation={0} sx={{
@@ -254,7 +323,7 @@ export default function App() {
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                 {isPermanent
                   ? "Your account has been permanently suspended."
-                  : `Your account is suspended until ${bannedUntil.toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" })}.`}
+                  : `Your account is suspended until ${formatCalendarDate(bannedUntil, timeZone)}.`}
               </Typography>
               {profile.ban_reason && (
                 <Typography variant="body2" sx={{ mb: 2, color: effectiveTheme === "dark" ? "#FF6A33" : "#A84D48", fontWeight: 600 }}>
@@ -267,30 +336,7 @@ export default function App() {
               </Button>
             </Paper>
           </Box>
-          <Box
-            component="footer"
-            sx={{
-              position: "fixed",
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: 36,
-              px: { xs: 1.5, sm: 3 },
-              borderTop: footerBorder,
-              background: footerBg,
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              zIndex: 1200,
-            }}
-          >
-            <Typography variant="caption" color="text.disabled" fontWeight={600} sx={{ display: { xs: "none", sm: "block" } }}>
-              🐾 Lost &amp; Hound · Built by Nahom Hailemelekot, Benjamin Haillu, Liam Pulsifer, and Ryan Sinha · Oasis @ Northeastern
-            </Typography>
-            <Typography variant="caption" color="text.disabled" fontWeight={700} sx={{ display: { xs: "block", sm: "none" } }}>
-              Lost &amp; Hound · Oasis
-            </Typography>
-          </Box>
+          <AppFooter effectiveTheme={effectiveTheme} />
         </>
         </ThemeProvider>
       );
@@ -406,8 +452,7 @@ export default function App() {
         sx={{
           ...(shouldFadeIn
             ? {
-                opacity: 0,
-                animation: "appFadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.15s forwards",
+                animation: "appFadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.15s both",
                 "@keyframes appFadeIn": {
                   "0%": { opacity: 0, transform: "translateY(6px)" },
                   "100%": { opacity: 1, transform: "translateY(0)" },
@@ -416,51 +461,30 @@ export default function App() {
             : {}),
         }}
       >
-        <Box sx={{ mt: 0, pb: "48px" }}>
+        <Box sx={{ mt: 0, pb: { xs: "78px", sm: "64px" } }}>
           <Routes>
-            <Route path="/" element={<FeedPage effectiveTheme={effectiveTheme} />} />
-            <Route path="/map" element={<MapPage effectiveTheme={effectiveTheme} />} />
-            <Route path="/messages" element={<MessagePage effectiveTheme={effectiveTheme} />} />
+            <Route path="/" element={<FeedPage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
+            <Route path="/map" element={<MapPage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
+            <Route path="/messages" element={<MessagePage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
             <Route
               path="/settings"
               element={
                 <SettingsPage
                   themeMode={themeMode}
                   setThemeMode={setThemeMode}
+                  timeZone={timeZone}
+                  setTimeZone={setTimeZone}
                   effectiveTheme={effectiveTheme}
                 />
               }
             />
-            <Route path="/moderation" element={<DashboardPage effectiveTheme={effectiveTheme} />} />
+            <Route path="/moderation" element={<DashboardPage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
             <Route path="*" element={<NotFoundPage effectiveTheme={effectiveTheme} />} />
           </Routes>
         </Box>
       </Box>
 
-      <Box
-        component="footer"
-        sx={{
-          position: "fixed",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: 36,
-          px: { xs: 1.5, sm: 3 },
-          borderTop: footerBorder,
-          background: footerBg,
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          zIndex: 1200,
-        }}
-      >
-        <Typography variant="caption" color="text.disabled" fontWeight={600} sx={{ display: { xs: "none", sm: "block" } }}>
-          🐾 Lost &amp; Hound · Built by Nahom Hailemelekot, Benjamin Haillu, Liam Pulsifer, and Ryan Sinha · Oasis @ Northeastern
-        </Typography>
-        <Typography variant="caption" color="text.disabled" fontWeight={700} sx={{ display: { xs: "block", sm: "none" } }}>
-          Lost &amp; Hound · Oasis
-        </Typography>
-      </Box>
+      <AppFooter effectiveTheme={effectiveTheme} />
     </>
     </ThemeProvider>
   );

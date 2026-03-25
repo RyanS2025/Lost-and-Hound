@@ -14,13 +14,14 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
+  const [sessionToken, setSessionToken] = useState(null);
 
   useEffect(() => {
-    // onAuthStateChange fires immediately with INITIAL_SESSION so no separate
-    // getSession() call is needed. We only update user state when the user ID
-    // actually changes to prevent cascading profile re-fetches on token refresh.
+    // onAuthStateChange fires immediately with INITIAL_SESSION.
+    // Track session token changes so profile refetches after MFA verify updates JWT claims.
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       const nextUser = session?.user || null;
+      setSessionToken(session?.access_token || null);
       setUser(prev => {
         if (prev?.id === nextUser?.id) return prev; // no-op if same user
         return nextUser;
@@ -32,10 +33,10 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  // Fetch profile info when user ID changes; skip if already loaded for this user
+  // Fetch profile when user ID changes or when auth token changes (e.g. after MFA verify).
   useEffect(() => {
     const fetchProfile = async () => {
-      if (!user?.id) {
+      if (!user?.id || !sessionToken) {
         setProfile(null);
         return;
       }
@@ -49,9 +50,10 @@ export function AuthProvider({ children }) {
       };
 
     fetchProfile();
-  }, [user?.id]); // depend only on user ID, not the whole user object
+  }, [user?.id, sessionToken]);
 
   const logout = async () => {
+    setSessionToken(null);
     await supabase.auth.signOut();
   };
 

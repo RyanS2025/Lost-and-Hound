@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Box, Typography, Paper, TextField, IconButton, Button } from "@mui/material";
+import { Box, Typography, Paper, TextField, IconButton, Button, CircularProgress } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import SendIcon from "@mui/icons-material/Send";
 import ChatIcon from "@mui/icons-material/ChatBubbleOutline";
@@ -12,8 +12,11 @@ import ReportModal from "../components/ReportModal";
 import { supabase } from "../../backend/supabaseClient";
 import apiFetch from "../utils/apiFetch";
 import { useAuth } from "../AuthContext";
+import { DEFAULT_TIME_ZONE, formatTime } from "../utils/timezone";
 
-export default function MessagesPage({ effectiveTheme = "light" }) {
+const MESSAGE_MAX_LENGTH = 500;
+
+export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE }) {
   const isDark = effectiveTheme === "dark";
   const isMobile = useMediaQuery("(max-width:900px)");
   const pageBg = isDark ? "#101214" : "#f9f5f4";
@@ -25,6 +28,9 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
   const [conversations, setConversations] = useState([]);
   const [messages, setMessages] = useState([]);
   const [isClosed, setIsClosed] = useState(false);
+  const [msgHasMore, setMsgHasMore] = useState(false);
+  const [msgPage, setMsgPage] = useState(1);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [profiles, setProfiles] = useState({});
   const [listings, setListings] = useState({});
@@ -46,11 +52,12 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
   };
 
   const sendMessage = async () => {
-    if (!newMessage.trim() || !selectedConversation || isClosed) return;
+    const trimmedMessage = newMessage.trim();
+    if (!trimmedMessage || !selectedConversation || isClosed || trimmedMessage.length > MESSAGE_MAX_LENGTH) return;
     try {
       await apiFetch(`/api/conversations/${selectedConversation.id}/messages`, {
         method: "POST",
-        body: JSON.stringify({ content: newMessage }),
+        body: JSON.stringify({ content: trimmedMessage }),
       });
       setNewMessage("");
     } catch (err) {
@@ -62,10 +69,10 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
     if (!user) return;
     const fetchConversations = async () => {
       try {
-        const { conversations: convos, profiles: profileData, listings: listingData } = await apiFetch("/api/conversations");
-        setConversations(convos);
-        setProfiles(profileData);
-        setListings(listingData);
+        const result = await apiFetch("/api/conversations");
+        setConversations(result?.conversations || []);
+        setProfiles(result?.profiles || {});
+        setListings(result?.listings || {});
       } catch (err) {
         console.error("Fetch conversations error:", err);
       }
@@ -77,6 +84,8 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
     if (!selectedConversation) {
       setMessages([]);
       setIsClosed(false);
+      setMsgHasMore(false);
+      setMsgPage(1);
       return;
     }
     setIsClosed(false);
@@ -87,12 +96,14 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
 
     const setup = async () => {
       try {
-        const { messages: msgs, isClosed: closed } = await apiFetch(
+        const result = await apiFetch(
           `/api/conversations/${selectedConversation.id}/messages`
         );
         if (active) {
-          setMessages(msgs);
-          setIsClosed(closed);
+          setMessages(result?.messages || []);
+          setIsClosed(result?.isClosed || false);
+          setMsgHasMore(result?.hasMore ?? false);
+          setMsgPage(1);
         }
       } catch (err) {
         console.error("Fetch messages error:", err);
@@ -332,6 +343,38 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
 
                   {/* Messages — scrollable area */}
                   <Box sx={{ flex: 1, overflowY: "auto", p: 2, display: "flex", flexDirection: "column", gap: 1, minHeight: 0 }}>
+                    {msgHasMore && (
+                      <Box sx={{ display: "flex", justifyContent: "center", mb: 1 }}>
+                        <Button
+                          size="small"
+                          onClick={async () => {
+                            setLoadingOlder(true);
+                            try {
+                              const nextPage = msgPage + 1;
+                              const result = await apiFetch(
+                                `/api/conversations/${selectedConversation.id}/messages?page=${nextPage}&limit=10`
+                              );
+                              const olderMsgs = result?.messages || [];
+                              setMessages(prev => [...olderMsgs, ...prev]);
+                              setMsgHasMore(result?.hasMore ?? false);
+                              setMsgPage(nextPage);
+                            } catch (err) {
+                              console.error("Load older messages error:", err);
+                            }
+                            setLoadingOlder(false);
+                          }}
+                          disabled={loadingOlder}
+                          sx={{
+                            color: isDark ? "#FF4500" : "#A84D48",
+                            fontWeight: 600,
+                            textTransform: "none",
+                            fontSize: 12,
+                          }}
+                        >
+                          {loadingOlder ? <CircularProgress size={16} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} /> : "Load older messages"}
+                        </Button>
+                      </Box>
+                    )}
                     {messages.map((msg) => {
                       if (msg.is_system) {
                         return (
@@ -352,19 +395,22 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
 
                       const isOwn = msg.sender_id === user.id;
                       return (
-                        <Box key={msg.id} sx={{ alignSelf: isOwn ? "flex-end" : "flex-start", maxWidth: { xs: "85%", md: "70%" } }}>
+                        <Box key={msg.id} sx={{ alignSelf: isOwn ? "flex-end" : "flex-start", maxWidth: { xs: "85%", md: "70%" }, minWidth: 0 }}>
                           <Box sx={{
                             p: "10px 14px", borderRadius: 3,
                             background: isOwn ? "#A84D48" : isDark ? "#2D2D2E" : "#f5eded",
                             color: isOwn ? "#fff" : isDark ? "#D7DADC" : "#333",
+                            maxWidth: "100%",
                           }}>
-                            <Typography fontSize={14}>{msg.content}</Typography>
+                            <Typography fontSize={14} sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                              {msg.content}
+                            </Typography>
                           </Box>
                           <Typography
                             variant="caption" color={mutedTextColor}
                             sx={{ display: "block", mt: 0.5, textAlign: isOwn ? "right" : "left" }}
                           >
-                            {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            {formatTime(msg.created_at, timeZone)}
                           </Typography>
                         </Box>
                       );
@@ -384,16 +430,23 @@ export default function MessagesPage({ effectiveTheme = "light" }) {
                       <TextField
                         fullWidth size="small" placeholder="Type a message..."
                         value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
+                        onChange={(e) => setNewMessage(e.target.value.slice(0, MESSAGE_MAX_LENGTH))}
                         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                        helperText={`${newMessage.length}/${MESSAGE_MAX_LENGTH}`}
+                        inputProps={{ maxLength: MESSAGE_MAX_LENGTH }}
                         sx={{
                           "& .MuiOutlinedInput-root": {
                             background: isDark ? "#2D2D2E" : "#fff",
                             color: isDark ? "#D7DADC" : "inherit",
                           },
+                          "& .MuiFormHelperText-root": {
+                            textAlign: "right",
+                            color: isDark ? "#818384" : "text.secondary",
+                            mr: 0.5,
+                          },
                         }}
                       />
-                      <IconButton onClick={sendMessage} disabled={!newMessage.trim()} sx={{ color: "#A84D48" }}>
+                      <IconButton onClick={sendMessage} disabled={!newMessage.trim() || newMessage.trim().length > MESSAGE_MAX_LENGTH} sx={{ color: "#A84D48" }}>
                         <SendIcon />
                       </IconButton>
                     </Box>

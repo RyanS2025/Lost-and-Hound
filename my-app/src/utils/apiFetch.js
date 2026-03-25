@@ -1,19 +1,18 @@
 import { supabase } from "../../backend/supabaseClient";
 
-const API_BASE = window.location.hostname === "localhost"
-  ? "http://localhost:3001"
-  : "lost-and-hound-backend.railway.internal";
-// Change this to your deployed URL later, e.g. "https://api.myapp.com"
+export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 export default async function apiFetch(path, options = {}) {
   // 1. Get the current session from Supabase (this is still client-side auth)
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
+  const deviceToken = localStorage.getItem("device_token");
 
-  // 2. Build the headers — always include the Bearer token
+  // 2. Build the headers — always include the Bearer token and device token
   const headers = {
     "Content-Type": "application/json",
-    ...(token && { Authorization: `Bearer ${token}` }),
+    ...(token       && { Authorization:    `Bearer ${token}` }),
+    ...(deviceToken && { "X-Device-Token": deviceToken }),
     ...options.headers, // allow overrides if needed
   };
 
