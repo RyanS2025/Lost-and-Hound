@@ -12,7 +12,10 @@ import {
   FormControlLabel,
   CircularProgress,
   LinearProgress,
+  IconButton,
+  Tooltip,
 } from "@mui/material";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import TermsModal from "../components/TermsModal";
 import apiFetch from "../utils/apiFetch";
 
@@ -755,11 +758,26 @@ export default function LoginPage({
                   </Box>
                 )}
 
-                {mfaUri && (
-                  <Typography variant="caption" sx={{ display: "block", mb: 2, color: "text.secondary", wordBreak: "break-all" }}>
-                    Trouble scanning? Use this setup URI: {mfaUri}
-                  </Typography>
-                )}
+                {mfaUri && (() => {
+                  const secret = new URL(mfaUri).searchParams.get("secret") ?? mfaUri;
+                  return (
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="caption" sx={{ display: "block", mb: 0.5, color: "text.secondary" }}>
+                        Trouble scanning? Enter this code manually in your authenticator app:
+                      </Typography>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, background: "rgba(0,0,0,0.06)", borderRadius: 1, px: 1.5, py: 0.75 }}>
+                        <Typography variant="body2" sx={{ fontFamily: "monospace", letterSpacing: 1, flexGrow: 1, userSelect: "all" }}>
+                          {secret}
+                        </Typography>
+                        <Tooltip title="Copy">
+                          <IconButton size="small" onClick={() => navigator.clipboard.writeText(secret)}>
+                            <ContentCopyIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    </Box>
+                  );
+                })()}
 
                 <TextField
                   required
