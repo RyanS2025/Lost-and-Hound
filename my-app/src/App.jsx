@@ -3,6 +3,7 @@ import { Routes, Route, Link } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import { useAuth } from "./AuthContext";
 import LoginPage from "./pages/LoginPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import FeedPage from './pages/FeedPage';
 import MapPage from "./pages/MapPage";
 import MessagePage from "./pages/MessagePage";
@@ -18,22 +19,22 @@ import MessageIcon from '@mui/icons-material/Message';
 import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
 import { useState } from 'react';
 
-// --- App: Main application component with routing and navigation ---
 export default function App() {
   const { user, profile, logout } = useAuth();
 
   if (!user) {
-    return <LoginPage />;
+    return (
+      <Routes>
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="*" element={<LoginPage />} />
+      </Routes>
+    );
   }
-
-  // Supabase sends verification emails automatically. Optionally, you can add a check for user.confirmed_at if you want to block unverified users.
 
   return (
     <>
-      {/* Main app content overlayed above background */}
       <AppBar position="fixed">
         <Toolbar>
-          {/* Brand logo + name */}
           <Box
             component={Link}
             to="/"
@@ -70,7 +71,7 @@ export default function App() {
           <Button
             color="inherit"
             component={Link}
-            to = "/messages"
+            to="/messages"
             startIcon={<MessageIcon />}
           >
             Messages
@@ -109,18 +110,17 @@ export default function App() {
           </Button>
         </Toolbar>
       </AppBar>
-      <Toolbar /> {/* Spacer for fixed AppBar */}
+      <Toolbar />
       <Box sx={{ mt: 0, pb: "48px" }}>
         <Routes>
           <Route path="/" element={<FeedPage />} />
           <Route path="/map" element={<MapPage />} />
-          <Route path = "/messages" element = {<MessagePage />} />
+          <Route path="/messages" element={<MessagePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/moderation" element={<DashboardPage />} />
         </Routes>
       </Box>
 
-      {/* Footer */}
       <Box
         component="footer"
         sx={{

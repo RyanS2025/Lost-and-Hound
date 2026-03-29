@@ -13,19 +13,19 @@ import {
 } from "@mui/material";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import Avatar from "@mui/material/Avatar";
+import { useNavigate } from "react-router-dom";
 
-// --- LoginPage Component: Handles login and signup forms ---
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [firstName, setFirstName] = useState("");   // NEW
-  const [lastName, setLastName] = useState("");     // NEW
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [isSignUp, setIsSignUp] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const theme = useTheme();
+  const navigate = useNavigate();
 
-  // --- handleSubmit: Handles form submission for login/signup ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -74,23 +74,6 @@ export default function LoginPage() {
         });
         if (signInError) throw signInError;
       }
-    } catch (err) {
-      setError(cleanErrorMessage(err.message || err.code));
-    }
-  };
-
-  // --- handleForgotPassword: Handles password reset requests ---
-  const handleForgotPassword = async () => {
-    setError("");
-    setMessage("");
-    if (!email) {
-      setError("Enter your email above first.");
-      return;
-    }
-    try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email);
-      if (resetError) throw resetError;
-      setMessage("Password reset email sent! Check your inbox.");
     } catch (err) {
       setError(cleanErrorMessage(err.message || err.code));
     }
@@ -191,7 +174,7 @@ export default function LoginPage() {
               <MuiLink
                 component="button"
                 variant="body2"
-                onClick={handleForgotPassword}
+                onClick={() => navigate("/forgot-password")}
                 sx={{ cursor: "pointer" }}
               >
                 Forgot password?
@@ -235,7 +218,6 @@ export default function LoginPage() {
   );
 }
 
-// --- cleanErrorMessage: Cleans up error messages for display ---
 function cleanErrorMessage(errorMsg) {
   if (!errorMsg) return "Something went wrong. Please try again.";
   if (errorMsg.toLowerCase().includes("user already registered")) return "An account with this email already exists.";
