@@ -45,29 +45,6 @@ export default function App() {
     window.matchMedia("(prefers-color-scheme: dark)").matches
   );
 
-  // Handle email link verification (password recovery, etc.)
-  // The email links directly to our app with token_hash & type params,
-  // bypassing Supabase's /auth/v1/verify endpoint so Microsoft SafeLinks
-  // can't consume the token by pre-fetching it.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const tokenHash = params.get("token_hash");
-    const type = params.get("type");
-    const code = params.get("code");
-
-    if (tokenHash && type) {
-      supabase.auth.verifyOtp({ token_hash: tokenHash, type }).then(({ error }) => {
-        if (error) console.error("Token verification failed:", error.message);
-        window.history.replaceState({}, "", window.location.pathname);
-      });
-    } else if (code) {
-      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-        if (error) console.error("Code exchange failed:", error.message);
-        window.history.replaceState({}, "", window.location.pathname);
-      });
-    }
-  }, []);
-
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const handleChange = (e) => setSystemPrefersDark(e.matches);
