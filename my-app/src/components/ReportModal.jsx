@@ -3,11 +3,15 @@ import {
   Modal, Box, Typography, Button, IconButton, TextField,
   RadioGroup, FormControlLabel, Radio, Alert, CircularProgress,
 } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
-import { supabase } from "../supabaseClient";
-import { useAuth } from "../AuthContext";
+import apiFetch from "../utils/apiFetch";
+
+const REPORT_REASON_MAX_LENGTH = 50;
+const REPORT_DETAILS_MAX_LENGTH = 250;
 
 const POST_REASONS = [
+  "Stolen item / theft concern",
   "False or misleading listing",
   "Inappropriate content",
   "Spam",
@@ -16,6 +20,7 @@ const POST_REASONS = [
 ];
 
 const USER_REASONS = [
+  "Stolen item / theft concern",
   "Harassment or threatening behavior",
   "Scam or fraud attempt",
   "Impersonation",
@@ -24,25 +29,42 @@ const USER_REASONS = [
 ];
 
 export default function ReportModal({ open, onClose, type, targetId, targetLabel }) {
-  const { user } = useAuth();
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
+
+  const BRAND = {
+    accent: isDark ? "#C96E47" : "#A84D48",
+    accentHover: isDark ? "#B35D38" : "#8f3e3a",
+    surface: isDark ? "#1A1A1B" : "#fff",
+    border: isDark ? "rgba(255,255,255,0.14)" : "rgba(122,41,41,0.12)",
+    inputBg: isDark ? "#2D2D2E" : "#fff",
+    backdrop: isDark ? "rgba(0,0,0,0.68)" : "rgba(20,15,15,0.45)",
+  };
+
   const [reason, setReason] = useState("");
+  const [customReason, setCustomReason] = useState("");
   const [details, setDetails] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
 
   const reasons = type === "post" ? POST_REASONS : USER_REASONS;
+  const isOtherReason = reason === "Other";
+  const isStolenReason = reason === "Stolen item / theft concern";
 
   const handleSubmit = async () => {
     if (!reason) return;
+    const normalizedCustomReason = customReason.trim();
+    if (isOtherReason && !normalizedCustomReason) {
+      setError("Please enter a reason.");
+      return;
+    }
     setSubmitting(true);
     setError("");
 
     const row = {
-      reporter_id: user.id,
-      reason,
+      reason: isOtherReason ? normalizedCustomReason : reason,
       details: details.trim() || null,
-      status: "pending",
     };
 
     if (type === "post") {
@@ -51,13 +73,16 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
       row.reported_user_id = targetId;
     }
 
-    const { error: insertErr } = await supabase.from("reports").insert(row);
-
-    setSubmitting(false);
-    if (insertErr) {
-      setError("Something went wrong. Please try again.");
-    } else {
+    try {
+      await apiFetch("/api/reports", {
+        method: "POST",
+        body: JSON.stringify(row),
+      });
       setSubmitted(true);
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -66,6 +91,7 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
     // Reset state after animation
     setTimeout(() => {
       setReason("");
+      setCustomReason("");
       setDetails("");
       setSubmitted(false);
       setError("");
@@ -73,11 +99,28 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
   };
 
   return (
-    <Modal open={open} onClose={handleClose}>
+    <Modal
+      open={open}
+      onClose={handleClose}
+      slotProps={{
+        backdrop: {
+          sx: {
+            backgroundColor: BRAND.backdrop,
+            backdropFilter: "blur(1px)",
+          },
+        },
+      }}
+    >
       <Box sx={{
         position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-        background: "#fff", borderRadius: 3, p: 3, width: "100%", maxWidth: 420,
+        background: BRAND.surface,
+        border: `1px solid ${BRAND.border}`,
+        borderRadius: 3,
+        p: 3,
+        width: "100%",
+        maxWidth: 420,
         outline: "none",
+        color: "text.primary",
       }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
           <Typography variant="h6" fontWeight={800}>
@@ -97,7 +140,7 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
             <Button
               variant="contained"
               onClick={handleClose}
-              sx={{ background: "#A84D48", "&:hover": { background: "#8f3e3a" }, fontWeight: 700, borderRadius: 2 }}
+              sx={{ background: BRAND.accent, "&:hover": { background: BRAND.accentHover }, fontWeight: 700, borderRadius: 2 }}
             >
               Done
             </Button>
@@ -117,22 +160,91 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
                 <FormControlLabel
                   key={r}
                   value={r}
-                  control={<Radio size="small" sx={{ color: "#A84D48", "&.Mui-checked": { color: "#A84D48" } }} />}
-                  label={<Typography variant="body2">{r}</Typography>}
-                  sx={{ mb: -0.5 }}
+                  control={<Radio size="small" sx={{ color: BRAND.accent, "&.Mui-checked": { color: BRAND.accent } }} />}
+                  label={
+                    <Typography
+                      variant="body2"
+                      fontWeight={r === "Stolen item / theft concern" ? 800 : 500}
+                      sx={{ color: r === "Stolen item / theft concern" ? "#dc2626" : "inherit" }}
+                    >
+                      {r}
+                    </Typography>
+                  }
+                  sx={{
+                    mb: -0.5,
+                    px: 1,
+                    py: 0.25,
+                    borderRadius: 1.5,
+                    border: r === "Stolen item / theft concern"
+                      ? (isDark ? "1px solid rgba(248,113,113,0.5)" : "1px solid #fecaca")
+                      : "1px solid transparent",
+                    background: r === "Stolen item / theft concern"
+                      ? (isDark ? "rgba(127,29,29,0.22)" : "#fef2f2")
+                      : "transparent",
+                  }}
                 />
               ))}
             </RadioGroup>
 
+            {isStolenReason && (
+              <Alert
+                severity="warning"
+                sx={{
+                  mt: 1,
+                  mb: 1,
+                  border: isDark ? "1px solid rgba(245,158,11,0.45)" : "1px solid #fcd34d",
+                  background: isDark ? "rgba(146,64,14,0.22)" : "#fffbeb",
+                  "& .MuiAlert-message": { fontWeight: 600 },
+                }}
+              >
+                High priority: select this only if theft is suspected. Include any identifying details below.
+              </Alert>
+            )}
+
+            {isOtherReason && (
+              <TextField
+                placeholder="Enter report reason"
+                value={customReason}
+                onChange={(e) => setCustomReason(e.target.value.slice(0, REPORT_REASON_MAX_LENGTH))}
+                fullWidth
+                size="small"
+                inputProps={{ maxLength: REPORT_REASON_MAX_LENGTH }}
+                helperText={`${customReason.length}/${REPORT_REASON_MAX_LENGTH}`}
+                sx={{
+                  mt: 1.25,
+                  mb: 1,
+                  "& .MuiOutlinedInput-root": {
+                    bgcolor: BRAND.inputBg,
+                  },
+                  "& .MuiFormHelperText-root": {
+                    textAlign: "right",
+                    mr: 0.5,
+                  },
+                }}
+              />
+            )}
+
             <TextField
               placeholder="Additional details (optional)"
               value={details}
-              onChange={(e) => setDetails(e.target.value)}
+              onChange={(e) => setDetails(e.target.value.slice(0, REPORT_DETAILS_MAX_LENGTH))}
               multiline
-              rows={2}
+              rows={3}
               fullWidth
               size="small"
-              sx={{ mt: 2, mb: 2 }}
+              inputProps={{ maxLength: REPORT_DETAILS_MAX_LENGTH }}
+              helperText={`${details.length}/${REPORT_DETAILS_MAX_LENGTH}`}
+              sx={{
+                mt: 2,
+                mb: 2,
+                "& .MuiOutlinedInput-root": {
+                  bgcolor: BRAND.inputBg,
+                },
+                "& .MuiFormHelperText-root": {
+                  textAlign: "right",
+                  mr: 0.5,
+                },
+              }}
             />
 
             {error && (
@@ -142,11 +254,11 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
             <Button
               variant="contained"
               fullWidth
-              disabled={!reason || submitting}
+              disabled={!reason || submitting || (isOtherReason && !customReason.trim())}
               onClick={handleSubmit}
               sx={{
-                background: "#A84D48",
-                "&:hover": { background: "#8f3e3a" },
+                background: BRAND.accent,
+                "&:hover": { background: BRAND.accentHover },
                 fontWeight: 800,
                 borderRadius: 2,
               }}

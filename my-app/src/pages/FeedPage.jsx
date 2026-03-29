@@ -12,11 +12,11 @@ import UploadIcon from "@mui/icons-material/UploadFile";
 import MapIcon from "@mui/icons-material/PinDrop";
 import FlagIcon from "@mui/icons-material/Flag";
 import ReportModal from "../components/ReportModal";
-import { supabase } from "../supabaseClient";
+import apiFetch from "../utils/apiFetch";
 import { useAuth } from "../AuthContext";
 import MapPinPicker from "../components/MapPinPicker";
 import { CAMPUSES } from "../constants/campuses";
-import { removeExpiredUnresolvedListings } from "../utils/listingExpiry";
+import { DEFAULT_TIME_ZONE, formatRelativeDate } from "../utils/timezone";
 
 // --- Constants ---
 const CATEGORIES = ["All", "Husky Card", "Jacket", "Wallet/Purse", "Bag", "Keys", "Electronics", "Other"];
@@ -25,13 +25,13 @@ const IMPORTANCE_LABELS = { 3: "High", 2: "Medium", 1: "Low" };
 const IMPORTANCE_COLORS = { 3: "#b91c1c", 2: "#a16207", 1: "#1d4ed8" };
 const IMPORTANCE_MARKS = [{ value: 1, label: "Low" }, { value: 2, label: "Medium" }, { value: 3, label: "High" }];
 
-// --- Helpers ---
-function formatDate(d) {
-  const diff = Math.floor((new Date() - new Date(d)) / 86400000);
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Yesterday";
-  return `${diff} days ago`;
-}
+// Display labels and accent colors for the two listing types.
+// These are used on badges in ItemCard, DetailModal, and the feed filter chips.
+const LISTING_TYPE_LABELS = { found: "Found", lost: "Lost" };
+const LISTING_TYPE_COLORS = { found: "#0891b2", lost: "#4f46e5" };
+
+// --- Character limits ---
+const LIMITS = { title: 50, found_at: 50, description: 250 };
 
 function parseCoordinates(coordStr) {
   if (!coordStr || typeof coordStr !== "string") return null;
@@ -53,7 +53,7 @@ function parseCoordinates(coordStr) {
 }
 
 // --- ImageUpload ---
-function ImageUpload({ image, onChange }) {
+function ImageUpload({ image, onChange, isDark = false }) {
   const inputRef = useRef();
   const handleFile = (e) => {
     const file = e.target.files[0];
@@ -72,7 +72,7 @@ function ImageUpload({ image, onChange }) {
         sx={{
           border: `2px dashed ${image ? "#A84D48" : "#ccc"}`,
           borderRadius: 2, p: 2, cursor: "pointer", textAlign: "center",
-          background: image ? "#fdf7f7" : "#fafafa",
+          background: image ? (isDark ? "#2D2D2E" : "#fdf7f7") : (isDark ? "#232324" : "#fafafa"),
           transition: "border-color 0.15s",
           "&:hover": { borderColor: "#A84D48" },
         }}
@@ -97,7 +97,7 @@ function ImageUpload({ image, onChange }) {
 }
 
 // --- ItemCard ---
-function ItemCard({ item, onClick }) {
+function ItemCard({ item, onClick, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
   return (
     <Paper
       elevation={1}
@@ -105,14 +105,16 @@ function ItemCard({ item, onClick }) {
       sx={{
         display: "flex", gap: 2, p: 2, borderRadius: 3, cursor: "pointer",
         opacity: item.resolved ? 0.65 : 1,
-        border: "1.5px solid", borderColor: item.resolved ? "#e8e0e0" : "#ecdcdc",
+        border: "1.5px solid",
+        borderColor: isDark ? "rgba(255,255,255,0.14)" : item.resolved ? "#e8e0e0" : "#ecdcdc",
+        background: isDark ? "#1A1A1B" : "#fff",
         transition: "box-shadow 0.15s, transform 0.15s",
-        "&:hover": { boxShadow: "0 4px 18px rgba(168,77,72,0.13)", transform: "translateY(-2px)" },
+        "&:hover": { boxShadow: isDark ? "0 6px 18px rgba(0,0,0,0.35)" : "0 4px 18px rgba(168,77,72,0.13)", transform: "translateY(-2px)" },
       }}
     >
       <Box sx={{
         width: 72, height: 72, borderRadius: 2, flexShrink: 0, overflow: "hidden",
-        background: "#f0eded", border: "1.5px solid #e0d6d6",
+        background: isDark ? "#2D2D2E" : "#f0eded", border: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #e0d6d6",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
         {item.image_url
@@ -125,13 +127,26 @@ function ItemCard({ item, onClick }) {
           <Box>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
               <Typography fontWeight={800} fontSize={16}>{item.title}</Typography>
-              {item.resolved && <Chip label="Resolved" size="small" sx={{ background: "#dcfce7", color: "#16a34a", fontWeight: 800, fontSize: 11 }} />}
+              {/* Badge showing whether this is a found or lost item */}
+              {item.listing_type && (
+                <Chip
+                  label={LISTING_TYPE_LABELS[item.listing_type] ?? item.listing_type}
+                  size="small"
+                  sx={{
+                    background: (LISTING_TYPE_COLORS[item.listing_type] ?? "#888") + "22",
+                    color: LISTING_TYPE_COLORS[item.listing_type] ?? "#888",
+                    border: `1px solid ${(LISTING_TYPE_COLORS[item.listing_type] ?? "#888")}44`,
+                    fontWeight: 800, fontSize: 11,
+                  }}
+                />
+              )}
+              {item.resolved && <Chip label="Resolved" size="small" sx={{ background: isDark ? "#1f3527" : "#dcfce7", color: isDark ? "#6ee7b7" : "#16a34a", border: isDark ? "1px solid rgba(110,231,183,0.42)" : "none", fontWeight: 800, fontSize: 11 }} />}
             </Box>
-            <Typography variant="caption" color="text.secondary" fontWeight={600} display="block">
+            <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600} display="block">
               {item.locations?.name ?? "Unknown location"} · {item.found_at}
             </Typography>
-            <Typography variant="caption" sx={{ color: "#aaa", fontWeight: 600 }}>
-              {item.poster_name} · {formatDate(item.date)}
+            <Typography variant="caption" sx={{ color: isDark ? "#818384" : "#aaa", fontWeight: 600 }}>
+              {item.poster_name} · {formatRelativeDate(item.date, timeZone)}
             </Typography>
           </Box>
           <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0.75, flexShrink: 0 }}>
@@ -140,10 +155,10 @@ function ItemCard({ item, onClick }) {
               size="small"
               sx={{ background: IMPORTANCE_COLORS[item.importance] + "22", color: IMPORTANCE_COLORS[item.importance], fontWeight: 800, fontSize: 11, border: `1px solid ${IMPORTANCE_COLORS[item.importance]}44` }}
             />
-            <Chip label={item.category} size="small" sx={{ background: "#f5eded", color: "#a07070", fontWeight: 700, fontSize: 11 }} />
+            <Chip label={item.category} size="small" sx={{ background: isDark ? "#343536" : "#f5eded", color: isDark ? "#B8BABD" : "#a07070", fontWeight: 700, fontSize: 11 }} />
           </Box>
         </Box>
-        <Typography variant="body2" color="text.secondary" fontWeight={500} sx={{ mt: 1, lineHeight: 1.5 }}>
+        <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={500} sx={{ mt: 1, lineHeight: 1.5 }}>
           {item.description?.length > 100 ? item.description.slice(0, 100) + "…" : item.description}
         </Typography>
       </Box>
@@ -152,11 +167,12 @@ function ItemCard({ item, onClick }) {
 }
 
 // --- DetailModal ---
-function DetailModal({ item, onClose, onClaim }) {
+function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [claimed, setClaimed] = useState(false);
+  const [returning, setReturning] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const isOwner = user?.id && item?.poster_id === user.id;
 
   if (!item) return null;
   const pinCoords = (item.lat && item.lng)
@@ -167,42 +183,62 @@ function DetailModal({ item, onClose, onClaim }) {
     <Modal open={!!item} onClose={onClose}>
       <Box sx={{
         position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-        background: "#fff", borderRadius: 4, p: "26px", width: "100%", maxWidth: 520,
+        background: isDark ? "#1A1A1B" : "#fff", borderRadius: 4, p: "26px", width: "100%", maxWidth: 520,
         maxHeight: "90vh", overflowY: "auto", outline: "none",
+        border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
+        mx: 1.5,
+        boxSizing: "border-box",
+        width: { xs: "calc(100% - 24px)", sm: "100%" },
       }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 2 }}>
-          <Box>
-            <Typography variant="h6" fontWeight={900}>{item.title}</Typography>
-            <Typography variant="caption" color="text.secondary" fontWeight={600}>
-              Posted by {item.poster_name} · {formatDate(item.date)}
+          <Box sx={{ flex: 1, minWidth: 0, pr: 1 }}>
+            <Typography variant="h6" fontWeight={900} sx={{ lineHeight: 1.25, overflowWrap: "anywhere", wordBreak: "break-word" }}>
+              {item.title}
+            </Typography>
+            <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600}>
+              Posted by {item.poster_name} · {formatRelativeDate(item.date, timeZone)}
             </Typography>
           </Box>
-          <Box sx={{ display: "flex", gap: 0.5 }}>
-            <IconButton onClick={() => setReportOpen(true)} size="small" sx={{ color: "#999", "&:hover": { color: "#A84D48" } }}>
+          <Box sx={{ display: "flex", gap: 0.5, flexShrink: 0 }}>
+            <IconButton onClick={() => setReportOpen(true)} size="small" sx={{ color: isDark ? "#818384" : "#999", "&:hover": { color: "#A84D48" } }}>
               <FlagIcon fontSize="small" />
             </IconButton>
             <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
           </Box>
-
         </Box>
 
         {item.image_url
-          ? <Box component="img" src={item.image_url} alt={item.title} sx={{ width: "100%", height: 200, objectFit: "cover", borderRadius: 2, mb: 2, border: "1.5px solid #ecdcdc" }} />
-          : <Box sx={{ width: "100%", height: 120, background: "#f5f0f0", borderRadius: 2, mb: 2, display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px dashed #dac8c8" }}>
-              <Typography variant="caption" color="text.disabled" fontWeight={700}>No photo provided</Typography>
+          ? <Box component="img" src={item.image_url} alt={item.title} sx={{ width: "100%", height: 200, objectFit: "cover", borderRadius: 2, mb: 2, border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc" }} />
+          : <Box sx={{ width: "100%", height: 120, background: isDark ? "#2D2D2E" : "#f5f0f0", borderRadius: 2, mb: 2, display: "flex", alignItems: "center", justifyContent: "center", border: isDark ? "1px dashed rgba(255,255,255,0.2)" : "1.5px dashed #dac8c8" }}>
+              <Typography variant="caption" color={isDark ? "#818384" : "text.disabled"} fontWeight={700}>No photo provided</Typography>
             </Box>
         }
 
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mb: 2 }}>
           <Chip label={IMPORTANCE_LABELS[item.importance]} size="small" sx={{ background: IMPORTANCE_COLORS[item.importance] + "22", color: IMPORTANCE_COLORS[item.importance], fontWeight: 800 }} />
-          <Chip label={item.category} size="small" sx={{ background: "#f5eded", color: "#A84D48", fontWeight: 700 }} />
-          {item.resolved && <Chip label="Resolved" size="small" sx={{ background: "#dcfce7", color: "#16a34a", fontWeight: 800 }} />}
+          <Chip label={item.category} size="small" sx={{ background: isDark ? "#343536" : "#f5eded", color: "#A84D48", fontWeight: 700 }} />
+          {/* Lost/Found badge */}
+          {item.listing_type && (
+            <Chip
+              label={LISTING_TYPE_LABELS[item.listing_type] ?? item.listing_type}
+              size="small"
+              sx={{
+                background: (LISTING_TYPE_COLORS[item.listing_type] ?? "#888") + "22",
+                color: LISTING_TYPE_COLORS[item.listing_type] ?? "#888",
+                border: `1px solid ${(LISTING_TYPE_COLORS[item.listing_type] ?? "#888")}44`,
+                fontWeight: 800,
+              }}
+            />
+          )}
+          {item.resolved && <Chip label="Resolved" size="small" sx={{ background: isDark ? "#1f3527" : "#dcfce7", color: isDark ? "#6ee7b7" : "#16a34a", border: isDark ? "1px solid rgba(110,231,183,0.42)" : "none", fontWeight: 800 }} />}
         </Box>
 
-        <Paper variant="outlined" sx={{ p: 2, mb: 2, background: "#fdf7f7", borderColor: "#ecdcdc", borderRadius: 2 }}>
-          <Typography variant="caption" fontWeight={800} color="#a07070" sx={{ letterSpacing: 0.5, display: "block", mb: 0.75 }}>LOCATION</Typography>
+        <Paper variant="outlined" sx={{ p: 2, mb: 2, background: isDark ? "#232324" : "#fdf7f7", borderColor: isDark ? "rgba(255,255,255,0.14)" : "#ecdcdc", borderRadius: 2 }}>
+          <Typography variant="caption" fontWeight={800} color={isDark ? "#B8BABD" : "#a07070"} sx={{ letterSpacing: 0.5, display: "block", mb: 0.75 }}>LOCATION</Typography>
           <Typography fontWeight={700} fontSize={14}>{item.locations?.name ?? "Unknown location"}</Typography>
-          <Typography variant="caption" color="text.secondary" fontWeight={600}>Found at: {item.found_at}</Typography>
+          <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600}>
+            {item.listing_type === "lost" ? "Last seen at" : "Found at"}: {item.found_at}
+          </Typography>
 
           {pinCoords ? (
             <Box sx={{ mt: 1.5 }}>
@@ -216,72 +252,76 @@ function DetailModal({ item, onClose, onClaim }) {
               />
             </Box>
           ) : (
-            <Box sx={{ mt: 1.5, background: "#ede8e8", borderRadius: 1.5, height: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Typography variant="caption" color="text.disabled" fontWeight={700}>No exact location pinned</Typography>
+            <Box sx={{ mt: 1.5, background: isDark ? "#2D2D2E" : "#ede8e8", borderRadius: 1.5, height: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Typography variant="caption" color={isDark ? "#818384" : "text.disabled"} fontWeight={700}>No exact location pinned</Typography>
             </Box>
           )}
         </Paper>
 
         <Box sx={{ mb: 3 }}>
-          <Typography variant="caption" fontWeight={800} color="#a07070" sx={{ letterSpacing: 0.5, display: "block", mb: 0.75 }}>DESCRIPTION</Typography>
-          <Typography variant="body2" color="text.secondary" lineHeight={1.65}>{item.description}</Typography>
+          <Typography variant="caption" fontWeight={800} color={isDark ? "#B8BABD" : "#a07070"} sx={{ letterSpacing: 0.5, display: "block", mb: 0.75 }}>DESCRIPTION</Typography>
+          <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} lineHeight={1.65} sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
+            {item.description}
+          </Typography>
         </Box>
 
-        {!item.resolved && (
+        {!item.resolved && !isOwner && (
           <Box
             sx={{
               display: "flex", alignItems: "center", gap: 0.75,
               px: 1.25, py: 0.75, mb: 1.5, borderRadius: 1.5,
-              background: "#fff3cd", border: "1px solid #ffc107",
+              background: isDark ? "#3a2f22" : "#fff3cd", border: isDark ? "1px solid rgba(245,158,11,0.5)" : "1px solid #ffc107",
             }}
           >
-            <Typography variant="caption" sx={{ color: "#7d4e00", fontWeight: 600, lineHeight: 1.4 }}>
-              ⚠️ Falsely claiming an item violates the Northeastern Code of Student Conduct and may result in disciplinary action.
+            <Typography variant="caption" sx={{ color: isDark ? "#f6c66a" : "#7d4e00", fontWeight: 600, lineHeight: 1.4 }}>
+              {item.listing_type === "lost"
+                ? "Only the original poster can mark this item as found."
+                : "Only the original poster can mark this item as returned."}
             </Typography>
           </Box>
         )}
         <Box sx={{ display: "flex", gap: 1.5 }}>
-          <Button
-            variant="contained"
-            fullWidth
-            disabled={item.resolved}
-            onClick={async () => {
-              setClaimed(true);
-              await onClaim(item.item_id);
-            }}
-            sx={{ background: claimed ? "#16a34a" : "#A84D48", "&:hover": { background: claimed ? "#15803d" : "#8f3e3a" }, fontWeight: 800, borderRadius: 2 }}
-          >
-            {item.resolved ? "Already Resolved" : claimed ? "Marked as Found!" : "This is Mine!"}
-          </Button>
-          <Button
-            variant="outlined"
-            sx={{ borderColor: "#ecdcdc", color: "#A84D48", fontWeight: 800, borderRadius: 2, flexShrink: 0 }}
-            onClick={async () => {
-              const { data } = await supabase
-                .from("conversations")
-                .select("id")
-                .eq("listing_id", item.item_id)
-                .eq("participant_1", user.id)
-                .maybeSingle();
-
-              if (data != null) {
-                navigate(`/messages?conversation=${data.id}`);
-                return;
-              }
-
-              else {
-                const {data: created } = await supabase
-                  .from("conversations")
-                  .insert({ listing_id: item.item_id, participant_1: user.id, participant_2: item.poster_id })
-                  .select("id")
-                  .single();
-                  
-                if (created) navigate(`/messages?conversation=${created.id}`);
-              }
-            }}
-          >
-            Message
-          </Button>
+          {isOwner && (
+            <Button
+              variant="contained"
+              fullWidth
+              disabled={item.resolved || returning}
+              onClick={async () => {
+                setReturning(true);
+                await onClaim(item.item_id);
+                setReturning(false);
+              }}
+              sx={{ background: item.resolved ? "#16a34a" : "#A84D48", "&:hover": { background: item.resolved ? "#15803d" : "#8f3e3a" }, fontWeight: 800, borderRadius: 2 }}
+            >
+              {/* Label depends on whether this is a lost or found listing */}
+              {item.resolved
+                ? (item.listing_type === "lost" ? "Already Found" : "Already Returned")
+                : returning ? "Marking..."
+                : (item.listing_type === "lost" ? "I Found This!" : "Returned Item")}
+            </Button>
+          )}
+          {!isOwner && (
+            <Button
+              variant="outlined"
+              sx={{ borderColor: isDark ? "rgba(255,255,255,0.2)" : "#ecdcdc", color: "#A84D48", fontWeight: 800, borderRadius: 2, flexShrink: 0, width: "100%" }}
+              onClick={async () => {
+                try {
+                  const result = await apiFetch("/api/conversations", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      listing_id: item.item_id,
+                      other_user_id: item.poster_id,
+                    }),
+                  });
+                  navigate(`/messages?conversation=${result.id}`);
+                } catch (err) {
+                  console.error("Create conversation error:", err);
+                }
+              }}
+            >
+              Message
+            </Button>
+          )}
         </Box>
         <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} type="post" targetId={item.item_id} targetLabel={item.title}/>
       </Box>
@@ -290,7 +330,7 @@ function DetailModal({ item, onClose, onClaim }) {
 }
 
 // --- NewItemModal ---
-function NewItemModal({ open, onClose, onAdd }) {
+function NewItemModal({ open, onClose, onAdd, isDark = false }) {
   const { user, profile } = useAuth();
   const [locations, setLocations] = useState([]);
   const [selectedCampus, setSelectedCampus] = useState(profile?.default_campus || "boston");
@@ -301,19 +341,22 @@ function NewItemModal({ open, onClose, onAdd }) {
   const [submitting, setSubmitting] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [flyTo, setFlyTo] = useState(null);
+  // Controls whether the user is reporting something they found or something they lost.
+  const [listingType, setListingType] = useState("found");
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const valid = form.title.trim() && form.found_at.trim() && form.description.trim() && form.location_id;
 
   useEffect(() => {
     if (!open) return;
-    supabase
-      .from("locations")
-      .select("location_id, name, coordinates")
-      .eq("campus", selectedCampus)
-      .order("name", { ascending: true })
-      .then(({ data }) => {
-        if (data) setLocations(data);
-      });
+    const fetchLocations = async () => {
+      try {
+        const data = await apiFetch(`/api/locations?campus=${selectedCampus}`);
+        setLocations(data);
+      } catch (err) {
+        console.error("Fetch locations error:", err);
+      }
+    };
+    fetchLocations();
   }, [open, selectedCampus]);
 
   const handleCampusChange = (campusId) => {
@@ -344,74 +387,139 @@ function NewItemModal({ open, onClose, onAdd }) {
     let image_url = null;
 
     if (form.image?.file) {
-      const ext = form.image.file.name.split(".").pop();
-      const path = `${user.id}/${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from("listing-images")
-        .upload(path, form.image.file);
-      if (!uploadError) {
-        const { data } = supabase.storage.from("listing-images").getPublicUrl(path);
-        image_url = data.publicUrl;
+      try {
+        const file = form.image.file;
+
+        // Client-side validation: check MIME type and size
+        const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+        if (!allowedTypes.includes(file.type)) {
+          setSubmitting(false);
+          return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+          setSubmitting(false);
+          return;
+        }
+
+        const uploadData = await apiFetch("/api/upload-url", {
+          method: "POST",
+          body: JSON.stringify({
+            filename: file.name,
+            contentType: file.type,
+            fileSize: file.size,
+          }),
+        });
+
+        const uploadRes = await fetch(uploadData.signedUrl, {
+          method: "PUT",
+          headers: { "Content-Type": file.type },
+          body: file,
+        });
+
+        if (uploadRes.ok) {
+          // Verify the uploaded file is actually an image (magic byte check)
+          const verify = await apiFetch("/api/verify-image", {
+            method: "POST",
+            body: JSON.stringify({ path: uploadData.path }),
+          });
+          if (verify?.valid) {
+            image_url = uploadData.publicUrl;
+          }
+        }
+      } catch (err) {
+        console.error("Image upload error:", err);
       }
     }
 
-    const posterName = profile?.first_name && profile?.last_name
-      ? `${profile.first_name} ${profile.last_name}`
-      : user.email;
+    try {
+      const data = await apiFetch("/api/listings", {
+        method: "POST",
+        body: JSON.stringify({
+          title: form.title,
+          category: form.category,
+          location_id: form.location_id,
+          found_at: form.found_at,
+          importance: form.importance,
+          description: form.description,
+          image_url,
+          // Send the listing type so the backend can store it.
+          listing_type: listingType,
+          lat: form.pin?.lat ?? null,
+          lng: form.pin?.lng ?? null,
+        }),
+      });
 
-    const insertData = {
-      title: form.title,
-      category: form.category,
-      location_id: form.location_id,
-      found_at: form.found_at,
-      importance: form.importance,
-      description: form.description,
-      image_url,
-      resolved: false,
-      poster_id: user.id,
-      poster_name: posterName,
-      date: new Date().toISOString(),
-    };
-
-    if (form.pin) {
-      insertData.lat = form.pin.lat;
-      insertData.lng = form.pin.lng;
-    }
-
-    const { data, error } = await supabase
-      .from("listings")
-      .insert([insertData])
-      .select(`*, locations(name, coordinates, campus)`)
-      .single();
-
-    setSubmitting(false);
-    if (!error && data) {
       onAdd(data);
       onClose();
       setForm({ title: "", category: "Other", location_id: "", found_at: "", importance: 2, description: "", image: null, pin: null });
+      setListingType("found");
       setShowMap(false);
       setFlyTo(null);
       setSelectedCampus(profile?.default_campus || "boston");
+    } catch (err) {
+      console.error("Create listing error:", err);
     }
+
+    setSubmitting(false);
   };
 
   return (
     <Modal open={open} onClose={onClose}>
       <Box sx={{
         position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-        background: "#fff", borderRadius: 4, p: "26px", width: "100%", maxWidth: 520,
+        background: isDark ? "#1A1A1B" : "#fff", borderRadius: 4, p: "26px", width: "100%", maxWidth: 520,
         maxHeight: "92vh", overflowY: "auto", outline: "none",
+        border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
       }}>
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2.5 }}>
-          <Typography variant="h6" fontWeight={900}>Report Found Item</Typography>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+          {/* Title updates based on which mode the user has selected */}
+          <Typography variant="h6" fontWeight={900}>
+            {listingType === "found" ? "Report Found Item" : "Report Lost Item"}
+          </Typography>
           <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
         </Box>
 
-        <TextField label="Item Name" value={form.title} onChange={e => set("title", e.target.value)} placeholder="e.g. Blue Husky Card" fullWidth sx={{ mb: 2 }} />
+        {/* Toggle between "I found something" and "I lost something".
+            Both flows use identical fields — only labels and the stored type differ. */}
+        <Box sx={{ display: "flex", gap: 1, mb: 2.5 }}>
+          {[
+            { value: "found", label: "I Found Something" },
+            { value: "lost",  label: "I Lost Something"  },
+          ].map(({ value, label }) => (
+            <Chip
+              key={value}
+              label={label}
+              onClick={() => setListingType(value)}
+              variant={listingType === value ? "filled" : "outlined"}
+              sx={{
+                flex: 1, fontWeight: 800, cursor: "pointer", height: 36, borderRadius: 2,
+                borderColor: listingType === value ? "#A84D48" : isDark ? "rgba(255,255,255,0.18)" : "#e0d8d8",
+                background: listingType === value ? "#A84D48" : "transparent",
+                color: listingType === value ? "#fff" : isDark ? "#B8BABD" : "#a07070",
+                "&:hover": {
+                  background: listingType === value ? "#8f3e3a" : isDark ? "#2D2D2E" : "#fdf7f7",
+                  borderColor: "#A84D48",
+                },
+                transition: "all 0.15s",
+              }}
+            />
+          ))}
+        </Box>
+
+        <TextField
+          label="Item Name"
+          value={form.title}
+          onChange={e => set("title", e.target.value)}
+          placeholder="e.g. Blue Husky Card"
+          fullWidth
+          sx={{ mb: 2 }}
+          inputProps={{ maxLength: LIMITS.title }}
+          helperText={`${form.title.length}/${LIMITS.title}`}
+        />
 
         {/* Campus chips */}
         <Box sx={{ mb: 0.5 }}>
-          <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
+          <Typography variant="caption" fontWeight={700} color={isDark ? "#B8BABD" : "text.secondary"} sx={{ display: "block", mb: 0.75 }}>
             Campus
           </Typography>
           <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap" }}>
@@ -426,9 +534,9 @@ function NewItemModal({ open, onClose, onAdd }) {
                   fontWeight: 700, fontSize: 11, cursor: "pointer",
                   borderColor: selectedCampus === c.id ? "#A84D48" : "#e0d0d0",
                   background: selectedCampus === c.id ? "#A84D48" : "transparent",
-                  color: selectedCampus === c.id ? "#fff" : "#7a5050",
+                  color: selectedCampus === c.id ? "#fff" : isDark ? "#B8BABD" : "#7a5050",
                   "&:hover": {
-                    background: selectedCampus === c.id ? "#8f3e3a" : "#fdf0f0",
+                    background: selectedCampus === c.id ? "#8f3e3a" : isDark ? "#2D2D2E" : "#fdf0f0",
                     borderColor: "#A84D48",
                   },
                   transition: "all 0.15s",
@@ -467,8 +575,29 @@ function NewItemModal({ open, onClose, onAdd }) {
           </FormControl>
         </Box>
 
-        <TextField label="Found At (specific spot)" value={form.found_at} onChange={e => set("found_at", e.target.value)} placeholder="e.g. Table near window, Room 204" fullWidth sx={{ mb: 2 }} />
-        <TextField label="Description" value={form.description} onChange={e => set("description", e.target.value)} placeholder="Color, markings, contents..." multiline rows={3} fullWidth sx={{ mb: 2 }} />
+        <TextField
+          label={listingType === "found" ? "Found At (specific spot)" : "Last Seen At (specific spot)"}
+          value={form.found_at}
+          onChange={e => set("found_at", e.target.value)}
+          placeholder={listingType === "found" ? "e.g. Table near window, Room 204" : "e.g. Library 2nd floor, Room 204"}
+          fullWidth
+          sx={{ mb: 2 }}
+          inputProps={{ maxLength: LIMITS.found_at }}
+          helperText={`${form.found_at.length}/${LIMITS.found_at}`}
+        />
+
+        <TextField
+          label="Description"
+          value={form.description}
+          onChange={e => set("description", e.target.value)}
+          placeholder="Color, markings, contents..."
+          multiline
+          rows={3}
+          fullWidth
+          sx={{ mb: 2 }}
+          inputProps={{ maxLength: LIMITS.description }}
+          helperText={`${form.description.length}/${LIMITS.description}`}
+        />
 
         {/* Map pin */}
         <Box sx={{ mb: 2 }}>
@@ -503,7 +632,7 @@ function NewItemModal({ open, onClose, onAdd }) {
 
         {/* Importance */}
         <Box sx={{ mb: 2.5 }}>
-          <Typography variant="caption" fontWeight={800} color="text.secondary" sx={{ display: "block", mb: 1 }}>
+          <Typography variant="caption" fontWeight={800} color={isDark ? "#B8BABD" : "text.secondary"} sx={{ display: "block", mb: 1 }}>
             Importance: <span style={{ color: IMPORTANCE_COLORS[form.importance], fontWeight: 900 }}>{IMPORTANCE_LABELS[form.importance]}</span>
           </Typography>
           <Slider
@@ -515,7 +644,7 @@ function NewItemModal({ open, onClose, onAdd }) {
         </Box>
 
         <Box sx={{ mb: 3 }}>
-          <ImageUpload image={form.image} onChange={v => set("image", v)} />
+          <ImageUpload image={form.image} onChange={v => set("image", v)} isDark={isDark} />
         </Box>
 
         <Button
@@ -530,29 +659,49 @@ function NewItemModal({ open, onClose, onAdd }) {
 }
 
 // --- FeedPage ---
-export default function FeedPage() {
-  const { profile } = useAuth();
+export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE }) {
+  const isDark = effectiveTheme === "dark";
+  const pageBg = isDark ? "#101214" : "#f9f5f4";
+  const pageDot = isDark ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
+  const { user, profile } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [sort, setSort] = useState("Newest");
   const [selected, setSelected] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [showResolved, setShowResolved] = useState(false);
+  const [showMyPosts, setShowMyPosts] = useState(false);
   const [selectedCampus, setSelectedCampus] = useState(profile?.default_campus || "boston");
+  // "all" shows both found and lost listings. "found" / "lost" narrows to one type.
+  const [listingTypeFilter, setListingTypeFilter] = useState("all");
 
-  const fetchItems = useCallback(async () => {
-    setLoading(true);
-    await removeExpiredUnresolvedListings();
+  const fetchItems = useCallback(async (page = 1, append = false) => {
+    if (page === 1) setLoading(true);
+    else setLoadingMore(true);
 
-    const { data, error } = await supabase
-      .from("listings")
-      .select(`*, locations(name, coordinates, campus)`)
-      .order("date", { ascending: false });
+    try {
+      await apiFetch("/api/listings/cleanup", { method: "POST" });
+    } catch (err) {
+      console.error("Cleanup error:", err);
+    }
 
-    if (!error) setItems(data ?? []);
+    try {
+      const result = await apiFetch(`/api/listings?page=${page}&limit=10`);
+      const newItems = result?.data ?? [];
+      setItems(prev => append ? [...prev, ...newItems] : newItems);
+      setHasMore(result?.hasMore ?? false);
+      setCurrentPage(page);
+    } catch (err) {
+      console.error("Fetch listings error:", err);
+    }
+
     setLoading(false);
+    setLoadingMore(false);
   }, []);
 
   useEffect(() => {
@@ -560,15 +709,22 @@ export default function FeedPage() {
   }, [fetchItems]);
 
   const handleClaim = async (item_id) => {
-    await supabase.from("listings").update({ resolved: true }).eq("item_id", item_id);
-    setItems(prev => prev.map(i => i.item_id === item_id ? { ...i, resolved: true } : i));
-    if (selected?.item_id === item_id) setSelected(prev => ({ ...prev, resolved: true }));
+    try {
+      await apiFetch(`/api/listings/${item_id}/resolve`, { method: "PATCH" });
+      setItems(prev => prev.map(i => i.item_id === item_id ? { ...i, resolved: true } : i));
+      if (selected?.item_id === item_id) setSelected(prev => ({ ...prev, resolved: true }));
+    } catch (err) {
+      console.error("Claim error:", err);
+    }
   };
 
   const filtered = items
     .filter(i => selectedCampus === "all" || i.locations?.campus === selectedCampus)
     .filter(i => showResolved || !i.resolved)
+    .filter(i => !showMyPosts || (user?.id && i.poster_id === user.id))
     .filter(i => category === "All" || i.category === category)
+    // Only apply the type filter when the user has selected found or lost specifically.
+    .filter(i => listingTypeFilter === "all" || i.listing_type === listingTypeFilter)
     .filter(i =>
       i.title?.toLowerCase().includes(search.toLowerCase()) ||
       i.locations?.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -582,9 +738,21 @@ export default function FeedPage() {
     });
 
   return (
-    <Box sx={{ display: "flex", justifyContent: "center", width: "100%", p: 3 }}>
+    <>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "center",
+          width: "100%",
+          minHeight: "calc(100vh - 100px)",
+          boxSizing: "border-box",
+          px: { xs: 1.25, sm: 2, md: 3 },
+          py: { xs: 1.25, sm: 2, md: 3 },
+          color: isDark ? "#D7DADC" : "inherit",
+        }}
+      >
       <Box sx={{ width: "100%", maxWidth: 680 }}>
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2.5 }}>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: { xs: "flex-start", sm: "center" }, flexDirection: { xs: "column", sm: "row" }, gap: 1.25, mb: 2.5 }}>
           <Typography variant="h4" fontWeight={900}>Lost & Found Feed</Typography>
           <Box sx={{ display: "flex", gap: 1 }}>
             <Button
@@ -597,8 +765,9 @@ export default function FeedPage() {
                 });
               }}
               sx={{
-                borderColor: "#ecdcdc", color: "#A84D48", fontWeight: 800,
+                borderColor: isDark ? "rgba(255,255,255,0.24)" : "#ecdcdc", color: "#A84D48", fontWeight: 800,
                 borderRadius: 2, minWidth: 0, px: 1.5, fontSize: 18,
+                background: isDark ? "#1A1A1B" : "#fff",
               }}
             >
               <span
@@ -618,17 +787,21 @@ export default function FeedPage() {
         </Box>
 
         {/* Search + Campus filter */}
-        <Box sx={{ display: "flex", gap: 1.5, mb: 2, alignItems: "center" }}>
+        <Box sx={{ display: "flex", gap: 1.5, mb: 2, alignItems: "center", flexDirection: { xs: "column", sm: "row" } }}>
           <TextField
             fullWidth placeholder="Search items, locations, descriptions..."
             value={search} onChange={e => setSearch(e.target.value)}
-            InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: "#a07070" }} /></InputAdornment> }}
+            InputProps={{
+              startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: isDark ? "#B8BABD" : "#a07070" }} /></InputAdornment>,
+              sx: { background: isDark ? "#2D2D2E" : "#fff", color: isDark ? "#D7DADC" : "inherit" },
+            }}
           />
-          <FormControl size="small" sx={{ minWidth: 160, flexShrink: 0 }}>
+          <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 160 }, width: { xs: "100%", sm: "auto" }, flexShrink: 0 }}>
             <Select
               value={selectedCampus}
               onChange={(e) => setSelectedCampus(e.target.value)}
               displayEmpty
+              sx={{ background: isDark ? "#2D2D2E" : "#fff" }}
             >
               <MenuItem value="all">All Campuses</MenuItem>
               {CAMPUSES.map((c) => (
@@ -643,34 +816,66 @@ export default function FeedPage() {
           {CATEGORIES.map(c => (
             <Chip key={c} label={c} clickable onClick={() => setCategory(c)} sx={{
               flexShrink: 0, fontWeight: 800,
-              background: category === c ? "#A84D48" : "#fff",
-              color: category === c ? "#fff" : "#a07070",
-              border: `1.5px solid ${category === c ? "#A84D48" : "#e0d8d8"}`,
-              "&:hover": { background: category === c ? "#8f3e3a" : "#fdf7f7" },
+              background: category === c ? "#A84D48" : isDark ? "#2D2D2E" : "#fff",
+              color: category === c ? "#fff" : isDark ? "#B8BABD" : "#a07070",
+              border: `1.5px solid ${category === c ? "#A84D48" : isDark ? "rgba(255,255,255,0.18)" : "#e0d8d8"}`,
+              "&:hover": { background: category === c ? "#8f3e3a" : isDark ? "#343536" : "#fdf7f7" },
             }} />
           ))}
         </Box>
 
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-          <Typography variant="body2" color="text.secondary" fontWeight={700}>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: { xs: "flex-start", sm: "center" }, flexDirection: { xs: "column", sm: "row" }, gap: 1, mb: 2 }}>
+          <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={700}>
             {filtered.length} item{filtered.length !== 1 ? "s" : ""}
           </Typography>
-          <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+          <Box sx={{ display: "flex", gap: 1, alignItems: "center", width: { xs: "100%", sm: "auto" }, justifyContent: { xs: "space-between", sm: "flex-end" } }}>
+            {/* Listing type toggle — cycles All → Lost → Found → All */}
+            {(() => {
+              const cycle = ["all", "lost", "found"];
+              const typeColor = listingTypeFilter === "all" ? "#A84D48" : LISTING_TYPE_COLORS[listingTypeFilter];
+              const typeLabel = listingTypeFilter === "all" ? "All" : LISTING_TYPE_LABELS[listingTypeFilter];
+              return (
+                <Chip
+                  label={`Type: ${typeLabel}`}
+                  clickable
+                  onClick={() => setListingTypeFilter(cycle[(cycle.indexOf(listingTypeFilter) + 1) % cycle.length])}
+                  sx={{
+                    fontWeight: 800, fontSize: 12,
+                    background: typeColor,
+                    color: "#fff",
+                    border: `1.5px solid ${typeColor}`,
+                    "&:hover": { background: typeColor, opacity: 0.85 },
+                  }}
+                />
+              );
+            })()}
+            <Chip
+              label={showMyPosts ? "My Posts: On" : "My Posts"}
+              clickable
+              onClick={() => setShowMyPosts(v => !v)}
+              sx={{
+                fontWeight: 800, fontSize: 12,
+                background: showMyPosts ? (isDark ? "#2a2520" : "#fff3cd") : isDark ? "#2D2D2E" : "#f5f5f5",
+                color: showMyPosts ? (isDark ? "#f6c66a" : "#7d4e00") : isDark ? "#818384" : "#999",
+                border: `1.5px solid ${showMyPosts ? (isDark ? "rgba(245,158,11,0.5)" : "#ffc107") : isDark ? "rgba(255,255,255,0.18)" : "#e0e0e0"}`,
+                "&:hover": { background: showMyPosts ? (isDark ? "#3a2f22" : "#ffe8a3") : isDark ? "#343536" : "#ececec" },
+              }}
+            />
             <Chip
               label={showResolved ? "Hide Resolved" : "Show Resolved"}
               clickable
               onClick={() => setShowResolved(v => !v)}
               sx={{
                 fontWeight: 800, fontSize: 12,
-                background: showResolved ? "#dcfce7" : "#f5f5f5",
-                color: showResolved ? "#16a34a" : "#999",
-                border: `1.5px solid ${showResolved ? "#86efac" : "#e0e0e0"}`,
-                "&:hover": { background: showResolved ? "#bbf7d0" : "#ececec" },
+                background: showResolved ? (isDark ? "#1f3527" : "#dcfce7") : isDark ? "#2D2D2E" : "#f5f5f5",
+                color: showResolved ? (isDark ? "#6ee7b7" : "#16a34a") : isDark ? "#818384" : "#999",
+                border: `1.5px solid ${showResolved ? (isDark ? "rgba(110,231,183,0.42)" : "#86efac") : isDark ? "rgba(255,255,255,0.18)" : "#e0e0e0"}`,
+                "&:hover": { background: showResolved ? (isDark ? "#27412f" : "#bbf7d0") : isDark ? "#343536" : "#ececec" },
               }}
             />
-            <FormControl size="small" sx={{ minWidth: 150 }}>
+            <FormControl size="small" sx={{ minWidth: { xs: 140, sm: 150 } }}>
               <InputLabel>Sort by</InputLabel>
-              <Select value={sort} label="Sort by" onChange={e => setSort(e.target.value)}>
+              <Select value={sort} label="Sort by" onChange={e => setSort(e.target.value)} sx={{ background: isDark ? "#2D2D2E" : "#fff" }}>
                 {SORT_OPTIONS.map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}
               </Select>
             </FormControl>
@@ -680,15 +885,35 @@ export default function FeedPage() {
         {loading
           ? <Box sx={{ display: "flex", justifyContent: "center", mt: 6 }}><CircularProgress sx={{ color: "#A84D48" }} /></Box>
           : filtered.length === 0
-            ? <Typography textAlign="center" color="text.disabled" fontWeight={700} sx={{ mt: 8 }}>No items found.</Typography>
+            ? <Typography textAlign="center" color={isDark ? "#818384" : "text.disabled"} fontWeight={700} sx={{ mt: 8 }}>No items found.</Typography>
             : <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                {filtered.map(item => <ItemCard key={item.item_id} item={item} onClick={setSelected} />)}
+                {filtered.map(item => <ItemCard key={item.item_id} item={item} onClick={setSelected} isDark={isDark} timeZone={timeZone} />)}
+                {hasMore && (
+                  <Box sx={{ display: "flex", justifyContent: "center", mt: 2, mb: 1 }}>
+                    <Button
+                      variant="outlined"
+                      onClick={() => fetchItems(currentPage + 1, true)}
+                      disabled={loadingMore}
+                      sx={{
+                        color: isDark ? "#FF4500" : "#A84D48",
+                        borderColor: isDark ? "rgba(255,69,0,0.4)" : "#A84D48",
+                        fontWeight: 700,
+                        borderRadius: 2,
+                        textTransform: "none",
+                        "&:hover": { borderColor: isDark ? "#FF4500" : "#8f3e3a", background: isDark ? "rgba(255,69,0,0.08)" : "rgba(168,77,72,0.06)" },
+                      }}
+                    >
+                      {loadingMore ? <CircularProgress size={20} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} /> : "Load More"}
+                    </Button>
+                  </Box>
+                )}
               </Box>
         }
       </Box>
 
-      <DetailModal item={selected} onClose={() => setSelected(null)} onClaim={handleClaim} />
-      <NewItemModal open={showNew} onClose={() => setShowNew(false)} onAdd={item => setItems(prev => [item, ...prev])} />
-    </Box>
+      <DetailModal item={selected} onClose={() => setSelected(null)} onClaim={handleClaim} isDark={isDark} timeZone={timeZone} />
+      <NewItemModal open={showNew} onClose={() => setShowNew(false)} onAdd={item => setItems(prev => [item, ...prev])} isDark={isDark} />
+      </Box>
+    </>
   );
 }

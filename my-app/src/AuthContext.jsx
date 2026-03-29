@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { supabase } from "./supabaseClient";
+import { supabase } from "../backend/supabaseClient";
+import apiFetch from "./utils/apiFetch";
 
 const AuthContext = createContext();
 
@@ -13,13 +14,14 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
+  const [sessionToken, setSessionToken] = useState(null);
 
   useEffect(() => {
-    // onAuthStateChange fires immediately with INITIAL_SESSION so no separate
-    // getSession() call is needed. We only update user state when the user ID
-    // actually changes to prevent cascading profile re-fetches on token refresh.
+    // onAuthStateChange fires immediately with INITIAL_SESSION.
+    // Track session token changes so profile refetches after MFA verify updates JWT claims.
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       const nextUser = session?.user || null;
+      setSessionToken(session?.access_token || null);
       setUser(prev => {
         if (prev?.id === nextUser?.id) return prev; // no-op if same user
         return nextUser;
@@ -31,48 +33,27 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  // Fetch profile info when user ID changes; skip if already loaded for this user
+  // Fetch profile when user ID changes or when auth token changes (e.g. after MFA verify).
   useEffect(() => {
     const fetchProfile = async () => {
-      if (!user?.id) {
+      if (!user?.id || !sessionToken) {
         setProfile(null);
         return;
       }
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('first_name, last_name, default_campus, is_moderator')
-        .eq('id', user.id)
-        .single();
-
-      if (!error && data) {
+      try {
+        const data = await apiFetch("/api/profile");
         setProfile(data);
-        return;
+      } catch (err) {
+        console.error("Profile fetch error:", err);
+        setProfile(null);
       }
+      };
 
-      // Profile missing — try to create it from user metadata (set during sign-up)
-      const meta = user.user_metadata;
-      if (meta?.first_name && meta?.last_name) {
-        const { data: created, error: upsertErr } = await supabase
-          .from('profiles')
-          .upsert(
-            { id: user.id, first_name: meta.first_name, last_name: meta.last_name, default_campus: 'boston' },
-            { onConflict: 'id' }
-          )
-          .select('first_name, last_name, default_campus, is_moderator')
-          .single();
-        if (!upsertErr && created) {
-          setProfile(created);
-          return;
-        }
-        console.error('Profile auto-create error:', upsertErr);
-      }
-
-      setProfile(null);
-    };
     fetchProfile();
-  }, [user?.id]); // depend only on user ID, not the whole user object
+  }, [user?.id, sessionToken]);
 
   const logout = async () => {
+    setSessionToken(null);
     await supabase.auth.signOut();
   };
 

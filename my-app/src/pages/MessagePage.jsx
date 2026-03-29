@@ -1,21 +1,36 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Box, Typography, Paper, TextField, IconButton, Button } from "@mui/material";
+import { Box, Typography, Paper, TextField, IconButton, Button, CircularProgress } from "@mui/material";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import SendIcon from "@mui/icons-material/Send";
 import ChatIcon from "@mui/icons-material/ChatBubbleOutline";
 import DeleteIcon from "@mui/icons-material/Delete";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import FlagIcon from "@mui/icons-material/Flag";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ReportModal from "../components/ReportModal";
-import { supabase } from "../supabaseClient";
+import { supabase } from "../../backend/supabaseClient";
+import apiFetch from "../utils/apiFetch";
 import { useAuth } from "../AuthContext";
+import { DEFAULT_TIME_ZONE, formatTime } from "../utils/timezone";
 
-export default function MessagesPage() {
+const MESSAGE_MAX_LENGTH = 500;
+
+export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE }) {
+  const isDark = effectiveTheme === "dark";
+  const isMobile = useMediaQuery("(max-width:900px)");
+  const pageBg = isDark ? "#101214" : "#f9f5f4";
+  const pageDot = isDark ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
+  const secondaryTextColor = isDark ? "#B8BABD" : "text.secondary";
+  const mutedTextColor = isDark ? "#818384" : "text.disabled";
   const { user, profile } = useAuth();
 
   const [conversations, setConversations] = useState([]);
   const [messages, setMessages] = useState([]);
   const [isClosed, setIsClosed] = useState(false);
+  const [msgHasMore, setMsgHasMore] = useState(false);
+  const [msgPage, setMsgPage] = useState(1);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [profiles, setProfiles] = useState({});
   const [listings, setListings] = useState({});
@@ -27,80 +42,39 @@ export default function MessagesPage() {
 
   const hideConversation = async (convo, e) => {
     e.stopPropagation();
-
-    const name = profile?.first_name ? `${profile.first_name} ${profile.last_name}` : "Someone";
-    await supabase.from("messages").insert({
-      conversation_id: convo.id,
-      sender_id: user.id,
-      content: `${name} has closed this conversation.`,
-      is_system: true,
-    });
-
-    await supabase.from("hidden_conversations").insert({
-      user_id: user.id,
-      conversation_id: convo.id,
-    });
-
-    await supabase.from("messages").delete().eq("conversation_id", convo.id);
-    await supabase.from("conversations").delete().eq("id", convo.id);
-
-    setConversations((prev) => prev.filter((c) => c.id !== convo.id));
-    if (selectedConversation?.id === convo.id) setSelectedConversation(null);
+    try {
+      await apiFetch(`/api/conversations/${convo.id}`, { method: "DELETE" });
+      setConversations((prev) => prev.filter((c) => c.id !== convo.id));
+      if (selectedConversation?.id === convo.id) setSelectedConversation(null);
+    } catch (err) {
+      console.error("Close conversation error:", err);
+    }
   };
 
   const sendMessage = async () => {
-    if (!newMessage.trim() || !selectedConversation || isClosed) return;
-    await supabase.from("messages").insert({
-      conversation_id: selectedConversation.id,
-      sender_id: user.id,
-      content: newMessage,
-    });
-    setNewMessage("");
+    const trimmedMessage = newMessage.trim();
+    if (!trimmedMessage || !selectedConversation || isClosed || trimmedMessage.length > MESSAGE_MAX_LENGTH) return;
+    try {
+      await apiFetch(`/api/conversations/${selectedConversation.id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ content: trimmedMessage }),
+      });
+      setNewMessage("");
+    } catch (err) {
+      console.error("Send message error:", err);
+    }
   };
 
   useEffect(() => {
     if (!user) return;
     const fetchConversations = async () => {
-      const { data } = await supabase
-        .from("conversations")
-        .select("*")
-        .or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`);
-      if (data) {
-        const { data: hiddenData } = await supabase
-          .from("hidden_conversations")
-          .select("conversation_id")
-          .eq("user_id", user.id);
-        const hiddenIds = new Set((hiddenData || []).map((h) => h.conversation_id));
-        const visible = data.filter((c) => !hiddenIds.has(c.id));
-        setConversations(visible);
-
-        const otherIds = visible.map((c) =>
-          c.participant_1 === user.id ? c.participant_2 : c.participant_1
-        );
-
-        const { data: profileData } = await supabase
-          .from("profiles")
-          .select("id, first_name, last_name")
-          .in("id", otherIds);
-
-        if (profileData) {
-          const map = {};
-          profileData.forEach((p) => { map[p.id] = p; });
-          setProfiles(map);
-        }
-
-        const listingIds = visible.map((c) => c.listing_id).filter(Boolean);
-        if (listingIds.length > 0) {
-          const { data: listingData } = await supabase
-            .from("listings")
-            .select("item_id, title")
-            .in("item_id", listingIds);
-          if (listingData) {
-            const map = {};
-            listingData.forEach((l) => { map[l.item_id] = l; });
-            setListings(map);
-          }
-        }
+      try {
+        const result = await apiFetch("/api/conversations");
+        setConversations(result?.conversations || []);
+        setProfiles(result?.profiles || {});
+        setListings(result?.listings || {});
+      } catch (err) {
+        console.error("Fetch conversations error:", err);
       }
     };
     fetchConversations();
@@ -110,6 +84,8 @@ export default function MessagesPage() {
     if (!selectedConversation) {
       setMessages([]);
       setIsClosed(false);
+      setMsgHasMore(false);
+      setMsgPage(1);
       return;
     }
     setIsClosed(false);
@@ -119,21 +95,19 @@ export default function MessagesPage() {
     let active = true;
 
     const setup = async () => {
-      const { data } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", selectedConversation.id)
-        .order("created_at", { ascending: true });
-
-      if (!active) return;
-      if (data) setMessages(data);
-
-      const { count } = await supabase
-        .from("hidden_conversations")
-        .select("id", { count: "exact", head: true })
-        .eq("conversation_id", selectedConversation.id);
-      if (!active) return;
-      setIsClosed((count ?? 0) > 0);
+      try {
+        const result = await apiFetch(
+          `/api/conversations/${selectedConversation.id}/messages`
+        );
+        if (active) {
+          setMessages(result?.messages || []);
+          setIsClosed(result?.isClosed || false);
+          setMsgHasMore(result?.hasMore ?? false);
+          setMsgPage(1);
+        }
+      } catch (err) {
+        console.error("Fetch messages error:", err);
+      }
 
       channel = supabase
         .channel(`messages-${selectedConversation.id}`)
@@ -177,32 +151,26 @@ export default function MessagesPage() {
     }
 
     const fetchAndSelect = async () => {
-      const { data } = await supabase
-        .from("conversations")
-        .select("*")
-        .eq("id", convoId)
-        .single();
-      if (!data) return;
+      try {
+        const { conversation, profile: otherProfile, listing } = await apiFetch(`/api/conversations/${convoId}`);
 
-      handledConvoIdRef.current = convoId;
+        handledConvoIdRef.current = convoId;
 
-      const otherId = data.participant_1 === user?.id ? data.participant_2 : data.participant_1;
-      const { data: p } = await supabase.from("profiles").select("id, first_name, last_name").eq("id", otherId).single();
-      if (p) setProfiles((prev) => ({ ...prev, [p.id]: p }));
+        if (otherProfile) setProfiles((prev) => ({ ...prev, [otherProfile.id]: otherProfile }));
+        if (listing) setListings((prev) => ({ ...prev, [listing.item_id]: listing }));
 
-      if (data.listing_id) {
-        const { data: l } = await supabase.from("listings").select("item_id, title").eq("item_id", data.listing_id).single();
-        if (l) setListings((prev) => ({ ...prev, [l.item_id]: l }));
+        setConversations((prev) =>
+          prev.some((c) => c.id === convoId) ? prev : [conversation, ...prev]
+        );
+        setSelectedConversation(conversation);
+      } catch (err) {
+        console.error("Fetch conversation error:", err);
       }
-
-      setConversations((prev) => prev.some((c) => c.id === convoId) ? prev : [data, ...prev]);
-      setSelectedConversation(data);
     };
 
     fetchAndSelect();
   }, [conversations, searchParams]);
 
-  // Helper to get the other participant's info for the selected conversation
   const getOtherParticipant = () => {
     if (!selectedConversation) return null;
     const otherId = selectedConversation.participant_1 === user.id
@@ -217,25 +185,58 @@ export default function MessagesPage() {
   };
 
   return (
-    <Box sx={{ display: "flex", justifyContent: "center", width: "100%", p: 3, boxSizing: "border-box", height: "calc(100vh - 64px - 36px)", overflow: "hidden" }}>
+    <>
+      <Box
+        sx={{
+          position: "fixed",
+          inset: 0,
+          zIndex: -1,
+          backgroundColor: pageBg,
+          backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`,
+          backgroundSize: "24px 24px",
+        }}
+      />
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "center",
+          width: "100%",
+          px: { xs: 1.25, sm: 2, md: 3 },
+          py: { xs: 1.25, sm: 2, md: 3 },
+          boxSizing: "border-box",
+          height: "calc(100dvh - 64px - 36px)",
+          overflow: "hidden",
+          color: isDark ? "#D7DADC" : "inherit",
+        }}
+      >
       <Box sx={{ width: "100%", maxWidth: 900, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <Typography variant="h4" fontWeight={900} sx={{ mb: 2.5 }}>
+        <Typography variant="h4" fontWeight={900} sx={{ mb: 2.5, flexShrink: 0 }}>
           Messages
         </Typography>
 
         <Paper
           elevation={2}
           sx={{
-            flex: 1, minHeight: 0, borderRadius: 3,
-            border: "1.5px solid #ecdcdc", overflow: "hidden",
+            flex: 1, borderRadius: 3,
+            border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc",
+            overflow: "hidden",
+            background: isDark ? "#1A1A1B" : "#fff",
+            minHeight: 0,
           }}
         >
           <Box sx={{ display: "flex", flexDirection: "row", height: "100%" }}>
 
             {/* Left sidebar */}
-            <Box sx={{ width: "30%", borderRight: "1.5px solid #ecdcdc", overflowY: "auto" }}>
+            <Box
+              sx={{
+                width: { xs: "100%", md: "30%" },
+                borderRight: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc",
+                overflowY: "auto",
+                display: isMobile && selectedConversation ? "none" : "block",
+              }}
+            >
               {conversations.length === 0 ? (
-                <Typography variant="caption" color="text.disabled" fontWeight={700} sx={{ p: 2, display: "block" }}>
+                <Typography variant="caption" color={mutedTextColor} fontWeight={700} sx={{ p: 2, display: "block" }}>
                   No conversations yet
                 </Typography>
               ) : (
@@ -245,10 +246,10 @@ export default function MessagesPage() {
                     onClick={() => setSelectedConversation(convo)}
                     sx={{
                       p: 2, cursor: "pointer",
-                      background: selectedConversation?.id === convo.id ? "#fdf0f0" : "transparent",
-                      borderBottom: "1px solid #f5eded",
+                      background: selectedConversation?.id === convo.id ? (isDark ? "#2D2D2E" : "#fdf0f0") : "transparent",
+                      borderBottom: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid #f5eded",
                       display: "flex", alignItems: "center", justifyContent: "space-between",
-                      "&:hover": { background: "#fdf7f7", "& .delete-btn": { opacity: 1 } },
+                      "&:hover": { background: isDark ? "#343536" : "#fdf7f7", "& .delete-btn": { opacity: 1 } },
                     }}
                   >
                     {(() => {
@@ -260,7 +261,7 @@ export default function MessagesPage() {
                           <Typography fontWeight={700} fontSize={13} noWrap>
                             {listing ? listing.title : "Unknown Listing"}
                           </Typography>
-                          <Typography variant="caption" color="text.secondary" noWrap>
+                          <Typography variant="caption" color={secondaryTextColor} noWrap>
                             {other ? `${other.first_name} ${other.last_name}` : "Loading..."}
                           </Typography>
                         </Box>
@@ -270,7 +271,7 @@ export default function MessagesPage() {
                       className="delete-btn"
                       size="small"
                       onClick={(e) => hideConversation(convo, e)}
-                      sx={{ opacity: 0, transition: "opacity 0.15s", color: "#bbb", "&:hover": { color: "#A84D48" }, ml: 1, flexShrink: 0 }}
+                      sx={{ opacity: { xs: 1, md: 0 }, transition: "opacity 0.15s", color: isDark ? "#818384" : "#bbb", "&:hover": { color: "#A84D48" }, ml: 1, flexShrink: 0 }}
                     >
                       <DeleteIcon fontSize="small" />
                     </IconButton>
@@ -280,24 +281,44 @@ export default function MessagesPage() {
             </Box>
 
             {/* Right panel */}
-            <Box sx={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+            <Box
+              sx={{
+                flex: 1,
+                display: isMobile && !selectedConversation ? "none" : "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+                minHeight: 0,
+              }}
+            >
               {!selectedConversation ? (
                 <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Typography fontWeight={700} color="text.disabled">Select a conversation</Typography>
+                  <Typography fontWeight={700} color={mutedTextColor}>Select a conversation</Typography>
                 </Box>
               ) : (
                 <Box sx={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+                  {isMobile && (
+                    <Box sx={{ px: 1.25, py: 0.75, borderBottom: isDark ? "1px solid rgba(255,255,255,0.12)" : "1px solid #ecdcdc", flexShrink: 0 }}>
+                      <Button
+                        size="small"
+                        startIcon={<ArrowBackIcon fontSize="small" />}
+                        onClick={() => setSelectedConversation(null)}
+                        sx={{ color: "#A84D48", fontWeight: 700, textTransform: "none" }}
+                      >
+                        Back to conversations
+                      </Button>
+                    </Box>
+                  )}
                   {/* Safety warning + report button */}
                   <Box
                     sx={{
                       display: "flex", alignItems: "center", justifyContent: "space-between",
-                      gap: 1, px: 2, py: 1,
-                      background: "#fff8e1", borderBottom: "1px solid #ffe082",
+                      gap: 1, px: 2, py: 1, flexShrink: 0,
+                      background: isDark ? "#3a2f22" : "#fff8e1", borderBottom: isDark ? "1px solid rgba(255,193,7,0.35)" : "1px solid #ffe082",
                     }}
                   >
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1, minWidth: 0 }}>
                       <WarningAmberIcon sx={{ color: "#f59e0b", fontSize: 18, flexShrink: 0 }} />
-                      <Typography variant="caption" sx={{ color: "#92400e", fontWeight: 600, lineHeight: 1.4 }}>
+                      <Typography variant="caption" sx={{ color: isDark ? "#f6c66a" : "#92400e", fontWeight: 600, lineHeight: 1.4 }}>
                         Safety reminder: Never share personal information and always meet in a public place.
                       </Typography>
                     </Box>
@@ -309,9 +330,9 @@ export default function MessagesPage() {
                           startIcon={<FlagIcon sx={{ fontSize: 14 }} />}
                           onClick={() => setReportTarget({ id: other.id, name: other.name })}
                           sx={{
-                            color: "#92400e", fontSize: 11, fontWeight: 700,
+                            color: isDark ? "#f2c27a" : "#92400e", fontSize: 11, fontWeight: 700,
                             textTransform: "none", whiteSpace: "nowrap", flexShrink: 0,
-                            "&:hover": { color: "#A84D48", background: "rgba(168,77,72,0.08)" },
+                            "&:hover": { color: "#A84D48", background: isDark ? "rgba(255,255,255,0.1)" : "rgba(168,77,72,0.08)" },
                           }}
                         >
                           Report
@@ -320,8 +341,40 @@ export default function MessagesPage() {
                     })()}
                   </Box>
 
-                  {/* Messages */}
-                  <Box sx={{ flex: 1, overflowY: "auto", p: 2, display: "flex", flexDirection: "column", gap: 1 }}>
+                  {/* Messages — scrollable area */}
+                  <Box sx={{ flex: 1, overflowY: "auto", p: 2, display: "flex", flexDirection: "column", gap: 1, minHeight: 0 }}>
+                    {msgHasMore && (
+                      <Box sx={{ display: "flex", justifyContent: "center", mb: 1 }}>
+                        <Button
+                          size="small"
+                          onClick={async () => {
+                            setLoadingOlder(true);
+                            try {
+                              const nextPage = msgPage + 1;
+                              const result = await apiFetch(
+                                `/api/conversations/${selectedConversation.id}/messages?page=${nextPage}&limit=10`
+                              );
+                              const olderMsgs = result?.messages || [];
+                              setMessages(prev => [...olderMsgs, ...prev]);
+                              setMsgHasMore(result?.hasMore ?? false);
+                              setMsgPage(nextPage);
+                            } catch (err) {
+                              console.error("Load older messages error:", err);
+                            }
+                            setLoadingOlder(false);
+                          }}
+                          disabled={loadingOlder}
+                          sx={{
+                            color: isDark ? "#FF4500" : "#A84D48",
+                            fontWeight: 600,
+                            textTransform: "none",
+                            fontSize: 12,
+                          }}
+                        >
+                          {loadingOlder ? <CircularProgress size={16} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} /> : "Load older messages"}
+                        </Button>
+                      </Box>
+                    )}
                     {messages.map((msg) => {
                       if (msg.is_system) {
                         return (
@@ -330,7 +383,7 @@ export default function MessagesPage() {
                               variant="caption"
                               sx={{
                                 px: 2, py: 0.5, borderRadius: 99,
-                                background: "#f0e8e8", color: "#999",
+                                background: isDark ? "#2D2D2E" : "#f0e8e8", color: isDark ? "#818384" : "#999",
                                 display: "block", textAlign: "center",
                               }}
                             >
@@ -342,19 +395,22 @@ export default function MessagesPage() {
 
                       const isOwn = msg.sender_id === user.id;
                       return (
-                        <Box key={msg.id} sx={{ alignSelf: isOwn ? "flex-end" : "flex-start", maxWidth: "70%" }}>
+                        <Box key={msg.id} sx={{ alignSelf: isOwn ? "flex-end" : "flex-start", maxWidth: { xs: "85%", md: "70%" }, minWidth: 0 }}>
                           <Box sx={{
                             p: "10px 14px", borderRadius: 3,
-                            background: isOwn ? "#A84D48" : "#f5eded",
-                            color: isOwn ? "#fff" : "#333",
+                            background: isOwn ? "#A84D48" : isDark ? "#2D2D2E" : "#f5eded",
+                            color: isOwn ? "#fff" : isDark ? "#D7DADC" : "#333",
+                            maxWidth: "100%",
                           }}>
-                            <Typography fontSize={14}>{msg.content}</Typography>
+                            <Typography fontSize={14} sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                              {msg.content}
+                            </Typography>
                           </Box>
                           <Typography
-                            variant="caption" color="text.disabled"
+                            variant="caption" color={mutedTextColor}
                             sx={{ display: "block", mt: 0.5, textAlign: isOwn ? "right" : "left" }}
                           >
-                            {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            {formatTime(msg.created_at, timeZone)}
                           </Typography>
                         </Box>
                       );
@@ -362,22 +418,35 @@ export default function MessagesPage() {
                     <div ref={bottomRef} />
                   </Box>
 
-                  {/* Input */}
+                  {/* Input — pinned to bottom */}
                   {isClosed ? (
-                    <Box sx={{ p: 2, borderTop: "1.5px solid #ecdcdc", textAlign: "center" }}>
-                      <Typography variant="caption" fontWeight={700} color="text.disabled">
+                    <Box sx={{ p: 2, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", textAlign: "center", flexShrink: 0 }}>
+                      <Typography variant="caption" fontWeight={700} color={mutedTextColor}>
                         This conversation has been closed.
                       </Typography>
                     </Box>
                   ) : (
-                    <Box sx={{ display: "flex", alignItems: "center", p: 1.5, borderTop: "1.5px solid #ecdcdc", gap: 1 }}>
+                    <Box sx={{ display: "flex", alignItems: "center", p: 1.5, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", gap: 1, flexShrink: 0 }}>
                       <TextField
                         fullWidth size="small" placeholder="Type a message..."
                         value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
+                        onChange={(e) => setNewMessage(e.target.value.slice(0, MESSAGE_MAX_LENGTH))}
                         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                        helperText={`${newMessage.length}/${MESSAGE_MAX_LENGTH}`}
+                        inputProps={{ maxLength: MESSAGE_MAX_LENGTH }}
+                        sx={{
+                          "& .MuiOutlinedInput-root": {
+                            background: isDark ? "#2D2D2E" : "#fff",
+                            color: isDark ? "#D7DADC" : "inherit",
+                          },
+                          "& .MuiFormHelperText-root": {
+                            textAlign: "right",
+                            color: isDark ? "#818384" : "text.secondary",
+                            mr: 0.5,
+                          },
+                        }}
                       />
-                      <IconButton onClick={sendMessage} disabled={!newMessage.trim()} sx={{ color: "#A84D48" }}>
+                      <IconButton onClick={sendMessage} disabled={!newMessage.trim() || newMessage.trim().length > MESSAGE_MAX_LENGTH} sx={{ color: "#A84D48" }}>
                         <SendIcon />
                       </IconButton>
                     </Box>
@@ -398,6 +467,7 @@ export default function MessagesPage() {
         targetId={reportTarget?.id}
         targetLabel={reportTarget?.name}
       />
-    </Box>
+      </Box>
+    </>
   );
 }
