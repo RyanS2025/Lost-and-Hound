@@ -1477,12 +1477,12 @@ app.get("/api/mod/messages", requireAuth, require2FA, requireModerator, async (r
 // SUPPORT TICKETS ENDPOINTS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// Fetch all support tickets
-app.get("/api/support-tickets", requireAuth, async (req, res) => {
+// Fetch all support tickets (moderators only, includes reply counts)
+app.get("/api/support-tickets", requireAuth, require2FA, requireModerator, async (_req, res) => {
   try {
     const { data, error } = await supabase
       .from("support_tickets")
-      .select("id, user_id, category, description, status, created_at")
+      .select("id, user_id, category, description, status, created_at, support_replies(id, user_id, is_moderator, message, created_at)")
       .order("created_at", { ascending: false });
 
     if (error) return dbError(res, error, "fetching support tickets");
@@ -1490,6 +1490,23 @@ app.get("/api/support-tickets", requireAuth, async (req, res) => {
     res.json({ tickets: data });
   } catch (error) {
     dbError(res, error, "fetching support tickets");
+  }
+});
+
+// Fetch current user's own support tickets
+app.get("/api/support-tickets/mine", requireAuth, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("support_tickets")
+      .select("id, user_id, category, description, status, created_at, support_replies(id, user_id, is_moderator, message, created_at)")
+      .eq("user_id", req.user.id)
+      .order("created_at", { ascending: false });
+
+    if (error) return dbError(res, error, "fetching user support tickets");
+
+    res.json({ tickets: data });
+  } catch (error) {
+    dbError(res, error, "fetching user support tickets");
   }
 });
 
@@ -1520,27 +1537,87 @@ app.post("/api/support-tickets", requireAuth, async (req, res) => {
   }
 });
 
-// Update a support ticket
-app.patch("/api/support-tickets/:id", requireAuth, async (req, res) => {
+// Update a support ticket status (moderators only)
+app.patch("/api/support-tickets/:id", requireAuth, require2FA, requireModerator, async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
-  if (!status) {
-    return res.status(400).json({ error: "Status is required." });
+  const VALID_STATUSES = ["open", "in_progress", "resolved", "closed"];
+  if (!status || !VALID_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `Status must be one of: ${VALID_STATUSES.join(", ")}.` });
   }
 
   try {
     const { data, error } = await supabase
       .from("support_tickets")
-      .update({ status: sanitize(status, 20) })
+      .update({ status })
       .eq("id", id)
       .select();
 
     if (error) return dbError(res, error, "updating support ticket");
+    if (!data || data.length === 0) return res.status(404).json({ error: "Ticket not found." });
 
     res.json(data[0]);
   } catch (error) {
     dbError(res, error, "updating support ticket");
+  }
+});
+
+// Post a reply to a support ticket (moderator or ticket owner)
+app.post("/api/support-tickets/:id/replies", requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { message } = req.body;
+
+  if (!message || !message.trim()) {
+    return res.status(400).json({ error: "Message is required." });
+  }
+
+  try {
+    // Verify the ticket exists and the requester is either the owner or a moderator
+    const { data: ticket, error: ticketError } = await supabase
+      .from("support_tickets")
+      .select("id, user_id, status")
+      .eq("id", id)
+      .single();
+
+    if (ticketError || !ticket) return res.status(404).json({ error: "Ticket not found." });
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_moderator")
+      .eq("id", req.user.id)
+      .single();
+
+    const isModerator = !!profile?.is_moderator;
+
+    if (!isModerator && ticket.user_id !== req.user.id) {
+      return res.status(403).json({ error: "Forbidden." });
+    }
+
+    if (ticket.status === "closed") {
+      return res.status(400).json({ error: "Cannot reply to a closed ticket." });
+    }
+
+    const { data, error } = await supabase
+      .from("support_replies")
+      .insert({
+        ticket_id: id,
+        user_id: req.user.id,
+        is_moderator: isModerator,
+        message: sanitize(message, 1000),
+      })
+      .select();
+
+    if (error) return dbError(res, error, "posting reply");
+
+    // If a moderator replies and ticket is still open, move it to in_progress
+    if (isModerator && ticket.status === "open") {
+      await supabase.from("support_tickets").update({ status: "in_progress" }).eq("id", id);
+    }
+
+    res.status(201).json(data[0]);
+  } catch (error) {
+    dbError(res, error, "posting reply");
   }
 });
 
