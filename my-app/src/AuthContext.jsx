@@ -15,7 +15,14 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
   const [sessionToken, setSessionToken] = useState(null);
-  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+  // Detect recovery token in URL synchronously to prevent flash of login page.
+  // Supabase's JS client auto-detects token_hash & type in the URL and verifies
+  // the token internally — we don't call verifyOtp manually to avoid a duplicate
+  // call that would 403 (token already consumed by Supabase's auto-detection).
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return !!(params.get("token_hash") && params.get("type") === "recovery");
+  });
 
   useEffect(() => {
     // onAuthStateChange fires immediately with INITIAL_SESSION.
