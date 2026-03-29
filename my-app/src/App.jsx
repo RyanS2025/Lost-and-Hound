@@ -3,6 +3,7 @@ import { Routes, Route, Link } from "react-router-dom";
 import { supabase } from "../backend/supabaseClient";
 import { useAuth } from "./AuthContext";
 import LoginPage from "./pages/LoginPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import FeedPage from './pages/FeedPage';
 import MapPage from "./pages/MapPage";
 import MessagePage from "./pages/MessagePage";
@@ -27,7 +28,6 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/timezone';
 
-// --- App: Main application component with routing and navigation ---
 export default function App() {
   const { user, profile, logout } = useAuth();
   const darkBg = "#101214";
