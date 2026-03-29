@@ -1473,5 +1473,76 @@ app.get("/api/mod/messages", requireAuth, require2FA, requireModerator, async (r
   res.json({ messages: msgs || [], profiles: profileMap });
 });
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SUPPORT TICKETS ENDPOINTS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Fetch all support tickets
+app.get("/api/support-tickets", requireAuth, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("support_tickets")
+      .select("id, user_id, category, description, status, created_at")
+      .order("created_at", { ascending: false });
+
+    if (error) return dbError(res, error, "fetching support tickets");
+
+    res.json({ tickets: data });
+  } catch (error) {
+    dbError(res, error, "fetching support tickets");
+  }
+});
+
+// Create a new support ticket
+app.post("/api/support-tickets", requireAuth, async (req, res) => {
+  const { category, description } = req.body;
+
+  if (!category || !description) {
+    return res.status(400).json({ error: "Category and description are required." });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("support_tickets")
+      .insert({
+        user_id: req.user.id,
+        category: sanitize(category, 50),
+        description: sanitize(description, 500),
+        status: "open",
+      })
+      .select();
+
+    if (error) return dbError(res, error, "creating support ticket");
+
+    res.status(201).json(data[0]);
+  } catch (error) {
+    dbError(res, error, "creating support ticket");
+  }
+});
+
+// Update a support ticket
+app.patch("/api/support-tickets/:id", requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  if (!status) {
+    return res.status(400).json({ error: "Status is required." });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("support_tickets")
+      .update({ status: sanitize(status, 20) })
+      .eq("id", id)
+      .select();
+
+    if (error) return dbError(res, error, "updating support ticket");
+
+    res.json(data[0]);
+  } catch (error) {
+    dbError(res, error, "updating support ticket");
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

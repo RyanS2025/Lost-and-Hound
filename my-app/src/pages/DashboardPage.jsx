@@ -987,6 +987,9 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
   const [actionError, setActionError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [supportTickets, setSupportTickets] = useState([]);
+  const [loadingSupport, setLoadingSupport] = useState(false);
+  const [supportError, setSupportError] = useState("");
 
   const fetchReports = async (page = 1, append = false) => {
     if (page === 1) setLoading(true);
@@ -1013,7 +1016,28 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
     }
   };
 
-  useEffect(() => { if (profile?.is_moderator) fetchReports(); }, [profile]);
+  const fetchSupportTickets = async () => {
+    setLoadingSupport(true);
+    setSupportError("");
+    try {
+      const payload = await apiFetch("/api/support-tickets");
+      setSupportTickets(payload?.tickets || []);
+    } catch {
+      setSupportError("Failed to load support tickets.");
+    } finally {
+      setLoadingSupport(false);
+    }
+  };
+
+  useEffect(() => {
+    if (profile?.is_moderator) fetchReports();
+  }, [profile]);
+
+  useEffect(() => {
+    if (section === "support-categories") {
+      fetchSupportTickets();
+    }
+  }, [section]);
 
   const updateStatus = async (reportId, newStatus) => {
     setActionError("");
@@ -1280,7 +1304,7 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
               />
             ) : (
               <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                {groupedRenderItems.map(({ primaryReport, relatedReports }) => (
+                               {groupedRenderItems.map(({ primaryReport, relatedReports }) => (
                   <ReportCard
                     key={primaryReport.id}
                     report={primaryReport}
@@ -1322,12 +1346,31 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
           <EmptySection icon={<BugReportIcon sx={{ color: "#A84D48", fontSize: 28 }} />} title="Bug Reports — Coming Soon" description="This section will display bug reports with status tracking." isDark={isDark} />
         )}
         {section === "support-categories" && (
-          <EmptySection
-            icon={<SupportAgentIcon sx={{ color: "#A84D48", fontSize: 28 }} />}
-            title="Support Ticket Categories — Coming Soon"
-            description="This section will include moderator-managed support ticket categories and routing rules."
-            isDark={isDark}
-          />
+          <Box>
+            {supportError && <Alert severity="error" sx={{ mb: 2 }}>{supportError}</Alert>}
+            {loadingSupport ? (
+              <Box sx={{ display: "flex", justifyContent: "center", mt: 6 }}>
+                <CircularProgress sx={{ color: "#A84D48" }} />
+              </Box>
+            ) : supportTickets.length === 0 ? (
+              <EmptySection
+                icon={<SupportAgentIcon sx={{ color: "#A84D48", fontSize: 28 }} />}
+                title="No Support Tickets"
+                description="No support tickets available at the moment."
+                isDark={isDark}
+              />
+            ) : (
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                {supportTickets.map((ticket) => (
+                  <Box key={ticket.id} sx={{ p: 2, border: "1px solid", borderColor: isDark ? "#444" : "#ddd", borderRadius: 2 }}>
+                    <Typography variant="subtitle1" fontWeight={700}>{ticket.category}</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>{ticket.description}</Typography>
+                    <Typography variant="caption" color="text.secondary">Status: {ticket.status}</Typography>
+                  </Box>
+                ))}
+              </Box>
+            )}
+          </Box>
         )}
       </Box>
 
