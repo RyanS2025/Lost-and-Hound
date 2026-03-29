@@ -63,7 +63,9 @@ export function AuthProvider({ children }) {
 
   // Forgot password function
   const forgotPassword = async (email) => {
-    return supabase.auth.resetPasswordForEmail(email);
+    return supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
   };
 
   // Allow components to update profile fields in memory (e.g. after settings save)
