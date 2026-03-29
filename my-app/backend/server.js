@@ -326,6 +326,27 @@ app.post("/api/auth/clear-device", requireAuth, async (req, res) => {
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PASSWORD RESET
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+app.post("/api/auth/reset-password", strictLimiter, requireAuth, async (req, res) => {
+  const { password } = req.body;
+
+  if (!password || typeof password !== "string") {
+    return res.status(400).json({ error: "Password is required" });
+  }
+
+  if (password.length < 6 || password.length > 32) {
+    return res.status(400).json({ error: "Password must be between 6 and 32 characters" });
+  }
+
+  const { error } = await supabase.auth.admin.updateUserById(req.user.id, { password });
+
+  if (error) return dbError(res, error, "POST /api/auth/reset-password");
+  res.json({ success: true });
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CLEANUP COOLDOWN
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
