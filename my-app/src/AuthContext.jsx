@@ -15,29 +15,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
   const [sessionToken, setSessionToken] = useState(null);
-  // Detect recovery token in URL synchronously to prevent flash of login page
-  const [isPasswordRecovery, setIsPasswordRecovery] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return !!(params.get("token_hash") && params.get("type") === "recovery");
-  });
-
-  // Verify the token_hash from email links client-side (bypasses Supabase
-  // /auth/v1/verify so Microsoft SafeLinks can't consume single-use tokens)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const tokenHash = params.get("token_hash");
-    const type = params.get("type");
-
-    if (tokenHash && type) {
-      supabase.auth.verifyOtp({ token_hash: tokenHash, type }).then(({ error }) => {
-        if (error) {
-          console.error("Token verification failed:", error.message);
-          setIsPasswordRecovery(false);
-        }
-        window.history.replaceState({}, "", window.location.pathname);
-      });
-    }
-  }, []);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
   useEffect(() => {
     // onAuthStateChange fires immediately with INITIAL_SESSION.
