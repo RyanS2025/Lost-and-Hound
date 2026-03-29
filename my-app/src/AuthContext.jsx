@@ -15,11 +15,15 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
   const [sessionToken, setSessionToken] = useState(null);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
   useEffect(() => {
     // onAuthStateChange fires immediately with INITIAL_SESSION.
     // Track session token changes so profile refetches after MFA verify updates JWT claims.
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setIsPasswordRecovery(true);
+      }
       const nextUser = session?.user || null;
       setSessionToken(session?.access_token || null);
       setUser(prev => {
@@ -59,7 +63,9 @@ export function AuthProvider({ children }) {
 
   // Forgot password function
   const forgotPassword = async (email) => {
-    return supabase.auth.resetPasswordForEmail(email);
+    return supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
   };
 
   // Allow components to update profile fields in memory (e.g. after settings save)
@@ -70,7 +76,7 @@ export function AuthProvider({ children }) {
   if (loading) return <div>Loading...</div>;
 
   return (
-    <AuthContext.Provider value={{ user, profile, updateProfile, logout, forgotPassword }}>
+    <AuthContext.Provider value={{ user, profile, updateProfile, logout, forgotPassword, isPasswordRecovery, setIsPasswordRecovery }}>
       {children}
     </AuthContext.Provider>
   );
