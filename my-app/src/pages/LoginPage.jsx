@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../../backend/supabaseClient";
 import {
   Paper,
@@ -116,6 +117,7 @@ export default function LoginPage({
   effectiveTheme = "light",
 }) {
   const isDark = effectiveTheme === "dark";
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -418,22 +420,6 @@ export default function LoginPage({
     }
   };
 
-  const handleForgotPassword = async () => {
-    setError("");
-    setMessage("");
-    if (!email) {
-      setError("Enter your email above first.");
-      return;
-    }
-    try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email);
-      if (resetError) throw resetError;
-      setMessage("Password reset email sent! Check your inbox.");
-    } catch (err) {
-      setError(cleanErrorMessage(err.message || err.code));
-    }
-  };
-
   const handleOtpSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -724,7 +710,7 @@ export default function LoginPage({
                 </Typography>
                 <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
                   {mfaQrCodeSvg
-                    ? "Scan the QR code in your authenticator app (Duo is highly reccomnded) then enter the 6-digit code below."
+                    ? "Scan the QR code in your authenticator app (Duo is highly recommended) then enter the 6-digit code below."
                     : "Use the 6-digit code from your authenticator app to finish signing in."}
                 </Typography>
 
@@ -985,7 +971,7 @@ export default function LoginPage({
                   <MuiLink
                     component="button"
                     variant="body2"
-                    onClick={handleForgotPassword}
+                    onClick={() => navigate("/forgot-password")}
                     sx={{
                       cursor: "pointer",
                       color: BRAND.accent,

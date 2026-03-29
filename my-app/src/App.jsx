@@ -4,6 +4,7 @@ import { supabase } from "../backend/supabaseClient";
 import { useAuth } from "./AuthContext";
 import LoginPage from "./pages/LoginPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import FeedPage from './pages/FeedPage';
 import MapPage from "./pages/MapPage";
 import MessagePage from "./pages/MessagePage";
@@ -29,7 +30,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/timezone';
 
 export default function App() {
-  const { user, profile, logout } = useAuth();
+  const { user, profile, logout, isPasswordRecovery, setIsPasswordRecovery } = useAuth();
   const darkBg = "#101214";
   const isCompactNav = useMediaQuery("(max-width:1100px)");
 
@@ -43,6 +44,29 @@ export default function App() {
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches
   );
+
+  // Handle email link verification (password recovery, etc.)
+  // The email links directly to our app with token_hash & type params,
+  // bypassing Supabase's /auth/v1/verify endpoint so Microsoft SafeLinks
+  // can't consume the token by pre-fetching it.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tokenHash = params.get("token_hash");
+    const type = params.get("type");
+    const code = params.get("code");
+
+    if (tokenHash && type) {
+      supabase.auth.verifyOtp({ token_hash: tokenHash, type }).then(({ error }) => {
+        if (error) console.error("Token verification failed:", error.message);
+        window.history.replaceState({}, "", window.location.pathname);
+      });
+    } else if (code) {
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        if (error) console.error("Code exchange failed:", error.message);
+        window.history.replaceState({}, "", window.location.pathname);
+      });
+    }
+  }, []);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -198,6 +222,23 @@ export default function App() {
     }
   }, [profile, user]);
 
+  // Password recovery: Supabase gives a valid session via the email link,
+  // so intercept before the normal auth check to show the reset form.
+  if (isPasswordRecovery) {
+    return (
+      <ThemeProvider theme={appTheme}>
+        <CssBaseline />
+        <ResetPasswordPage
+          effectiveTheme={effectiveTheme}
+          onComplete={() => {
+            setIsPasswordRecovery(false);
+            supabase.auth.signOut();
+          }}
+        />
+      </ThemeProvider>
+    );
+  }
+
   // Keep showing LoginPage while auth/MFA is in progress.
   // This avoids a blank screen if /api/profile is blocked by require2FA.
   if (!user || loginTransition || !profile) {
@@ -238,12 +279,27 @@ export default function App() {
             </Box>
           </Box>
         ) : (
-          <LoginPage
-            loginTransition={loginTransition}
-            onLoginSuccess={onLoginSuccess}
-            onLoginCancel={onLoginCancel}
-            effectiveTheme={effectiveTheme}
-          />
+          <Routes>
+            <Route
+              path="/forgot-password"
+              element={<ForgotPasswordPage effectiveTheme={effectiveTheme} />}
+            />
+            <Route
+              path="/reset-password"
+              element={<ResetPasswordPage effectiveTheme={effectiveTheme} />}
+            />
+            <Route
+              path="*"
+              element={
+                <LoginPage
+                  loginTransition={loginTransition}
+                  onLoginSuccess={onLoginSuccess}
+                  onLoginCancel={onLoginCancel}
+                  effectiveTheme={effectiveTheme}
+                />
+              }
+            />
+          </Routes>
         )}
       </ThemeProvider>
     );
