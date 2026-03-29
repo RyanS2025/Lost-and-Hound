@@ -295,7 +295,7 @@ export default function ResetPasswordPage({ effectiveTheme = "light", onComplete
             <MuiLink
               component="button"
               variant="body2"
-              onClick={() => navigate("/")}
+              onClick={() => onComplete ? onComplete() : navigate("/")}
               sx={{
                 cursor: "pointer",
                 color: BRAND.accent,

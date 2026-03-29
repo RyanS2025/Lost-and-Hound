@@ -230,9 +230,10 @@ export default function App() {
         <CssBaseline />
         <ResetPasswordPage
           effectiveTheme={effectiveTheme}
-          onComplete={() => {
+          onComplete={async () => {
             setIsPasswordRecovery(false);
-            supabase.auth.signOut();
+            await supabase.auth.signOut();
+            window.location.href = "/";
           }}
         />
       </ThemeProvider>
