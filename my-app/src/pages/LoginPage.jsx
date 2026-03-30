@@ -136,6 +136,8 @@ export default function LoginPage({
   const [mfaUri, setMfaUri] = useState("");
   const [mfaLoading, setMfaLoading] = useState(false);
   const [mfaVerifying, setMfaVerifying] = useState(false);
+  const [resendingEmail, setResendingEmail] = useState(false);
+  const [resendMessage, setResendMessage] = useState("");
 
   // Terms modal state
   const [termsOpen, setTermsOpen] = useState(false);
@@ -241,6 +243,7 @@ export default function LoginPage({
             first_name: firstName.trim(),
             last_name: lastName.trim(),
           },
+          emailRedirectTo: window.location.origin,
         },
       });
 
@@ -259,6 +262,25 @@ export default function LoginPage({
       setLastName("");
     } catch (err) {
       setError(cleanErrorMessage(err.message || err.code));
+    }
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!email) return;
+    setResendingEmail(true);
+    setResendMessage("");
+    try {
+      const { error: resendError } = await supabase.auth.resend({
+        type: "signup",
+        email,
+        options: { emailRedirectTo: window.location.origin },
+      });
+      if (resendError) throw resendError;
+      setResendMessage("Verification email resent! Check your inbox.");
+    } catch (err) {
+      setResendMessage("Failed to resend. Please try again.");
+    } finally {
+      setResendingEmail(false);
     }
   };
 
@@ -1012,6 +1034,30 @@ export default function LoginPage({
                           </MuiLink>{" "}
                           and release the email from there.
                         </Typography>
+                        <MuiLink
+                          component="button"
+                          variant="body2"
+                          onClick={handleResendConfirmation}
+                          disabled={resendingEmail}
+                          sx={{
+                            display: "block",
+                            mt: 1.5,
+                            color: "inherit",
+                            fontWeight: 700,
+                            cursor: resendingEmail ? "default" : "pointer",
+                            opacity: resendingEmail ? 0.6 : 1,
+                          }}
+                        >
+                          {resendingEmail ? "Sending..." : "Resend verification email"}
+                        </MuiLink>
+                        {resendMessage && (
+                          <Typography
+                            variant="caption"
+                            sx={{ display: "block", mt: 0.5, color: "inherit", fontWeight: 600 }}
+                          >
+                            {resendMessage}
+                          </Typography>
+                        )}
                       </>
                     ) : (
                       error
