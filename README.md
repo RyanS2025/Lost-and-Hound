@@ -131,4 +131,6 @@ npm run preview   # preview the production build locally
 
 ## License
 
-Made for Oasis @ Northeastern
+© 2026 Lost & Hound. All rights reserved. See [LICENSE](./LICENSE) for details.
+
+Originally developed during Oasis @ Northeastern.
