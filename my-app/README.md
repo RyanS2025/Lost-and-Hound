@@ -32,6 +32,26 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 VITE_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
 ```
 
+## Running Tests
+
+From this folder (`my-app/`):
+
+```bash
+npx playwright test --config=tests/playwright.config.js
+```
+
+Tests use mocked Supabase auth — no real API calls or database changes. The dev server starts automatically.
+
+### Test coverage
+
+| File | Tests | What it covers |
+|------|-------|----------------|
+| `tests/login.spec.js` | 10 | Login form, validation, error states, email not confirmed + resend button |
+| `tests/signup.spec.js` | 11 | Signup form, validation, terms modal, existing account detection |
+| `tests/forgot-password.spec.js` | 8 | Password reset request, success/error states, quarantine help text |
+| `tests/reset-password.spec.js` | 8 | New password form, mismatch validation, show/hide toggle |
+| `tests/navigation.spec.js` | 14 | Routing, page transitions, recovery URL detection, accessibility, mobile responsive |
+
 ## Time and Input Rules
 
 ### Timezone behavior
