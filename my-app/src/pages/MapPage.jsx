@@ -4,7 +4,7 @@ import { setOptions, importLibrary } from "@googlemaps/js-api-loader";
 import { useAuth } from "../AuthContext";
 import {
   Box, Typography, Paper, Slider, Chip, IconButton, CircularProgress,
-  Collapse, Button, Modal, Autocomplete, TextField, SwipeableDrawer,
+  Collapse, Button, Modal, Autocomplete, TextField,
 } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import MyLocationIcon from "@mui/icons-material/MyLocation";
@@ -341,7 +341,6 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
   const [refreshing, setRefreshing] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [showResolved, setShowResolved] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
   // "all" shows both types. "found" / "lost" narrows markers and the side panel list.
   const [listingTypeFilter, setListingTypeFilter] = useState("all");
 
@@ -483,13 +482,8 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
       });
 
       map.addListener("click", (e) => {
-        const pos = { lat: e.latLng.lat(), lng: e.latLng.lng() };
-        setSearchPin(pos);
-        if (isMobile) {
-          setDrawerOpen(true);
-        } else {
-          setShowPanel(true);
-        }
+        setSearchPin({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+        setShowPanel(true);
       });
     })();
 
@@ -505,13 +499,8 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
     if (!map) return;
 
     const listener = map.addListener("click", (e) => {
-      const pos = { lat: e.latLng.lat(), lng: e.latLng.lng() };
-      setSearchPin(pos);
-      if (isMobileRef.current) {
-        setDrawerOpen(true);
-      } else {
-        setShowPanel(true);
-      }
+      setSearchPin({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+      setShowPanel(true);
     });
 
     return () => {
@@ -699,11 +688,8 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
   const clearSearch = () => {
     setSearchPin(null);
     setShowPanel(false);
-    setDrawerOpen(false);
     setNearbyItems([]);
   };
-
-  const showMobileFab = isMobile && !!searchPin && !drawerOpen;
 
   return (
     <>
@@ -825,16 +811,14 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
         <Box sx={{
           display: "flex", gap: 2.5,
           flexDirection: { xs: "column", md: "row" },
-          flex: isMobile ? 1 : undefined,
-          minHeight: 0,
         }}>
           {/* Map container */}
           <Paper
             elevation={3}
             sx={{
               flex: 1,
-              minHeight: { xs: 280, md: 400 },
-              height: { xs: "calc(100dvh - 160px)", md: "calc(100vh - 240px)" },
+              minHeight: { xs: 240, md: 400 },
+              height: { xs: "40vh", md: "calc(100vh - 240px)" },
               overflow: "hidden", borderRadius: 3, position: "relative",
               border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
               background: isDark ? "#1A1A1B" : "#fff",
@@ -912,8 +896,8 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
             )}
           </Paper>
 
-          {/* ===== DESKTOP side panel (hidden on mobile) ===== */}
-          {!isMobile && (
+          {/* Desktop side panel — slides in horizontally beside the map (md+) */}
+          <Box sx={{ display: { xs: "none", md: "block" } }}>
             <Collapse
               in={showPanel && !!searchPin}
               orientation="horizontal"
@@ -944,86 +928,33 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
                 />
               </Paper>
             </Collapse>
-          )}
+          </Box>
+
+          {/* Mobile inline panel — appears below the map on all small screens (xs) */}
+          <Box sx={{ display: { xs: "block", md: "none" } }}>
+            {searchPin && (
+              <Paper
+                elevation={2}
+                sx={{
+                  p: 2.5, borderRadius: 3,
+                  border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc",
+                  background: isDark ? "#1A1A1B" : "#fff",
+                }}
+              >
+                <SidePanelContent
+                  isDark={isDark}
+                  radius={radius}
+                  setRadius={setRadius}
+                  nearbyItems={nearbyItems}
+                  mapInstanceRef={mapInstanceRef}
+                  setSelectedItem={setSelectedItem}
+                  timeZone={timeZone}
+                />
+              </Paper>
+            )}
+          </Box>
         </Box>
       </Box>
-
-      {/* ===== MOBILE: floating button to re-open drawer ===== */}
-      {showMobileFab && (
-        <Button
-          variant="contained"
-          onClick={() => setDrawerOpen(true)}
-          startIcon={<ListIcon />}
-          sx={{
-            position: "fixed",
-            bottom: 50,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 1100,
-            background: "#A84D48",
-            "&:hover": { background: "#8f3e3a" },
-            fontWeight: 800,
-            borderRadius: 99,
-            px: 3,
-            py: 1,
-            boxShadow: "0 4px 20px rgba(168,77,72,0.35)",
-            textTransform: "none",
-            fontSize: 14,
-          }}
-        >
-          {nearbyItems.length} item{nearbyItems.length !== 1 ? "s" : ""} nearby
-        </Button>
-      )}
-
-      {/* ===== MOBILE: SwipeableDrawer instead of Collapse ===== */}
-      {isMobile && (
-        <SwipeableDrawer
-          anchor="bottom"
-          open={drawerOpen && !!searchPin}
-          onClose={() => setDrawerOpen(false)}
-          onOpen={() => setDrawerOpen(true)}
-          disableSwipeToOpen
-          swipeAreaWidth={0}
-          ModalProps={{ keepMounted: true }}
-          PaperProps={{
-            sx: {
-              borderTopLeftRadius: 16,
-              borderTopRightRadius: 16,
-              maxHeight: "70vh",
-              background: isDark ? "#1A1A1B" : "#fff",
-              border: isDark ? "1px solid rgba(255,255,255,0.16)" : "none",
-              overflow: "visible",
-            },
-          }}
-        >
-          {/* Drag handle */}
-          <Box sx={{ display: "flex", justifyContent: "center", pt: 1.25, pb: 0.5 }}>
-            <Box sx={{
-              width: 36, height: 4, borderRadius: 2,
-              background: isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.2)",
-            }} />
-          </Box>
-          <Box sx={{ px: 2.5, pb: 3, overflowY: "auto", maxHeight: "calc(70vh - 24px)" }}>
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
-              <Typography fontWeight={800} fontSize={15}>Nearby Items</Typography>
-              <IconButton size="small" onClick={() => setDrawerOpen(false)}>
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Box>
-            <SidePanelContent
-              isDark={isDark}
-              radius={radius}
-              setRadius={setRadius}
-              nearbyItems={nearbyItems}
-              mapInstanceRef={mapInstanceRef}
-              setSelectedItem={(item) => {
-                setSelectedItem(item);
-              }}
-              timeZone={timeZone}
-            />
-          </Box>
-        </SwipeableDrawer>
-      )}
 
       <DetailModal item={selectedItem} onClose={() => setSelectedItem(null)} onClaim={handleClaim} isDark={isDark} timeZone={timeZone} />
       </Box>

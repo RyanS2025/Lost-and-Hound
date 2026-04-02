@@ -12,7 +12,7 @@ import SettingsPage from "./pages/SettingsPage";
 import DashboardPage from "./pages/DashboardPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import AppFooter from "./components/AppFooter";
-import { AppBar, Toolbar, Button, Typography, Container, Box, Paper, CircularProgress } from '@mui/material';
+import { AppBar, Toolbar, Button, Typography, Container, Box, Paper, CircularProgress, Badge } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import HomeIcon from '@mui/icons-material/Home';
@@ -28,6 +28,7 @@ import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/timezone';
+import apiFetch from './utils/apiFetch';
 
 export default function App() {
   const { user, profile, logout, isPasswordRecovery, setIsPasswordRecovery } = useAuth();
@@ -44,6 +45,30 @@ export default function App() {
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches
   );
+
+  // Unread message count — shown as a badge on the Messages nav button
+  const [unreadCount, setUnreadCount] = useState(0);
+  useEffect(() => {
+    if (!user) { setUnreadCount(0); return; }
+
+    // Fetch the current unread count from the backend
+    const fetchUnread = () =>
+      apiFetch("/api/messages/unread-count")
+        .then(d => setUnreadCount(d.count ?? 0))
+        .catch(() => {});
+
+    fetchUnread();
+
+    // Subscribe to new message inserts so the badge updates in real time
+    // without the user needing to refresh the page
+    const channel = supabase
+      .channel("unread-badge")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, fetchUnread)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, fetchUnread)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   // Handle email link verification (password recovery, etc.)
   // The email links directly to our app with token_hash & type params,
@@ -225,17 +250,50 @@ export default function App() {
   // Password recovery: Supabase gives a valid session via the email link,
   // so intercept before the normal auth check to show the reset form.
   if (isPasswordRecovery) {
+    // `user` is only set after verifyOtp resolves and PASSWORD_RECOVERY fires.
+    // Showing the form before that means the session doesn't exist yet, so any
+    // submit attempt gets 401 "Invalid token" from requireAuth.
+    // Wait for the session to be ready; time out after 8 s if something went wrong.
+    const sessionReady = !!user;
     return (
       <ThemeProvider theme={appTheme}>
         <CssBaseline />
-        <ResetPasswordPage
-          effectiveTheme={effectiveTheme}
-          onComplete={async () => {
-            setIsPasswordRecovery(false);
-            await supabase.auth.signOut();
-            window.location.href = "/";
-          }}
-        />
+        {!sessionReady ? (
+          <Box
+            sx={{
+              minHeight: "100vh",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: effectiveTheme === "dark" ? darkBg : "#f5f0f0",
+              backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`,
+              backgroundSize: "24px 24px",
+            }}
+          >
+            <Box sx={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <CircularProgress
+                size={340}
+                thickness={1}
+                sx={{ color: effectiveTheme === "dark" ? darkAccent : "#A84D48", position: "absolute" }}
+              />
+              <Box
+                component="img"
+                src="/TabLogo.png"
+                alt="Lost & Hound"
+                sx={{ width: 230, height: 230, objectFit: "contain" }}
+              />
+            </Box>
+          </Box>
+        ) : (
+          <ResetPasswordPage
+            effectiveTheme={effectiveTheme}
+            onComplete={async () => {
+              setIsPasswordRecovery(false);
+              await supabase.auth.signOut();
+              window.location.href = "/";
+            }}
+          />
+        )}
       </ThemeProvider>
     );
   }
@@ -455,7 +513,11 @@ export default function App() {
             color="inherit"
             component={Link}
             to="/messages"
-            startIcon={<MessageIcon />}
+            startIcon={
+              <Badge badgeContent={unreadCount} color="error" max={99}>
+                <MessageIcon />
+              </Badge>
+            }
             sx={{ minWidth: 0 }}
           >
             {!isCompactNav ? "Messages" : null}

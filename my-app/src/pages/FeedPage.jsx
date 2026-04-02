@@ -55,13 +55,37 @@ function parseCoordinates(coordStr) {
 // --- ImageUpload ---
 function ImageUpload({ image, onChange, isDark = false }) {
   const inputRef = useRef();
-  const handleFile = (e) => {
-    const file = e.target.files[0];
+  const [converting, setConverting] = useState(false);
+
+  const handleFile = async (e) => {
+    let file = e.target.files[0];
     if (!file) return;
+
+    // HEIC is Apple's default iPhone photo format. Browsers can't display or
+    // upload it natively, so we convert it to JPEG client-side before anything else.
+    const isHeic = file.type === "image/heic" || file.type === "image/heif"
+      || /\.heic$/i.test(file.name) || /\.heif$/i.test(file.name);
+
+    if (isHeic) {
+      setConverting(true);
+      try {
+        const heic2any = (await import("heic2any")).default;
+        // Convert returns a Blob — wrap it in a File so name/type are correct downstream
+        const blob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 });
+        file = new File([blob], file.name.replace(/\.(heic|heif)$/i, ".jpg"), { type: "image/jpeg" });
+      } catch (err) {
+        console.error("HEIC conversion error:", err);
+        setConverting(false);
+        return;
+      }
+      setConverting(false);
+    }
+
     const reader = new FileReader();
     reader.onload = (ev) => onChange({ dataUrl: ev.target.result, file });
     reader.readAsDataURL(file);
   };
+
   return (
     <Box>
       <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary", display: "block", mb: 0.75 }}>
@@ -77,13 +101,18 @@ function ImageUpload({ image, onChange, isDark = false }) {
           "&:hover": { borderColor: "#A84D48" },
         }}
       >
-        {image
-          ? <img src={image.dataUrl} alt="preview" style={{ maxHeight: 120, maxWidth: "100%", borderRadius: 8, objectFit: "cover" }} />
-          : <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5, color: "text.disabled" }}>
-              <UploadIcon />
-              <Typography variant="caption" fontWeight={700}>Click to upload a photo</Typography>
-              <Typography variant="caption">JPG, PNG, WEBP</Typography>
+        {converting
+          ? <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5, color: "text.disabled" }}>
+              <CircularProgress size={24} sx={{ color: "#A84D48" }} />
+              <Typography variant="caption" fontWeight={700}>Converting HEIC…</Typography>
             </Box>
+          : image
+            ? <img src={image.dataUrl} alt="preview" style={{ maxHeight: 120, maxWidth: "100%", borderRadius: 8, objectFit: "cover" }} />
+            : <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5, color: "text.disabled" }}>
+                <UploadIcon />
+                <Typography variant="caption" fontWeight={700}>Click to upload a photo</Typography>
+                <Typography variant="caption">JPG, PNG, WEBP, HEIC</Typography>
+              </Box>
         }
       </Box>
       {image && (
@@ -91,7 +120,7 @@ function ImageUpload({ image, onChange, isDark = false }) {
           Remove photo
         </Button>
       )}
-      <input ref={inputRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
+      <input ref={inputRef} type="file" accept="image/*,.heic,.heif" onChange={handleFile} style={{ display: "none" }} />
     </Box>
   );
 }
@@ -102,6 +131,9 @@ function ItemCard({ item, onClick, isDark = false, timeZone = DEFAULT_TIME_ZONE 
     <Paper
       elevation={1}
       onClick={() => onClick(item)}
+      tabIndex={0}
+      role="button"
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(item); } }}
       sx={{
         display: "flex", gap: 2, p: 2, borderRadius: 3, cursor: "pointer",
         opacity: item.resolved ? 0.65 : 1,
@@ -110,6 +142,7 @@ function ItemCard({ item, onClick, isDark = false, timeZone = DEFAULT_TIME_ZONE 
         background: isDark ? "#1A1A1B" : "#fff",
         transition: "box-shadow 0.15s, transform 0.15s",
         "&:hover": { boxShadow: isDark ? "0 6px 18px rgba(0,0,0,0.35)" : "0 4px 18px rgba(168,77,72,0.13)", transform: "translateY(-2px)" },
+        "&:focus-visible": { outline: "2px solid #A84D48", outlineOffset: 2 },
       }}
     >
       <Box sx={{
