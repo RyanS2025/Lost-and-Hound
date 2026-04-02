@@ -28,6 +28,7 @@ import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/timezone';
+import apiFetch from './utils/apiFetch';
 
 export default function App() {
   const { user, profile, logout, isPasswordRecovery, setIsPasswordRecovery } = useAuth();
@@ -52,8 +53,7 @@ export default function App() {
 
     // Fetch the current unread count from the backend
     const fetchUnread = () =>
-      fetch("/api/messages/unread-count", { credentials: "include" })
-        .then(r => r.ok ? r.json() : { count: 0 })
+      apiFetch("/api/messages/unread-count")
         .then(d => setUnreadCount(d.count ?? 0))
         .catch(() => {});
 

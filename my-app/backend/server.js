@@ -1017,6 +1017,7 @@ app.get("/api/conversations/:id/messages", requireAuth, require2FA, requireConve
 // Total count of unread messages across all of the user's visible conversations.
 // Used by the navbar badge — lightweight head-count query, no message content returned.
 app.get("/api/messages/unread-count", requireAuth, require2FA, async (req, res) => {
+  console.log(`[unread-count] reached — user=${req.user?.id}`);
   const userId = req.user.id;
 
   // Find all conversations the user is in
@@ -1541,6 +1542,12 @@ app.get("/api/mod/messages", requireAuth, require2FA, requireModerator, async (r
   (profileData || []).forEach((p) => { profileMap[p.id] = p; });
 
   res.json({ messages: msgs || [], profiles: profileMap });
+});
+
+// Catch-all: log any request that didn't match a route
+app.use((req, res) => {
+  console.log(`[404] No route matched: ${req.method} ${req.path}`);
+  res.status(404).json({ error: "Not found" });
 });
 
 const PORT = process.env.PORT || 3001;
