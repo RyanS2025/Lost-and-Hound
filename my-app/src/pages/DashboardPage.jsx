@@ -776,6 +776,9 @@ function ReportCard({ report, fullListing, groupedReports = null, onUpdateStatus
                     <Box
                       key={r.id}
                       onClick={() => setReviewModalReport(r)}
+                      tabIndex={0}
+                      role="button"
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setReviewModalReport(r); } }}
                       sx={{
                         p: 1,
                         borderRadius: 1.5,
@@ -787,6 +790,7 @@ function ReportCard({ report, fullListing, groupedReports = null, onUpdateStatus
                           borderColor: isDark ? "rgba(255,255,255,0.26)" : "#d8b2b0",
                           transform: "translateY(-1px)",
                         },
+                        "&:focus-visible": { outline: "2px solid #A84D48", outlineOffset: 2 },
                       }}
                     >
                       <Box sx={{ display: "flex", justifyContent: "space-between", gap: 1, flexWrap: "wrap", mb: 0.4 }}>

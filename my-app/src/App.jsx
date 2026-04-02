@@ -12,7 +12,7 @@ import SettingsPage from "./pages/SettingsPage";
 import DashboardPage from "./pages/DashboardPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import AppFooter from "./components/AppFooter";
-import { AppBar, Toolbar, Button, Typography, Container, Box, Paper, CircularProgress } from '@mui/material';
+import { AppBar, Toolbar, Button, Typography, Container, Box, Paper, CircularProgress, Badge } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import HomeIcon from '@mui/icons-material/Home';
@@ -44,6 +44,31 @@ export default function App() {
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches
   );
+
+  // Unread message count — shown as a badge on the Messages nav button
+  const [unreadCount, setUnreadCount] = useState(0);
+  useEffect(() => {
+    if (!user) { setUnreadCount(0); return; }
+
+    // Fetch the current unread count from the backend
+    const fetchUnread = () =>
+      fetch("/api/messages/unread-count", { credentials: "include" })
+        .then(r => r.ok ? r.json() : { count: 0 })
+        .then(d => setUnreadCount(d.count ?? 0))
+        .catch(() => {});
+
+    fetchUnread();
+
+    // Subscribe to new message inserts so the badge updates in real time
+    // without the user needing to refresh the page
+    const channel = supabase
+      .channel("unread-badge")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, fetchUnread)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, fetchUnread)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   // Handle email link verification (password recovery, etc.)
   // The email links directly to our app with token_hash & type params,
@@ -455,7 +480,11 @@ export default function App() {
             color="inherit"
             component={Link}
             to="/messages"
-            startIcon={<MessageIcon />}
+            startIcon={
+              <Badge badgeContent={unreadCount} color="error" max={99}>
+                <MessageIcon />
+              </Badge>
+            }
             sx={{ minWidth: 0 }}
           >
             {!isCompactNav ? "Messages" : null}

@@ -102,6 +102,9 @@ function ItemCard({ item, onClick, isDark = false, timeZone = DEFAULT_TIME_ZONE 
     <Paper
       elevation={1}
       onClick={() => onClick(item)}
+      tabIndex={0}
+      role="button"
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(item); } }}
       sx={{
         display: "flex", gap: 2, p: 2, borderRadius: 3, cursor: "pointer",
         opacity: item.resolved ? 0.65 : 1,
@@ -110,6 +113,7 @@ function ItemCard({ item, onClick, isDark = false, timeZone = DEFAULT_TIME_ZONE 
         background: isDark ? "#1A1A1B" : "#fff",
         transition: "box-shadow 0.15s, transform 0.15s",
         "&:hover": { boxShadow: isDark ? "0 6px 18px rgba(0,0,0,0.35)" : "0 4px 18px rgba(168,77,72,0.13)", transform: "translateY(-2px)" },
+        "&:focus-visible": { outline: "2px solid #A84D48", outlineOffset: 2 },
       }}
     >
       <Box sx={{

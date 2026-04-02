@@ -105,6 +105,8 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
           setMsgHasMore(result?.hasMore ?? false);
           setMsgPage(1);
         }
+        // Mark all messages from the other participant as read so the navbar badge decrements
+        apiFetch(`/api/conversations/${selectedConversation.id}/read`, { method: "PATCH" }).catch(() => {});
       } catch (err) {
         console.error("Fetch messages error:", err);
       }
@@ -244,12 +246,16 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
                   <Box
                     key={convo.id}
                     onClick={() => setSelectedConversation(convo)}
+                    tabIndex={0}
+                    role="button"
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedConversation(convo); } }}
                     sx={{
                       p: 2, cursor: "pointer",
                       background: selectedConversation?.id === convo.id ? (isDark ? "#2D2D2E" : "#fdf0f0") : "transparent",
                       borderBottom: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid #f5eded",
                       display: "flex", alignItems: "center", justifyContent: "space-between",
                       "&:hover": { background: isDark ? "#343536" : "#fdf7f7", "& .delete-btn": { opacity: 1 } },
+                      "&:focus-visible": { outline: "2px solid #A84D48", outlineOffset: -2 },
                     }}
                   >
                     {(() => {
