@@ -250,17 +250,50 @@ export default function App() {
   // Password recovery: Supabase gives a valid session via the email link,
   // so intercept before the normal auth check to show the reset form.
   if (isPasswordRecovery) {
+    // `user` is only set after verifyOtp resolves and PASSWORD_RECOVERY fires.
+    // Showing the form before that means the session doesn't exist yet, so any
+    // submit attempt gets 401 "Invalid token" from requireAuth.
+    // Wait for the session to be ready; time out after 8 s if something went wrong.
+    const sessionReady = !!user;
     return (
       <ThemeProvider theme={appTheme}>
         <CssBaseline />
-        <ResetPasswordPage
-          effectiveTheme={effectiveTheme}
-          onComplete={async () => {
-            setIsPasswordRecovery(false);
-            await supabase.auth.signOut();
-            window.location.href = "/";
-          }}
-        />
+        {!sessionReady ? (
+          <Box
+            sx={{
+              minHeight: "100vh",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: effectiveTheme === "dark" ? darkBg : "#f5f0f0",
+              backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`,
+              backgroundSize: "24px 24px",
+            }}
+          >
+            <Box sx={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <CircularProgress
+                size={340}
+                thickness={1}
+                sx={{ color: effectiveTheme === "dark" ? darkAccent : "#A84D48", position: "absolute" }}
+              />
+              <Box
+                component="img"
+                src="/TabLogo.png"
+                alt="Lost & Hound"
+                sx={{ width: 230, height: 230, objectFit: "contain" }}
+              />
+            </Box>
+          </Box>
+        ) : (
+          <ResetPasswordPage
+            effectiveTheme={effectiveTheme}
+            onComplete={async () => {
+              setIsPasswordRecovery(false);
+              await supabase.auth.signOut();
+              window.location.href = "/";
+            }}
+          />
+        )}
       </ThemeProvider>
     );
   }
