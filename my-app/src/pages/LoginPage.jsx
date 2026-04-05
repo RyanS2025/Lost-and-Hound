@@ -14,6 +14,7 @@ import {
   LinearProgress,
 } from "@mui/material";
 import TermsModal from "../components/TermsModal";
+import LoginSupportModal from "../components/LoginSupportModal";
 import apiFetch from "../utils/apiFetch";
 
 const NAME_MAX_LENGTH = 25;
@@ -135,6 +136,9 @@ export default function LoginPage({
   // Terms modal state
   const [termsOpen, setTermsOpen] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
+
+  // Support modal state
+  const [supportOpen, setSupportOpen] = useState(false);
 
   // Refs to read Chrome's autofilled DOM values (Chrome bypasses onChange)
   const emailRef = useRef(null);
@@ -964,21 +968,33 @@ export default function LoginPage({
                 </Box>
 
                 {!isSignUp && (
-                  <MuiLink
-                    component="button"
-                    variant="body2"
-                    onClick={handleForgotPassword}
-                    sx={{
-                      cursor: "pointer",
-                      color: BRAND.accent,
-                      fontWeight: 600,
-                      display: "block",
-                      mt: 2,
-                      textAlign: "center",
-                    }}
-                  >
-                    Forgot password?
-                  </MuiLink>
+                  <Box sx={{ display: "flex", justifyContent: "center", gap: 2, mt: 2 }}>
+                    <MuiLink
+                      component="button"
+                      variant="body2"
+                      onClick={handleForgotPassword}
+                      sx={{
+                        cursor: "pointer",
+                        color: BRAND.accent,
+                        fontWeight: 600,
+                      }}
+                    >
+                      Forgot password?
+                    </MuiLink>
+                    <Typography variant="body2" sx={{ color: "text.secondary" }}>·</Typography>
+                    <MuiLink
+                      component="button"
+                      variant="body2"
+                      onClick={() => setSupportOpen(true)}
+                      sx={{
+                        cursor: "pointer",
+                        color: BRAND.accent,
+                        fontWeight: 600,
+                      }}
+                    >
+                      Need Help?
+                    </MuiLink>
+                  </Box>
                 )}
 
                 {error && (
@@ -1063,6 +1079,13 @@ export default function LoginPage({
           // Run sign-up now that terms are accepted
           doSignUp();
         }}
+      />
+
+      {/* Support modal — available from login page without authentication */}
+      <LoginSupportModal
+        open={supportOpen}
+        onClose={() => setSupportOpen(false)}
+        effectiveTheme={effectiveTheme}
       />
     </>
   );

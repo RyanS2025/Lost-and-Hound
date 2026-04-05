@@ -1438,5 +1438,153 @@ app.get("/api/mod/messages", requireAuth, require2FA, requireModerator, async (r
   res.json({ messages: msgs || [], profiles: profileMap });
 });
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SUPPORT TICKETS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const VALID_SUPPORT_CATEGORIES = new Set([
+  "Login / Access Issue",
+  "Account or Profile Issue",
+  "Listing Problem",
+  "Messaging Issue",
+  "Technical Problem",
+  "Other",
+]);
+
+const SUPPORT_SUBJECT_MAX = 100;
+const SUPPORT_DESC_MAX = 500;
+const SUPPORT_NAME_MAX = 50;
+const SUPPORT_VALID_STATUSES = new Set(["open", "in_progress", "resolved", "closed"]);
+
+// POST /api/support — authenticated user submits a ticket
+app.post("/api/support", requireAuth, writeLimiter, async (req, res) => {
+  const { category, subject, description } = req.body;
+
+  if (!category || !subject || !description) {
+    return res.status(400).json({ error: "category, subject, and description are required." });
+  }
+  if (!VALID_SUPPORT_CATEGORIES.has(category)) {
+    return res.status(400).json({ error: "Invalid category." });
+  }
+
+  const safeSubject = sanitize(subject, SUPPORT_SUBJECT_MAX);
+  const safeDesc = sanitize(description, SUPPORT_DESC_MAX);
+
+  if (!safeSubject) return res.status(400).json({ error: "Subject is required." });
+  if (!safeDesc) return res.status(400).json({ error: "Description is required." });
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("first_name, last_name, email")
+    .eq("id", req.user.id)
+    .maybeSingle();
+
+  const { error } = await supabase.from("support_tickets").insert({
+    user_id: req.user.id,
+    email: profile?.email ?? null,
+    name: profile ? `${profile.first_name} ${profile.last_name}`.trim() : null,
+    category,
+    subject: safeSubject,
+    description: safeDesc,
+    status: "open",
+  });
+
+  if (error) return dbError(res, error, "POST /api/support");
+  res.status(201).json({ success: true });
+});
+
+// POST /api/support/guest — unauthenticated user submits a ticket (from login page)
+app.post("/api/support/guest", strictLimiter, async (req, res) => {
+  const { name, email, category, subject, description } = req.body;
+
+  if (!name || !email || !category || !subject || !description) {
+    return res.status(400).json({ error: "name, email, category, subject, and description are required." });
+  }
+  if (!VALID_SUPPORT_CATEGORIES.has(category)) {
+    return res.status(400).json({ error: "Invalid category." });
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ error: "Invalid email address." });
+  }
+
+  const safeName = sanitize(name, SUPPORT_NAME_MAX);
+  const safeEmail = sanitize(email, 254);
+  const safeSubject = sanitize(subject, SUPPORT_SUBJECT_MAX);
+  const safeDesc = sanitize(description, SUPPORT_DESC_MAX);
+
+  if (!safeName) return res.status(400).json({ error: "Name is required." });
+  if (!safeSubject) return res.status(400).json({ error: "Subject is required." });
+  if (!safeDesc) return res.status(400).json({ error: "Description is required." });
+
+  const { error } = await supabase.from("support_tickets").insert({
+    user_id: null,
+    email: safeEmail,
+    name: safeName,
+    category,
+    subject: safeSubject,
+    description: safeDesc,
+    status: "open",
+  });
+
+  if (error) return dbError(res, error, "POST /api/support/guest");
+  res.status(201).json({ success: true });
+});
+
+// GET /api/support — list tickets (moderators only)
+app.get("/api/support", requireAuth, require2FA, requireModerator, async (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = 20;
+  const offset = (page - 1) * limit;
+  const status = req.query.status || null;
+
+  let query = supabase
+    .from("support_tickets")
+    .select("*", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (status && SUPPORT_VALID_STATUSES.has(status)) {
+    query = query.eq("status", status);
+  }
+
+  const { data, error, count } = await query;
+  if (error) return dbError(res, error, "GET /api/support");
+
+  res.json({ tickets: data || [], total: count ?? 0, hasMore: offset + limit < (count ?? 0) });
+});
+
+// PATCH /api/support/:id/status — update ticket status (moderators only)
+app.patch("/api/support/:id/status", requireAuth, require2FA, requireModerator, async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: "Invalid id" });
+
+  const { status } = req.body;
+  if (!status || !SUPPORT_VALID_STATUSES.has(status)) {
+    return res.status(400).json({ error: "Invalid status. Must be one of: open, in_progress, resolved, closed." });
+  }
+
+  const { error } = await supabase
+    .from("support_tickets")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", req.params.id);
+
+  if (error) return dbError(res, error, "PATCH /api/support/:id/status");
+  res.json({ success: true });
+});
+
+// DELETE /api/support/:id — delete ticket (moderators only)
+app.delete("/api/support/:id", requireAuth, require2FA, requireModerator, async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: "Invalid id" });
+
+  const { error } = await supabase
+    .from("support_tickets")
+    .delete()
+    .eq("id", req.params.id);
+
+  if (error) return dbError(res, error, "DELETE /api/support/:id");
+  res.json({ success: true });
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
