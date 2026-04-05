@@ -198,7 +198,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                   placeholder="your@email.com"
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => setEmail(e.target.value.slice(0, NAME_MAX))}
                   fullWidth
                   size="small"
                   sx={{ "& .MuiOutlinedInput-root": { bgcolor: styles.inputBg } }}
