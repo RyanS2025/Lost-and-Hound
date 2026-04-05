@@ -1006,6 +1006,18 @@ function TicketCard({ ticket, onUpdateStatus, onDelete, processing, isDark, time
     >
       {/* Top row */}
       <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, flexWrap: "wrap", mb: 0.75 }}>
+        {ticket.ticket_type && (
+          <Chip
+            label={ticket.ticket_type}
+            size="small"
+            sx={{
+              fontWeight: 700, fontSize: 11,
+              background: isDark ? "rgba(168,77,72,0.2)" : "#A84D4815",
+              color: isDark ? "#FF6B3D" : "#A84D48",
+              border: isDark ? "1px solid rgba(168,77,72,0.3)" : "1px solid #d4a0a0",
+            }}
+          />
+        )}
         <Chip
           label={ticket.category}
           size="small"
@@ -1108,15 +1120,16 @@ function TicketCard({ ticket, onUpdateStatus, onDelete, processing, isDark, time
 // ============================================================
 // SUPPORT TICKETS SECTION
 // ============================================================
-function SupportTicketsSection({ tickets, loading, statusTab, onTabChange, onFetch, onUpdateStatus, onDelete, actionError, isDark, timeZone }) {
+function SupportTicketsSection({ tickets, loading, statusTab, onTabChange, onFetch, onUpdateStatus, onDelete, actionError, isDark, timeZone, ticketType }) {
   useEffect(() => { onFetch(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filtered = tickets.filter((t) => t.status === statusTab);
+  const typeFiltered = ticketType ? tickets.filter((t) => t.ticket_type === ticketType) : tickets;
+  const filtered = typeFiltered.filter((t) => t.status === statusTab);
   const counts = {
-    open:        tickets.filter((t) => t.status === "open").length,
-    in_progress: tickets.filter((t) => t.status === "in_progress").length,
-    resolved:    tickets.filter((t) => t.status === "resolved").length,
-    closed:      tickets.filter((t) => t.status === "closed").length,
+    open:        typeFiltered.filter((t) => t.status === "open").length,
+    in_progress: typeFiltered.filter((t) => t.status === "in_progress").length,
+    resolved:    typeFiltered.filter((t) => t.status === "resolved").length,
+    closed:      typeFiltered.filter((t) => t.status === "closed").length,
   };
 
   return (
@@ -1201,6 +1214,8 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
   const [tickets, setTickets] = useState([]);
   const [ticketsLoading, setTicketsLoading] = useState(false);
   const [ticketStatusTab, setTicketStatusTab] = useState("open");
+  const [feedbackStatusTab, setFeedbackStatusTab] = useState("open");
+  const [bugStatusTab, setBugStatusTab] = useState("open");
   const [ticketActionError, setTicketActionError] = useState("");
   const [ticketDeleteTarget, setTicketDeleteTarget] = useState(null);
 
@@ -1582,10 +1597,34 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
         )}
 
         {section === "feedback" && (
-          <EmptySection icon={<FeedbackIcon sx={{ color: "#A84D48", fontSize: 28 }} />} title="Feedback — Coming Soon" description="This section will display user feedback and feature requests." isDark={isDark} />
+          <SupportTicketsSection
+            tickets={tickets}
+            loading={ticketsLoading}
+            statusTab={feedbackStatusTab}
+            onTabChange={setFeedbackStatusTab}
+            onFetch={fetchTickets}
+            onUpdateStatus={updateTicketStatus}
+            onDelete={setTicketDeleteTarget}
+            actionError={ticketActionError}
+            isDark={isDark}
+            timeZone={timeZone}
+            ticketType="Feedback"
+          />
         )}
         {section === "bugs" && (
-          <EmptySection icon={<BugReportIcon sx={{ color: "#A84D48", fontSize: 28 }} />} title="Bug Reports — Coming Soon" description="This section will display bug reports with status tracking." isDark={isDark} />
+          <SupportTicketsSection
+            tickets={tickets}
+            loading={ticketsLoading}
+            statusTab={bugStatusTab}
+            onTabChange={setBugStatusTab}
+            onFetch={fetchTickets}
+            onUpdateStatus={updateTicketStatus}
+            onDelete={setTicketDeleteTarget}
+            actionError={ticketActionError}
+            isDark={isDark}
+            timeZone={timeZone}
+            ticketType="Bug Report"
+          />
         )}
         {section === "support-categories" && (
           <SupportTicketsSection
@@ -1595,6 +1634,7 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
             onTabChange={setTicketStatusTab}
             onFetch={fetchTickets}
             onUpdateStatus={updateTicketStatus}
+            ticketType="Support"
             onDelete={setTicketDeleteTarget}
             actionError={ticketActionError}
             isDark={isDark}

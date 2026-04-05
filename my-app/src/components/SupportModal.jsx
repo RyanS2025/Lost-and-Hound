@@ -7,15 +7,33 @@ import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import SupportAgentIcon from "@mui/icons-material/SupportAgent";
 import apiFetch from "../utils/apiFetch";
+import SupportFAQ from "./SupportFAQ";
 
-const CATEGORIES = [
-  "Login / Access Issue",
-  "Account or Profile Issue",
-  "Listing Problem",
-  "Messaging Issue",
-  "Technical Problem",
-  "Other",
-];
+const TICKET_TYPES = ["Support", "Bug Report", "Feedback"];
+
+const CATEGORIES_BY_TYPE = {
+  Support: [
+    "Login / Access Issue",
+    "Account or Profile Issue",
+    "Listing Problem",
+    "Messaging Issue",
+    "Technical Problem",
+    "Other",
+  ],
+  "Bug Report": [
+    "UI / Display Issue",
+    "App Crash / Freeze",
+    "Feature Not Working",
+    "Performance Issue",
+    "Other",
+  ],
+  Feedback: [
+    "Feature Request",
+    "Usability Improvement",
+    "Design Suggestion",
+    "General Feedback",
+  ],
+};
 
 const SUBJECT_MAX = 100;
 const DESC_MAX = 500;
@@ -39,6 +57,8 @@ export default function SupportModal({ open, onClose }) {
     buttonDisabledText: isDark ? "#808285" : "#aaa",
   };
 
+  const [tab, setTab] = useState("form");
+  const [ticketType, setTicketType] = useState("");
   const [category, setCategory] = useState("");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
@@ -46,7 +66,7 @@ export default function SupportModal({ open, onClose }) {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
 
-  const canSubmit = category && subject.trim() && description.trim() && !submitting;
+  const canSubmit = ticketType && category && subject.trim() && description.trim() && !submitting;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -56,6 +76,7 @@ export default function SupportModal({ open, onClose }) {
       await apiFetch("/api/support", {
         method: "POST",
         body: JSON.stringify({
+          ticketType,
           category,
           subject: subject.trim(),
           description: description.trim(),
@@ -72,6 +93,8 @@ export default function SupportModal({ open, onClose }) {
   const handleClose = () => {
     onClose();
     setTimeout(() => {
+      setTab("form");
+      setTicketType("");
       setCategory("");
       setSubject("");
       setDescription("");
@@ -154,6 +177,44 @@ export default function SupportModal({ open, onClose }) {
           </IconButton>
         </Box>
 
+        {/* Tabs */}
+        {!submitted && (
+          <Box
+            sx={{
+              display: "flex",
+              gap: 1,
+              px: 3,
+              py: 1.5,
+              borderBottom: `1.5px solid ${BRAND.divider}`,
+              flexShrink: 0,
+            }}
+          >
+            {["form", "faq"].map((t) => (
+              <Box
+                key={t}
+                onClick={() => setTab(t)}
+                sx={{
+                  px: 2,
+                  py: 0.75,
+                  borderRadius: 2,
+                  cursor: "pointer",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  userSelect: "none",
+                  transition: "all 0.15s",
+                  bgcolor: tab === t ? BRAND.accent : "transparent",
+                  color: tab === t ? "#fff" : BRAND.secondary,
+                  "&:hover": {
+                    bgcolor: tab === t ? BRAND.accentHover : BRAND.divider,
+                  },
+                }}
+              >
+                {t === "form" ? "Submit Ticket" : "Q&A"}
+              </Box>
+            ))}
+          </Box>
+        )}
+
         {/* Body */}
         <Box sx={{ flex: 1, overflowY: "auto", px: 3, py: 2.5, minHeight: 0 }}>
           {submitted ? (
@@ -166,9 +227,26 @@ export default function SupportModal({ open, onClose }) {
                 A moderator will review your request shortly. Thank you for reaching out.
               </Typography>
             </Box>
-          ) : (
+          ) : tab === "form" ? (
             <>
               <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                <InputLabel>Type</InputLabel>
+                <Select
+                  value={ticketType}
+                  label="Type"
+                  onChange={(e) => {
+                    setTicketType(e.target.value);
+                    setCategory("");
+                  }}
+                  sx={{ bgcolor: BRAND.inputBg }}
+                >
+                  {TICKET_TYPES.map((t) => (
+                    <MenuItem key={t} value={t}>{t}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <FormControl fullWidth size="small" sx={{ mb: 2 }} disabled={!ticketType}>
                 <InputLabel>Category</InputLabel>
                 <Select
                   value={category}
@@ -176,7 +254,7 @@ export default function SupportModal({ open, onClose }) {
                   onChange={(e) => setCategory(e.target.value)}
                   sx={{ bgcolor: BRAND.inputBg }}
                 >
-                  {CATEGORIES.map((c) => (
+                  {(CATEGORIES_BY_TYPE[ticketType] || []).map((c) => (
                     <MenuItem key={c} value={c}>{c}</MenuItem>
                   ))}
                 </Select>
@@ -218,6 +296,12 @@ export default function SupportModal({ open, onClose }) {
 
               {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
             </>
+          ) : (
+            <SupportFAQ
+              accent={BRAND.accent}
+              secondary={BRAND.secondary}
+              divider={BRAND.divider}
+            />
           )}
         </Box>
 
@@ -248,7 +332,7 @@ export default function SupportModal({ open, onClose }) {
             >
               Done
             </Button>
-          ) : (
+          ) : tab === "form" ? (
             <Button
               variant="contained"
               fullWidth
@@ -270,7 +354,7 @@ export default function SupportModal({ open, onClose }) {
             >
               {submitting ? <CircularProgress size={20} color="inherit" /> : "Submit Ticket"}
             </Button>
-          )}
+          ) : null}
         </Box>
       </Box>
     </Modal>

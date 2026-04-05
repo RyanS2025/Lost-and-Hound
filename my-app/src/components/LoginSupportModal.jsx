@@ -5,15 +5,33 @@ import {
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import SupportAgentIcon from "@mui/icons-material/SupportAgent";
+import SupportFAQ from "./SupportFAQ";
 
-const CATEGORIES = [
-  "Login / Access Issue",
-  "Account or Profile Issue",
-  "Listing Problem",
-  "Messaging Issue",
-  "Technical Problem",
-  "Other",
-];
+const TICKET_TYPES = ["Support", "Bug Report", "Feedback"];
+
+const CATEGORIES_BY_TYPE = {
+  Support: [
+    "Login / Access Issue",
+    "Account or Profile Issue",
+    "Listing Problem",
+    "Messaging Issue",
+    "Technical Problem",
+    "Other",
+  ],
+  "Bug Report": [
+    "UI / Display Issue",
+    "App Crash / Freeze",
+    "Feature Not Working",
+    "Performance Issue",
+    "Other",
+  ],
+  Feedback: [
+    "Feature Request",
+    "Usability Improvement",
+    "Design Suggestion",
+    "General Feedback",
+  ],
+};
 
 const NAME_MAX = 50;
 const SUBJECT_MAX = 100;
@@ -41,6 +59,8 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
     [isDark]
   );
 
+  const [tab, setTab] = useState("form");
+  const [ticketType, setTicketType] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [category, setCategory] = useState("");
@@ -51,7 +71,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
   const [error, setError] = useState("");
 
   const canSubmit =
-    name.trim() && email.trim() && category && subject.trim() && description.trim() && !submitting;
+    ticketType && name.trim() && email.trim() && category && subject.trim() && description.trim() && !submitting;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -62,6 +82,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          ticketType,
           name: name.trim(),
           email: email.trim(),
           category,
@@ -84,6 +105,8 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
   const handleClose = () => {
     onClose();
     setTimeout(() => {
+      setTab("form");
+      setTicketType("");
       setName("");
       setEmail("");
       setCategory("");
@@ -161,6 +184,44 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
           </IconButton>
         </Box>
 
+        {/* Tabs */}
+        {!submitted && (
+          <Box
+            sx={{
+              display: "flex",
+              gap: 1,
+              px: 3,
+              py: 1.5,
+              borderBottom: `1.5px solid ${styles.divider}`,
+              flexShrink: 0,
+            }}
+          >
+            {["form", "faq"].map((t) => (
+              <Box
+                key={t}
+                onClick={() => setTab(t)}
+                sx={{
+                  px: 2,
+                  py: 0.75,
+                  borderRadius: 2,
+                  cursor: "pointer",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  userSelect: "none",
+                  transition: "all 0.15s",
+                  bgcolor: tab === t ? styles.accent : "transparent",
+                  color: tab === t ? "#fff" : styles.secondary,
+                  "&:hover": {
+                    bgcolor: tab === t ? styles.accentHover : styles.divider,
+                  },
+                }}
+              >
+                {t === "form" ? "Submit Ticket" : "Q&A"}
+              </Box>
+            ))}
+          </Box>
+        )}
+
         {/* Body */}
         <Box sx={{ flex: 1, overflowY: "auto", px: 3, py: 2.5, minHeight: 0 }}>
           {submitted ? (
@@ -180,7 +241,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                 A moderator will review your request shortly. Thank you for reaching out.
               </Typography>
             </Box>
-          ) : (
+          ) : tab === "form" ? (
             <>
               <Box sx={{ display: "flex", gap: 1.5, mb: 2 }}>
                 <TextField
@@ -206,6 +267,23 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
               </Box>
 
               <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                <InputLabel>Type</InputLabel>
+                <Select
+                  value={ticketType}
+                  label="Type"
+                  onChange={(e) => {
+                    setTicketType(e.target.value);
+                    setCategory("");
+                  }}
+                  sx={{ bgcolor: styles.inputBg }}
+                >
+                  {TICKET_TYPES.map((t) => (
+                    <MenuItem key={t} value={t}>{t}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <FormControl fullWidth size="small" sx={{ mb: 2 }} disabled={!ticketType}>
                 <InputLabel>Category</InputLabel>
                 <Select
                   value={category}
@@ -213,7 +291,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                   onChange={(e) => setCategory(e.target.value)}
                   sx={{ bgcolor: styles.inputBg }}
                 >
-                  {CATEGORIES.map((c) => (
+                  {(CATEGORIES_BY_TYPE[ticketType] || []).map((c) => (
                     <MenuItem key={c} value={c}>{c}</MenuItem>
                   ))}
                 </Select>
@@ -255,6 +333,12 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
 
               {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
             </>
+          ) : (
+            <SupportFAQ
+              accent={styles.accent}
+              secondary={styles.secondary}
+              divider={styles.divider}
+            />
           )}
         </Box>
 
@@ -285,7 +369,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
             >
               Done
             </Button>
-          ) : (
+          ) : tab === "form" ? (
             <Button
               variant="contained"
               fullWidth
@@ -307,7 +391,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
             >
               {submitting ? <CircularProgress size={20} color="inherit" /> : "Submit Ticket"}
             </Button>
-          )}
+          ) : null}
         </Box>
       </Box>
     </Modal>
