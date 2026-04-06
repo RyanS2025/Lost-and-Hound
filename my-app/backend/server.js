@@ -1690,6 +1690,8 @@ app.post("/api/support-tickets/:id/replies", requireAuth, async (req, res) => {
   } catch (error) {
     dbError(res, error, "posting reply");
   }
+});
+
 // Catch-all: log any request that didn't match a route
 app.use((req, res) => {
   console.log(`[404] No route matched: ${req.method} ${req.path}`);
