@@ -1,5 +1,6 @@
 import { useState } from "react";
-import apiFetch from "../utils/apiFetch";
+import { supabase } from "../../backend/supabaseClient";
+import { API_BASE } from "../utils/apiFetch";
 import {
   Paper,
   TextField,
@@ -101,10 +102,19 @@ export default function ResetPasswordPage({ effectiveTheme = "light", onComplete
 
     setLoading(true);
     try {
-      await apiFetch("/api/auth/reset-password", {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) throw new Error("Session expired. Please request a new reset link.");
+      const res = await fetch(`${API_BASE}/api/auth/reset-password`, {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ password }),
       });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Request failed");
       setSuccess(true);
     } catch (err) {
       setError(err.message || "Something went wrong. Please try again.");
