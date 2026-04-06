@@ -692,16 +692,14 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
 }
 
 // --- FeedPage ---
-export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE }) {
+export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE, sharedItems, setSharedItems, sharedItemsLoaded, refreshItems }) {
   const isDark = effectiveTheme === "dark";
   const pageBg = isDark ? "#101214" : "#f9f5f4";
   const pageDot = isDark ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
   const { user, profile } = useAuth();
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
+  const items = sharedItems;
+  const setItems = setSharedItems;
+  const loading = !sharedItemsLoaded;
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [sort, setSort] = useState("Newest");
@@ -712,34 +710,18 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
   const [selectedCampus, setSelectedCampus] = useState(profile?.default_campus || "boston");
   // "all" shows both found and lost listings. "found" / "lost" narrows to one type.
   const [listingTypeFilter, setListingTypeFilter] = useState("all");
+  const [refreshing, setRefreshing] = useState(false);
 
-  const fetchItems = useCallback(async (page = 1, append = false) => {
-    if (page === 1) setLoading(true);
-    else setLoadingMore(true);
+  const fetchItems = useCallback(async () => {
+    setRefreshing(true);
+    await refreshItems();
+    setRefreshing(false);
+  }, [refreshItems]);
 
-    try {
-      await apiFetch("/api/listings/cleanup", { method: "POST" });
-    } catch (err) {
-      console.error("Cleanup error:", err);
-    }
-
-    try {
-      const result = await apiFetch(`/api/listings?page=${page}&limit=10`);
-      const newItems = result?.data ?? [];
-      setItems(prev => append ? [...prev, ...newItems] : newItems);
-      setHasMore(result?.hasMore ?? false);
-      setCurrentPage(page);
-    } catch (err) {
-      console.error("Fetch listings error:", err);
-    }
-
-    setLoading(false);
-    setLoadingMore(false);
-  }, []);
-
+  // Silently refresh in background on page visit (stale-while-revalidate)
   useEffect(() => {
-    fetchItems();
-  }, [fetchItems]);
+    if (sharedItemsLoaded) refreshItems();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleClaim = async (item_id) => {
     try {
@@ -921,25 +903,6 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
             ? <Typography textAlign="center" color={isDark ? "#818384" : "text.disabled"} fontWeight={700} sx={{ mt: 8 }}>No items found.</Typography>
             : <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
                 {filtered.map(item => <ItemCard key={item.item_id} item={item} onClick={setSelected} isDark={isDark} timeZone={timeZone} />)}
-                {hasMore && (
-                  <Box sx={{ display: "flex", justifyContent: "center", mt: 2, mb: 1 }}>
-                    <Button
-                      variant="outlined"
-                      onClick={() => fetchItems(currentPage + 1, true)}
-                      disabled={loadingMore}
-                      sx={{
-                        color: isDark ? "#FF4500" : "#A84D48",
-                        borderColor: isDark ? "rgba(255,69,0,0.4)" : "#A84D48",
-                        fontWeight: 700,
-                        borderRadius: 2,
-                        textTransform: "none",
-                        "&:hover": { borderColor: isDark ? "#FF4500" : "#8f3e3a", background: isDark ? "rgba(255,69,0,0.08)" : "rgba(168,77,72,0.06)" },
-                      }}
-                    >
-                      {loadingMore ? <CircularProgress size={20} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} /> : "Load More"}
-                    </Button>
-                  </Box>
-                )}
               </Box>
         }
       </Box>
