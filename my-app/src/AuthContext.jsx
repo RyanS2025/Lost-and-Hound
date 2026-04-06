@@ -47,8 +47,8 @@ export function AuthProvider({ children }) {
   // Fetch profile when user ID changes or when auth token changes (e.g. after MFA verify).
   useEffect(() => {
     const fetchProfile = async () => {
-      if (!user?.id || !sessionToken) {
-        setProfile(null);
+      if (!user?.id || !sessionToken || isPasswordRecovery) {
+        if (!isPasswordRecovery) setProfile(null);
         return;
       }
       try {
@@ -61,7 +61,7 @@ export function AuthProvider({ children }) {
       };
 
     fetchProfile();
-  }, [user?.id, sessionToken]);
+  }, [user?.id, sessionToken, isPasswordRecovery]);
 
   const logout = async () => {
     setSessionToken(null);
