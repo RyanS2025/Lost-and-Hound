@@ -1014,6 +1014,56 @@ app.get("/api/conversations/:id/messages", requireAuth, require2FA, requireConve
   res.json({ messages: (data || []).reverse(), isClosed: (hiddenCount ?? 0) > 0, page, limit, total: count ?? 0, hasMore: offset + limit < (count ?? 0) });
 });
 
+// Total count of unread messages across all of the user's visible conversations.
+// Used by the navbar badge — lightweight head-count query, no message content returned.
+app.get("/api/messages/unread-count", requireAuth, require2FA, async (req, res) => {
+  console.log(`[unread-count] reached — user=${req.user?.id}`);
+  const userId = req.user.id;
+
+  // Find all conversations the user is in
+  const { data: convos, error: convoErr } = await supabase
+    .from("conversations")
+    .select("id")
+    .or(`participant_1.eq.${userId},participant_2.eq.${userId}`);
+
+  if (convoErr) return dbError(res, convoErr, "GET /api/messages/unread-count");
+  if (!convos || convos.length === 0) return res.json({ count: 0 });
+
+  // Exclude hidden/closed conversations
+  const { data: hiddenData } = await supabase
+    .from("hidden_conversations")
+    .select("conversation_id")
+    .eq("user_id", userId);
+
+  const hiddenIds = new Set((hiddenData || []).map((h) => h.conversation_id));
+  const visibleIds = convos.map((c) => c.id).filter((id) => !hiddenIds.has(id));
+  if (visibleIds.length === 0) return res.json({ count: 0 });
+
+  // Count messages sent by others that this user hasn't read yet
+  const { count, error } = await supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .in("conversation_id", visibleIds)
+    .neq("sender_id", userId)
+    .eq("read", false);
+
+  if (error) return dbError(res, error, "GET /api/messages/unread-count");
+  res.json({ count: count ?? 0 });
+});
+
+// Mark all unread messages in a conversation as read (those sent by the other participant).
+app.patch("/api/conversations/:id/read", requireAuth, require2FA, requireConversationParticipant, async (req, res) => {
+  const { error } = await supabase
+    .from("messages")
+    .update({ read: true })
+    .eq("conversation_id", req.params.id)
+    .neq("sender_id", req.user.id)
+    .eq("read", false);
+
+  if (error) return dbError(res, error, "PATCH /api/conversations/read");
+  res.json({ ok: true });
+});
+
 // Send messages — must be a participant, must not be banned
 app.post("/api/conversations/:id/messages", writeLimiter, requireAuth, require2FA, requireNotBanned, requireConversationParticipant, async (req, res) => {
   const content = sanitize(req.body.content, 500);
@@ -1640,6 +1690,10 @@ app.post("/api/support-tickets/:id/replies", requireAuth, async (req, res) => {
   } catch (error) {
     dbError(res, error, "posting reply");
   }
+// Catch-all: log any request that didn't match a route
+app.use((req, res) => {
+  console.log(`[404] No route matched: ${req.method} ${req.path}`);
+  res.status(404).json({ error: "Not found" });
 });
 
 const PORT = process.env.PORT || 3001;
