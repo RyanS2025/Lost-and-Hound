@@ -277,8 +277,11 @@ function SidePanelContent({ isDark, radius, setRadius, nearbyItems, mapInstanceR
                 </Box>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography fontWeight={800} fontSize={13} noWrap>{item.title}</Typography>
-                  <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600} noWrap>
-                    {item.locations?.name ?? "Unknown"} · {formatRelativeDate(item.date, timeZone, { compact: true })}
+                  <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600} noWrap sx={{ display: "block" }}>
+                    {item.locations?.name ?? "Unknown"}
+                  </Typography>
+                  <Typography variant="caption" color={isDark ? "#818384" : "text.disabled"} fontWeight={600} sx={{ display: "block", fontSize: 11 }}>
+                    {formatRelativeDate(item.date, timeZone, { compact: true })}
                   </Typography>
                 </Box>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, flexShrink: 0, alignItems: "flex-end" }}>

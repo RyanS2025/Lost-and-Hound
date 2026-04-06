@@ -18,6 +18,7 @@ import {
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import TermsModal from "../components/TermsModal";
+import DemoModal from "../components/DemoModal";
 import apiFetch from "../utils/apiFetch";
 
 const NAME_MAX_LENGTH = 25;
@@ -142,6 +143,9 @@ export default function LoginPage({
   // Terms modal state
   const [termsOpen, setTermsOpen] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
+
+  // Demo modal state
+  const [demoOpen, setDemoOpen] = useState(false);
 
   // Refs to read Chrome's autofilled DOM values (Chrome bypasses onChange)
   const emailRef = useRef(null);
@@ -661,6 +665,24 @@ export default function LoginPage({
             >
               Made for Oasis @ Northeastern
             </Typography>
+
+            <Typography
+              variant="caption"
+              onClick={() => setDemoOpen(true)}
+              sx={{
+                color: BRAND.leftPanelBody,
+                mt: 1,
+                position: "relative",
+                zIndex: 1,
+                cursor: "pointer",
+                fontWeight: 700,
+                textDecoration: "underline",
+                textUnderlineOffset: 3,
+                "&:hover": { opacity: 0.85 },
+              }}
+            >
+              Want to preview our project?
+            </Typography>
           </Box>
 
           {/* --- Right panel: form --- */}
@@ -1113,6 +1135,13 @@ export default function LoginPage({
           // Run sign-up now that terms are accepted
           doSignUp();
         }}
+      />
+
+      {/* Demo preview modal */}
+      <DemoModal
+        open={demoOpen}
+        onClose={() => setDemoOpen(false)}
+        effectiveTheme={effectiveTheme}
       />
     </>
   );
