@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { setOptions, importLibrary } from "@googlemaps/js-api-loader";
 import { useAuth } from "../AuthContext";
@@ -317,7 +317,7 @@ function SidePanelContent({ isDark, radius, setRadius, nearbyItems, mapInstanceR
 }
 
 // --- MapPage ---
-export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE }) {
+export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE, sharedItems, setSharedItems, sharedItemsLoaded, refreshItems }) {
   const isDark = effectiveTheme === "dark";
   const isMobile = useMediaQuery("(max-width:900px)");
   const pageBg = isDark ? "#101214" : "#f9f5f4";
@@ -335,8 +335,7 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
 
   const [selectedCampus, setSelectedCampus] = useState(initialCampus);
   const [campusBuildings, setCampusBuildings] = useState([]);
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const loading = !sharedItemsLoaded;
   const [searchPin, setSearchPin] = useState(null);
   const [radius, setRadius] = useState(150);
   const [nearbyItems, setNearbyItems] = useState([]);
@@ -369,47 +368,25 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
     })();
   }, [selectedCampus]);
 
-  // ---- Fetch all listings ----
-  const fetchItems = useCallback(async () => {
-    setLoading(true);
-
-    try {
-      await apiFetch("/api/listings/cleanup", { method: "POST" });
-
-      // Fetch all pages for the map view
-      let allItems = [];
-      let page = 1;
-      let hasMore = true;
-      while (hasMore) {
-        const result = await apiFetch(`/api/listings?page=${page}&limit=100`);
-        allItems = [...allItems, ...(result?.data || [])];
-        hasMore = result?.hasMore ?? false;
-        page++;
-      }
-
-      const normalized = allItems.map((item) => {
-        let lat = item.lat;
-        let lng = item.lng;
-        if (lat == null && item.locations?.coordinates) {
-          const parsed = parseCoordinates(item.locations.coordinates);
-          if (parsed) { lat = parsed.lat; lng = parsed.lng; }
-        }
-        return { ...item, _lat: lat, _lng: lng };
-      });
-      setItems(normalized);
-    } catch (err) {
-      console.error("Failed to fetch listings:", err);
-      setItems([]);
-    } finally {
-      setLoading(false);
+  // Normalize shared items with lat/lng for map display
+  const items = useMemo(() => sharedItems.map((item) => {
+    let lat = item.lat;
+    let lng = item.lng;
+    if (lat == null && item.locations?.coordinates) {
+      const parsed = parseCoordinates(item.locations.coordinates);
+      if (parsed) { lat = parsed.lat; lng = parsed.lng; }
     }
-  }, []);
+    return { ...item, _lat: lat, _lng: lng };
+  }), [sharedItems]);
 
-  useEffect(() => { fetchItems(); }, [fetchItems]);
+  // Silently refresh in background on page visit (stale-while-revalidate)
+  useEffect(() => {
+    if (sharedItemsLoaded) refreshItems();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchItems();
+    await refreshItems();
     if (mapInstanceRef.current) {
       mapInstanceRef.current.panTo(activeCampus.center);
       mapInstanceRef.current.setZoom(activeCampus.zoom);
@@ -432,7 +409,7 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
   const handleClaim = async (item_id) => {
     try {
       await apiFetch(`/api/listings/${item_id}/resolve`, { method: "PATCH" });
-      setItems(prev => prev.map(i => i.item_id === item_id ? { ...i, resolved: true } : i));
+      setSharedItems(prev => prev.map(i => i.item_id === item_id ? { ...i, resolved: true } : i));
       if (selectedItem?.item_id === item_id) setSelectedItem(prev => ({ ...prev, resolved: true }));
     } catch (err) {
       console.error("Failed to resolve listing:", err);

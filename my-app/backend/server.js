@@ -843,23 +843,19 @@ app.get("/api/conversations", requireAuth, require2FA, async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
 
-  const { data: convos, error } = await supabase
-    .from("conversations")
-    .select("*")
-    .or(`participant_1.eq.${userId},participant_2.eq.${userId}`)
-    .order("created_at", { ascending: false });
+  // Fetch conversations and hidden list in parallel
+  const [convosResult, hiddenResult] = await Promise.all([
+    supabase.from("conversations").select("*").or(`participant_1.eq.${userId},participant_2.eq.${userId}`).order("created_at", { ascending: false }),
+    supabase.from("hidden_conversations").select("conversation_id").eq("user_id", userId),
+  ]);
 
-  if (error) return dbError(res, error, "GET /api/conversations");
+  if (convosResult.error) return dbError(res, convosResult.error, "GET /api/conversations");
+  const convos = convosResult.data;
   if (!convos || convos.length === 0) {
     return res.json({ conversations: [], profiles: {}, listings: {}, page, limit, total: 0, hasMore: false });
   }
 
-  const { data: hiddenData } = await supabase
-    .from("hidden_conversations")
-    .select("conversation_id")
-    .eq("user_id", userId);
-
-  const hiddenIds = new Set((hiddenData || []).map((h) => h.conversation_id));
+  const hiddenIds = new Set((hiddenResult.data || []).map((h) => h.conversation_id));
   const visible = convos.filter((c) => !hiddenIds.has(c.id));
 
   const total = visible.length;
@@ -869,24 +865,20 @@ app.get("/api/conversations", requireAuth, require2FA, async (req, res) => {
   const otherIds = paginated.map((c) =>
     c.participant_1 === userId ? c.participant_2 : c.participant_1
   );
+  const listingIds = paginated.map((c) => c.listing_id).filter(Boolean);
 
-  const { data: profileData } = await supabase
-    .from("profiles")
-    .select("id, first_name, last_name")
-    .in("id", otherIds);
+  // Fetch profiles and listings in parallel
+  const [profileResult, listingResult] = await Promise.all([
+    supabase.from("profiles").select("id, first_name, last_name").in("id", otherIds),
+    listingIds.length > 0
+      ? supabase.from("listings").select("item_id, title").in("item_id", listingIds)
+      : Promise.resolve({ data: [] }),
+  ]);
 
   const profileMap = {};
-  (profileData || []).forEach((p) => { profileMap[p.id] = p; });
-
-  const listingIds = paginated.map((c) => c.listing_id).filter(Boolean);
+  (profileResult.data || []).forEach((p) => { profileMap[p.id] = p; });
   const listingMap = {};
-  if (listingIds.length > 0) {
-    const { data: listingData } = await supabase
-      .from("listings")
-      .select("item_id, title")
-      .in("item_id", listingIds);
-    (listingData || []).forEach((l) => { listingMap[l.item_id] = l; });
-  }
+  (listingResult.data || []).forEach((l) => { listingMap[l.item_id] = l; });
 
   res.json({ conversations: paginated, profiles: profileMap, listings: listingMap, page, limit, total, hasMore: offset + limit < total });
 });
@@ -996,22 +988,16 @@ app.get("/api/conversations/:id/messages", requireAuth, require2FA, requireConve
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 10));
   const offset = (page - 1) * limit;
 
-  const { data, error, count } = await supabase
-    .from("messages")
-    .select("*", { count: "exact" })
-    .eq("conversation_id", req.params.id)
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1);
+  // Fetch messages and closed status in parallel
+  const [msgResult, hiddenResult] = await Promise.all([
+    supabase.from("messages").select("*", { count: "exact" }).eq("conversation_id", req.params.id).order("created_at", { ascending: false }).range(offset, offset + limit - 1),
+    supabase.from("hidden_conversations").select("id", { count: "exact", head: true }).eq("conversation_id", req.params.id),
+  ]);
 
-  if (error) return dbError(res, error, "GET /api/conversations/messages");
-
-  const { count: hiddenCount } = await supabase
-    .from("hidden_conversations")
-    .select("id", { count: "exact", head: true })
-    .eq("conversation_id", req.params.id);
+  if (msgResult.error) return dbError(res, msgResult.error, "GET /api/conversations/messages");
 
   // Reverse so messages display oldest-first in the UI
-  res.json({ messages: (data || []).reverse(), isClosed: (hiddenCount ?? 0) > 0, page, limit, total: count ?? 0, hasMore: offset + limit < (count ?? 0) });
+  res.json({ messages: (msgResult.data || []).reverse(), isClosed: (hiddenResult.count ?? 0) > 0, page, limit, total: msgResult.count ?? 0, hasMore: offset + limit < (msgResult.count ?? 0) });
 });
 
 // Total count of unread messages across all of the user's visible conversations.

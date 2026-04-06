@@ -1,5 +1,5 @@
 import './App.css';
-import { Routes, Route, Link } from "react-router-dom";
+import { Routes, Route, Link, useLocation } from "react-router-dom";
 import { supabase } from "../backend/supabaseClient";
 import { useAuth } from "./AuthContext";
 import LoginPage from "./pages/LoginPage";
@@ -32,8 +32,14 @@ import apiFetch from './utils/apiFetch';
 
 export default function App() {
   const { user, profile, logout, isPasswordRecovery, setIsPasswordRecovery } = useAuth();
+  const location = useLocation();
   const darkBg = "#101214";
   const isCompactNav = useMediaQuery("(max-width:1100px)");
+
+  // Scroll to top on route change
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
 
   const [themeMode, setThemeMode] = useState(() => {
     const saved = localStorage.getItem("themeMode");
@@ -45,6 +51,66 @@ export default function App() {
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches
   );
+
+  // Conversations state — lifted here so data persists across page navigations
+  const [msgConversations, setMsgConversations] = useState([]);
+  const [msgProfiles, setMsgProfiles] = useState({});
+  const [msgListings, setMsgListings] = useState({});
+  const [msgConversationsLoaded, setMsgConversationsLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      setMsgConversations([]);
+      setMsgProfiles({});
+      setMsgListings({});
+      setMsgConversationsLoaded(false);
+      return;
+    }
+    const fetchConversations = async () => {
+      try {
+        const result = await apiFetch("/api/conversations");
+        setMsgConversations(result?.conversations || []);
+        setMsgProfiles(result?.profiles || {});
+        setMsgListings(result?.listings || {});
+      } catch (err) {
+        console.error("Fetch conversations error:", err);
+      }
+      setMsgConversationsLoaded(true);
+    };
+    fetchConversations();
+  }, [user]);
+
+  // Shared listings state — fetched once, used by Feed and Map pages
+  const [sharedItems, setSharedItems] = useState([]);
+  const [sharedItemsLoaded, setSharedItemsLoaded] = useState(false);
+
+  const fetchAllItems = useCallback(async () => {
+    try {
+      await apiFetch("/api/listings/cleanup", { method: "POST" }).catch(() => {});
+      let allItems = [];
+      let page = 1;
+      let hasMore = true;
+      while (hasMore) {
+        const result = await apiFetch(`/api/listings?page=${page}&limit=100`);
+        allItems = [...allItems, ...(result?.data || [])];
+        hasMore = result?.hasMore ?? false;
+        page++;
+      }
+      setSharedItems(allItems);
+    } catch (err) {
+      console.error("Fetch listings error:", err);
+    }
+    setSharedItemsLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setSharedItems([]);
+      setSharedItemsLoaded(false);
+      return;
+    }
+    fetchAllItems();
+  }, [user, fetchAllItems]);
 
   // Unread message count — shown as a badge on the Messages nav button
   const [unreadCount, setUnreadCount] = useState(0);
@@ -582,9 +648,9 @@ export default function App() {
       >
         <Box sx={{ mt: 0, pb: { xs: "78px", sm: "64px" } }}>
           <Routes>
-            <Route path="/" element={<FeedPage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
-            <Route path="/map" element={<MapPage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
-            <Route path="/messages" element={<MessagePage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
+            <Route path="/" element={<FeedPage effectiveTheme={effectiveTheme} timeZone={timeZone} sharedItems={sharedItems} setSharedItems={setSharedItems} sharedItemsLoaded={sharedItemsLoaded} refreshItems={fetchAllItems} />} />
+            <Route path="/map" element={<MapPage effectiveTheme={effectiveTheme} timeZone={timeZone} sharedItems={sharedItems} setSharedItems={setSharedItems} sharedItemsLoaded={sharedItemsLoaded} refreshItems={fetchAllItems} />} />
+            <Route path="/messages" element={<MessagePage effectiveTheme={effectiveTheme} timeZone={timeZone} conversations={msgConversations} setConversations={setMsgConversations} profiles={msgProfiles} setProfiles={setMsgProfiles} listings={msgListings} setListings={setMsgListings} conversationsLoaded={msgConversationsLoaded} />} />
             <Route
               path="/settings"
               element={
