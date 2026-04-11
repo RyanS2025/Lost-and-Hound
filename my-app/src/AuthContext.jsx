@@ -83,7 +83,7 @@ export function AuthProvider({ children }) {
   if (loading) return <div>Loading...</div>;
 
   return (
-    <AuthContext.Provider value={{ user, profile, updateProfile, logout, forgotPassword, isPasswordRecovery, setIsPasswordRecovery }}>
+    <AuthContext.Provider value={{ user, profile, sessionToken, updateProfile, logout, forgotPassword, isPasswordRecovery, setIsPasswordRecovery }}>
       {children}
     </AuthContext.Provider>
   );

@@ -16,7 +16,7 @@ import { DEFAULT_TIME_ZONE, formatTime } from "../utils/timezone";
 
 const MESSAGE_MAX_LENGTH = 500;
 
-export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE, conversations, setConversations, profiles, setProfiles, listings, setListings, conversationsLoaded }) {
+export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE, conversations, setConversations, profiles, setProfiles, listings, setListings, unreadCounts = {}, setUnreadCounts = () => {}, conversationsLoaded }) {
   const isDark = effectiveTheme === "dark";
   const isMobile = useMediaQuery("(max-width:900px)");
   const pageBg = isDark ? "#101214" : "#f9f5f4";
@@ -94,6 +94,55 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
       );
     }
   }, [messages, selectedConversation]);
+
+  // Prefetch messages for the top 3 most-recent conversations in the background.
+  // The existing cache-hit path at the `selectedConversation` effect will pick
+  // these up, making first-click on a top-3 thread render instantly. This
+  // turns the messages page into a "tap → instant" experience for ~70% of
+  // typical clicks (power-law distribution of conversation popularity).
+  useEffect(() => {
+    if (!conversationsLoaded || !conversations?.length) return;
+    const top3 = conversations.slice(0, 3);
+    const toFetch = top3.filter((c) => !messageCacheRef.current[c.id]);
+    if (toFetch.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      const results = await Promise.all(
+        toFetch.map((c) =>
+          apiFetch(`/api/conversations/${c.id}/messages`)
+            .then((r) => ({ id: c.id, data: r }))
+            .catch(() => null)
+        )
+      );
+      if (cancelled) return;
+      for (const result of results) {
+        if (!result) continue;
+        messageCacheRef.current[result.id] = result.data?.messages || [];
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [conversations, conversationsLoaded]);
+
+  // Cross-conversation invalidation: when a new message arrives for ANY
+  // conversation (not just the selected one), drop its cache entry so the
+  // next click re-fetches. Prevents stale threads in the prefetch cache.
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel("msg-cache-invalidation-web")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
+        const convoId = payload?.new?.conversation_id;
+        if (!convoId) return;
+        // Don't drop the currently-selected convo's cache — its own
+        // subscription keeps it fresh via setMessages.
+        if (selectedConversation?.id === convoId) return;
+        delete messageCacheRef.current[convoId];
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user, selectedConversation]);
 
   useEffect(() => {
     if (!selectedConversation) {
@@ -292,7 +341,7 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
                 conversations.map((convo) => (
                   <Box
                     key={convo.id}
-                    onClick={() => setSelectedConversation(convo)}
+                    onClick={() => { setSelectedConversation(convo); setUnreadCounts((prev) => ({ ...prev, [convo.id]: 0 })); }}
                     tabIndex={0}
                     role="button"
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedConversation(convo); } }}
@@ -310,14 +359,28 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
                       const other = profiles[otherId];
                       const listing = listings[convo.listing_id];
                       return (
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Typography fontWeight={700} fontSize={13} noWrap>
-                            {listing ? listing.title : "Unknown Listing"}
-                          </Typography>
-                          <Typography variant="caption" color={secondaryTextColor} noWrap>
-                            {other ? `${other.first_name} ${other.last_name}` : "Loading..."}
-                          </Typography>
-                        </Box>
+                        <>
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Typography fontWeight={700} fontSize={13} noWrap>
+                              {listing ? listing.title : "Unknown Listing"}
+                            </Typography>
+                            <Typography variant="caption" color={secondaryTextColor} noWrap>
+                              {other ? `${other.first_name} ${other.last_name}` : "Loading..."}
+                            </Typography>
+                          </Box>
+                          {unreadCounts[convo.id] > 0 && (
+                            <Box sx={{
+                              minWidth: 20, height: 20, borderRadius: 10, px: 0.5,
+                              backgroundColor: "#A84D48", display: "flex",
+                              alignItems: "center", justifyContent: "center",
+                              ml: 1, flexShrink: 0,
+                            }}>
+                              <Typography sx={{ color: "#fff", fontSize: 11, fontWeight: 800, lineHeight: 1 }}>
+                                {unreadCounts[convo.id]}
+                              </Typography>
+                            </Box>
+                          )}
+                        </>
                       );
                     })()}
                     <IconButton

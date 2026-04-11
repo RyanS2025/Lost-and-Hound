@@ -23,7 +23,14 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5173")
   .map((o) => o.trim());
 
 app.use(cors({
-  origin: allowedOrigins,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, server-to-server)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true,
 }));
 app.use(cookieParser());
@@ -880,7 +887,18 @@ app.get("/api/conversations", requireAuth, require2FA, async (req, res) => {
   const listingMap = {};
   (listingResult.data || []).forEach((l) => { listingMap[l.item_id] = l; });
 
-  res.json({ conversations: paginated, profiles: profileMap, listings: listingMap, page, limit, total, hasMore: offset + limit < total });
+  // Fetch unread counts per conversation in parallel
+  const unreadCounts = {};
+  if (paginated.length > 0) {
+    const unreadResults = await Promise.all(
+      paginated.map((c) =>
+        supabase.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", c.id).neq("sender_id", userId).eq("read", false)
+      )
+    );
+    paginated.forEach((c, i) => { unreadCounts[c.id] = unreadResults[i].count ?? 0; });
+  }
+
+  res.json({ conversations: paginated, profiles: profileMap, listings: listingMap, unreadCounts, page, limit, total, hasMore: offset + limit < total });
 });
 
 // Must be a participant to view
@@ -1069,6 +1087,22 @@ app.post("/api/conversations/:id/messages", writeLimiter, requireAuth, require2F
     .single();
 
   if (error) return dbError(res, error, "POST /api/conversations/messages");
+
+  // Send push notification to the other participant
+  const otherId = req.conversation.participant_1 === req.user.id
+    ? req.conversation.participant_2
+    : req.conversation.participant_1;
+
+  const { data: senderProfile } = await supabase
+    .from("profiles")
+    .select("first_name")
+    .eq("id", req.user.id)
+    .single();
+
+  const senderName = senderProfile?.first_name || "Someone";
+  const preview = content.length > 80 ? content.slice(0, 80) + "..." : content;
+  sendPushNotification(otherId, senderName, preview, { conversationId: req.params.id }).catch(() => {});
+
   res.json(data);
 });
 
@@ -1683,6 +1717,70 @@ app.use((req, res) => {
   console.log(`[404] No route matched: ${req.method} ${req.path}`);
   res.status(404).json({ error: "Not found" });
 });
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PUSH NOTIFICATIONS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Register or update an Expo push token for the current user.
+app.post("/api/push-tokens", requireAuth, require2FA, async (req, res) => {
+  const { expoPushToken, platform } = req.body;
+  if (!expoPushToken || typeof expoPushToken !== "string") {
+    return res.status(400).json({ error: "expoPushToken is required" });
+  }
+
+  const { error } = await supabase
+    .from("push_tokens")
+    .upsert(
+      { user_id: req.user.id, expo_push_token: expoPushToken, platform: platform || "unknown" },
+      { onConflict: "user_id,expo_push_token" }
+    );
+
+  if (error) return dbError(res, error, "POST /api/push-tokens");
+  res.json({ ok: true });
+});
+
+// Remove a push token (e.g. on logout).
+app.delete("/api/push-tokens", requireAuth, async (req, res) => {
+  const { expoPushToken } = req.body;
+  if (!expoPushToken) return res.status(400).json({ error: "expoPushToken is required" });
+
+  await supabase
+    .from("push_tokens")
+    .delete()
+    .eq("user_id", req.user.id)
+    .eq("expo_push_token", expoPushToken);
+
+  res.json({ ok: true });
+});
+
+// Send push notification to a user via Expo Push API.
+async function sendPushNotification(userId, title, body, data = {}) {
+  const { data: tokens } = await supabase
+    .from("push_tokens")
+    .select("expo_push_token")
+    .eq("user_id", userId);
+
+  if (!tokens || tokens.length === 0) return;
+
+  const messages = tokens.map((t) => ({
+    to: t.expo_push_token,
+    sound: "default",
+    title,
+    body,
+    data,
+  }));
+
+  try {
+    await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(messages),
+    });
+  } catch (err) {
+    console.error("Push notification error:", err);
+  }
+}
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
