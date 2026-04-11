@@ -31,7 +31,7 @@ import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/
 import apiFetch from './utils/apiFetch';
 
 export default function App() {
-  const { user, profile, logout, isPasswordRecovery, setIsPasswordRecovery } = useAuth();
+  const { user, profile, sessionToken, logout, isPasswordRecovery, setIsPasswordRecovery } = useAuth();
   const location = useLocation();
   const darkBg = "#101214";
   const isCompactNav = useMediaQuery("(max-width:1100px)");
@@ -56,13 +56,15 @@ export default function App() {
   const [msgConversations, setMsgConversations] = useState([]);
   const [msgProfiles, setMsgProfiles] = useState({});
   const [msgListings, setMsgListings] = useState({});
+  const [msgUnreadCounts, setMsgUnreadCounts] = useState({});
   const [msgConversationsLoaded, setMsgConversationsLoaded] = useState(false);
 
   useEffect(() => {
-    if (!user) {
+    if (!user || !sessionToken) {
       setMsgConversations([]);
       setMsgProfiles({});
       setMsgListings({});
+      setMsgUnreadCounts({});
       setMsgConversationsLoaded(false);
       return;
     }
@@ -72,13 +74,24 @@ export default function App() {
         setMsgConversations(result?.conversations || []);
         setMsgProfiles(result?.profiles || {});
         setMsgListings(result?.listings || {});
+        setMsgUnreadCounts(result?.unreadCounts || {});
       } catch (err) {
         console.error("Fetch conversations error:", err);
       }
       setMsgConversationsLoaded(true);
     };
     fetchConversations();
-  }, [user]);
+
+    // Live update: refresh conversation list when new messages or conversations change
+    const convoChannel = supabase
+      .channel("convo-list-web")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, fetchConversations)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "conversations" }, fetchConversations)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "conversations" }, fetchConversations)
+      .subscribe();
+
+    return () => { supabase.removeChannel(convoChannel); };
+  }, [user?.id, sessionToken]);
 
   // Shared listings state — fetched once, used by Feed and Map pages
   const [sharedItems, setSharedItems] = useState([]);
@@ -104,18 +117,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!user) {
+    if (!user || !sessionToken) {
       setSharedItems([]);
       setSharedItemsLoaded(false);
       return;
     }
     fetchAllItems();
-  }, [user, fetchAllItems]);
+  }, [user?.id, sessionToken, fetchAllItems]);
 
   // Unread message count — shown as a badge on the Messages nav button
   const [unreadCount, setUnreadCount] = useState(0);
   useEffect(() => {
-    if (!user) { setUnreadCount(0); return; }
+    if (!user || !sessionToken) { setUnreadCount(0); return; }
 
     // Fetch the current unread count from the backend
     const fetchUnread = () =>
@@ -131,10 +144,12 @@ export default function App() {
       .channel("unread-badge")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, fetchUnread)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, fetchUnread)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, fetchUnread)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "conversations" }, fetchUnread)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user]);
+  }, [user?.id, sessionToken]);
 
   // Handle email link verification (password recovery, etc.)
   // The email links directly to our app with token_hash & type params,
@@ -650,7 +665,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<FeedPage effectiveTheme={effectiveTheme} timeZone={timeZone} sharedItems={sharedItems} setSharedItems={setSharedItems} sharedItemsLoaded={sharedItemsLoaded} refreshItems={fetchAllItems} />} />
             <Route path="/map" element={<MapPage effectiveTheme={effectiveTheme} timeZone={timeZone} sharedItems={sharedItems} setSharedItems={setSharedItems} sharedItemsLoaded={sharedItemsLoaded} refreshItems={fetchAllItems} />} />
-            <Route path="/messages" element={<MessagePage effectiveTheme={effectiveTheme} timeZone={timeZone} conversations={msgConversations} setConversations={setMsgConversations} profiles={msgProfiles} setProfiles={setMsgProfiles} listings={msgListings} setListings={setMsgListings} conversationsLoaded={msgConversationsLoaded} />} />
+            <Route path="/messages" element={<MessagePage effectiveTheme={effectiveTheme} timeZone={timeZone} conversations={msgConversations} setConversations={setMsgConversations} profiles={msgProfiles} setProfiles={setMsgProfiles} listings={msgListings} setListings={setMsgListings} unreadCounts={msgUnreadCounts} setUnreadCounts={setMsgUnreadCounts} conversationsLoaded={msgConversationsLoaded} />} />
             <Route
               path="/settings"
               element={
