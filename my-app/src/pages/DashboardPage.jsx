@@ -1044,14 +1044,9 @@ function TicketCard({ ticket, onUpdateStatus, onDelete, processing, isDark, time
         </Typography>
       </Box>
 
-      {/* Subject */}
+      {/* Title */}
       <Typography fontWeight={800} fontSize={14} sx={{ mb: 0.5, color: isDark ? "#D7DADC" : "#2d1a1a", overflowWrap: "anywhere" }}>
-        {ticket.subject}
-      </Typography>
-
-      {/* Submitter */}
-      <Typography variant="caption" sx={{ color: isDark ? "#818384" : "#999", display: "block", mb: 0.5 }}>
-        {ticket.name || "Anonymous"}{ticket.email ? ` · ${ticket.email}` : ""}
+        {ticket.ticket_title}
       </Typography>
 
       {/* Expand toggle */}
@@ -1073,7 +1068,7 @@ function TicketCard({ ticket, onUpdateStatus, onDelete, processing, isDark, time
           }}
         >
           <Typography variant="body2" sx={{ color: isDark ? "#C8CACC" : "#5e5e5e", lineHeight: 1.6, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {ticket.description}
+            {ticket.ticket_desc}
           </Typography>
         </Box>
       </Collapse>

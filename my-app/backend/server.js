@@ -1442,51 +1442,61 @@ app.get("/api/mod/messages", requireAuth, require2FA, requireModerator, async (r
 // SUPPORT TICKETS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+const VALID_TICKET_TYPES = new Set(["Support", "Bug Report", "Feedback"]);
+
 const VALID_SUPPORT_CATEGORIES = new Set([
+  // Support
   "Login / Access Issue",
   "Account or Profile Issue",
   "Listing Problem",
   "Messaging Issue",
   "Technical Problem",
+  // Bug Report
+  "UI / Display Issue",
+  "App Crash / Freeze",
+  "Feature Not Working",
+  "Performance Issue",
+  // Feedback
+  "Feature Request",
+  "Usability Improvement",
+  "Design Suggestion",
+  "General Feedback",
+  // Shared
   "Other",
 ]);
 
-const SUPPORT_SUBJECT_MAX = 100;
+const SUPPORT_TITLE_MAX = 100;
 const SUPPORT_DESC_MAX = 500;
 const SUPPORT_NAME_MAX = 50;
 const SUPPORT_VALID_STATUSES = new Set(["open", "in_progress", "resolved", "closed"]);
 
+const TICKET_ID_RE = /^\d+$/;
+
 // POST /api/support — authenticated user submits a ticket
 app.post("/api/support", requireAuth, writeLimiter, async (req, res) => {
-  const { category, subject, description } = req.body;
+  const { ticketType, category, subject, description } = req.body;
 
-  if (!category || !subject || !description) {
-    return res.status(400).json({ error: "category, subject, and description are required." });
+  if (!ticketType || !category || !subject || !description) {
+    return res.status(400).json({ error: "ticketType, category, subject, and description are required." });
+  }
+  if (!VALID_TICKET_TYPES.has(ticketType)) {
+    return res.status(400).json({ error: "Invalid ticketType." });
   }
   if (!VALID_SUPPORT_CATEGORIES.has(category)) {
     return res.status(400).json({ error: "Invalid category." });
   }
 
-  const safeSubject = sanitize(subject, SUPPORT_SUBJECT_MAX);
+  const safeTitle = sanitize(subject, SUPPORT_TITLE_MAX);
   const safeDesc = sanitize(description, SUPPORT_DESC_MAX);
 
-  if (!safeSubject) return res.status(400).json({ error: "Subject is required." });
+  if (!safeTitle) return res.status(400).json({ error: "Subject is required." });
   if (!safeDesc) return res.status(400).json({ error: "Description is required." });
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("first_name, last_name, email")
-    .eq("id", req.user.id)
-    .maybeSingle();
-
   const { error } = await supabase.from("support_tickets").insert({
-    user_id: req.user.id,
-    email: profile?.email ?? null,
-    name: profile ? `${profile.first_name} ${profile.last_name}`.trim() : null,
+    ticket_type: ticketType,
     category,
-    subject: safeSubject,
-    description: safeDesc,
-    status: "open",
+    ticket_title: safeTitle,
+    ticket_desc: safeDesc,
   });
 
   if (error) return dbError(res, error, "POST /api/support");
@@ -1495,10 +1505,13 @@ app.post("/api/support", requireAuth, writeLimiter, async (req, res) => {
 
 // POST /api/support/guest — unauthenticated user submits a ticket (from login page)
 app.post("/api/support/guest", strictLimiter, async (req, res) => {
-  const { name, email, category, subject, description } = req.body;
+  const { ticketType, name, email, category, subject, description } = req.body;
 
-  if (!name || !email || !category || !subject || !description) {
-    return res.status(400).json({ error: "name, email, category, subject, and description are required." });
+  if (!ticketType || !name || !email || !category || !subject || !description) {
+    return res.status(400).json({ error: "ticketType, name, email, category, subject, and description are required." });
+  }
+  if (!VALID_TICKET_TYPES.has(ticketType)) {
+    return res.status(400).json({ error: "Invalid ticketType." });
   }
   if (!VALID_SUPPORT_CATEGORIES.has(category)) {
     return res.status(400).json({ error: "Invalid category." });
@@ -1510,22 +1523,18 @@ app.post("/api/support/guest", strictLimiter, async (req, res) => {
   }
 
   const safeName = sanitize(name, SUPPORT_NAME_MAX);
-  const safeEmail = sanitize(email, 254);
-  const safeSubject = sanitize(subject, SUPPORT_SUBJECT_MAX);
+  const safeTitle = sanitize(subject, SUPPORT_TITLE_MAX);
   const safeDesc = sanitize(description, SUPPORT_DESC_MAX);
 
   if (!safeName) return res.status(400).json({ error: "Name is required." });
-  if (!safeSubject) return res.status(400).json({ error: "Subject is required." });
+  if (!safeTitle) return res.status(400).json({ error: "Subject is required." });
   if (!safeDesc) return res.status(400).json({ error: "Description is required." });
 
   const { error } = await supabase.from("support_tickets").insert({
-    user_id: null,
-    email: safeEmail,
-    name: safeName,
+    ticket_type: ticketType,
     category,
-    subject: safeSubject,
-    description: safeDesc,
-    status: "open",
+    ticket_title: safeTitle,
+    ticket_desc: safeDesc,
   });
 
   if (error) return dbError(res, error, "POST /api/support/guest");
@@ -1535,29 +1544,22 @@ app.post("/api/support/guest", strictLimiter, async (req, res) => {
 // GET /api/support — list tickets (moderators only)
 app.get("/api/support", requireAuth, require2FA, requireModerator, async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
-  const limit = 20;
+  const limit = 100;
   const offset = (page - 1) * limit;
-  const status = req.query.status || null;
 
-  let query = supabase
+  const { data, error, count } = await supabase
     .from("support_tickets")
     .select("*", { count: "exact" })
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
 
-  if (status && SUPPORT_VALID_STATUSES.has(status)) {
-    query = query.eq("status", status);
-  }
-
-  const { data, error, count } = await query;
   if (error) return dbError(res, error, "GET /api/support");
-
   res.json({ tickets: data || [], total: count ?? 0, hasMore: offset + limit < (count ?? 0) });
 });
 
 // PATCH /api/support/:id/status — update ticket status (moderators only)
 app.patch("/api/support/:id/status", requireAuth, require2FA, requireModerator, async (req, res) => {
-  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: "Invalid id" });
+  if (!TICKET_ID_RE.test(req.params.id)) return res.status(400).json({ error: "Invalid id" });
 
   const { status } = req.body;
   if (!status || !SUPPORT_VALID_STATUSES.has(status)) {
@@ -1566,7 +1568,7 @@ app.patch("/api/support/:id/status", requireAuth, require2FA, requireModerator, 
 
   const { error } = await supabase
     .from("support_tickets")
-    .update({ status, updated_at: new Date().toISOString() })
+    .update({ status })
     .eq("id", req.params.id);
 
   if (error) return dbError(res, error, "PATCH /api/support/:id/status");
@@ -1575,7 +1577,7 @@ app.patch("/api/support/:id/status", requireAuth, require2FA, requireModerator, 
 
 // DELETE /api/support/:id — delete ticket (moderators only)
 app.delete("/api/support/:id", requireAuth, require2FA, requireModerator, async (req, res) => {
-  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: "Invalid id" });
+  if (!TICKET_ID_RE.test(req.params.id)) return res.status(400).json({ error: "Invalid id" });
 
   const { error } = await supabase
     .from("support_tickets")
