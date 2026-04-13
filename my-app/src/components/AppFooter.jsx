@@ -16,7 +16,7 @@ const MODAL_CONTENT = {
   credits: {
     title: "Credits",
     body: [
-      "Lost & Hound was built by Nahom Hailemelekot, Benjamin Haillu, Liam Pulsifer, and Ryan Sinha.",
+      "Lost & Hound was built by Nahom Hailemelekot, Benjamin Hailu, Liam Pulsifer, and Ryan Sinha.",
       "Project context: Oasis @ Northeastern University.",
     ],
   },

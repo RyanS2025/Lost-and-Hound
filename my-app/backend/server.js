@@ -23,7 +23,14 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5173")
   .map((o) => o.trim());
 
 app.use(cors({
-  origin: allowedOrigins,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, server-to-server)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true,
 }));
 app.use(cookieParser());
@@ -33,7 +40,8 @@ app.use(express.json({ limit: "100kb" }));
 // RATE LIMITING
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// General: 100 requests per 15 minutes per IP
+// Three tiers: general (all routes), write (creating posts/messages), strict (reports/deletions).
+
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -42,7 +50,6 @@ const generalLimiter = rateLimit({
   message: { error: "Too many requests. Please try again later." },
 });
 
-// Strict: 20 requests per 15 minutes (for writes like creating posts, sending messages)
 const writeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -51,7 +58,6 @@ const writeLimiter = rateLimit({
   message: { error: "Too many requests. Please slow down." },
 });
 
-// Very strict: 5 requests per 15 minutes (for reports, account deletion)
 const strictLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
@@ -60,7 +66,6 @@ const strictLimiter = rateLimit({
   message: { error: "Too many requests. Please try again later." },
 });
 
-// Apply general limiter to all routes
 app.use("/api/", generalLimiter);
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -91,6 +96,10 @@ const VALID_CAMPUS_IDS = new Set([
 const VALID_CATEGORIES = new Set([
   "Husky Card", "Jacket", "Wallet/Purse", "Bag", "Keys", "Electronics", "Other",
 ]);
+
+// Valid listing types: 'found' = poster found someone else's item,
+// 'lost' = poster lost their own item and is looking for it.
+const VALID_LISTING_TYPES = new Set(["found", "lost"]);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -251,6 +260,10 @@ async function requireConversationParticipant(req, res, next) {
 // 2FA ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// After MFA verification, the client receives a device token (hashed before storage) that
+// lasts 24h (or 30 days if "remember me"). Subsequent requests send this token in
+// X-Device-Token so the user doesn't have to re-verify on every session.
+
 // Check whether the device token in the request is still trusted.
 // If it is, the client can skip showing the OTP screen.
 app.post("/api/auth/check-device", requireAuth, async (req, res) => {
@@ -286,7 +299,6 @@ app.post("/api/auth/trust-device", requireAuth, async (req, res) => {
   const expiresAt = new Date(Date.now() + ttlMs).toISOString();
   const deviceInfo = req.headers["user-agent"]?.slice(0, 200) || null;
 
-  // Clean up expired tokens for this user before inserting a new one
   await supabase
     .from("trusted_devices")
     .delete()
@@ -321,6 +333,27 @@ app.post("/api/auth/clear-device", requireAuth, async (req, res) => {
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PASSWORD RESET
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+app.post("/api/auth/reset-password", strictLimiter, requireAuth, async (req, res) => {
+  const { password } = req.body;
+
+  if (!password || typeof password !== "string") {
+    return res.status(400).json({ error: "Password is required" });
+  }
+
+  if (password.length < 6 || password.length > 32) {
+    return res.status(400).json({ error: "Password must be between 6 and 32 characters" });
+  }
+
+  const { error } = await supabase.auth.admin.updateUserById(req.user.id, { password });
+
+  if (error) return dbError(res, error, "POST /api/auth/reset-password");
+  res.json({ success: true });
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CLEANUP COOLDOWN
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -330,6 +363,8 @@ const CLEANUP_COOLDOWN = 60 * 60 * 1000; // 1 hour
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // PROFILE ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GET auto-creates a profile on first login using Supabase user metadata.
+// DELETE cascades through listings, messages, conversations, reports, devices, and storage.
 
 app.get("/api/profile", requireAuth, require2FA, async (req, res) => {
   const { data, error } = await supabase
@@ -512,17 +547,30 @@ app.delete("/api/profile", strictLimiter, requireAuth, require2FA, async (req, r
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LISTING ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Listings are either 'found' (poster found someone else's item) or 'lost' (poster lost their own).
+// The poster can mark their listing resolved. A cleanup job ages out old listings automatically.
 
 app.get("/api/listings", requireAuth, require2FA, async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 10));
   const offset = (page - 1) * limit;
 
-  const { data, error, count } = await supabase
+  // Optional ?listing_type=found|lost filter. Omitting it (or passing any other
+  // value) returns all listings, preserving the existing default behavior.
+  const listing_type = req.query.listing_type;
+
+  let query = supabase
     .from("listings")
     .select("*, locations(name, coordinates, campus)", { count: "exact" })
     .order("date", { ascending: false })
     .range(offset, offset + limit - 1);
+
+  // Only narrow the query when a valid type is explicitly requested.
+  if (VALID_LISTING_TYPES.has(listing_type)) {
+    query = query.eq("listing_type", listing_type);
+  }
+
+  const { data, error, count } = await query;
 
   if (error) return dbError(res, error, "GET /api/listings");
   res.json({ data: data || [], page, limit, total: count ?? 0, hasMore: offset + limit < (count ?? 0) });
@@ -538,6 +586,12 @@ app.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBanne
   const image_url = req.body.image_url || null;
   const lat = req.body.lat;
   const lng = req.body.lng;
+
+  // Default to 'found' if the client sends anything other than a valid type.
+  // This keeps all existing posts working without requiring them to send the field.
+  const listing_type = VALID_LISTING_TYPES.has(req.body.listing_type)
+    ? req.body.listing_type
+    : "found";
 
   if (!title || !category || !location_id || !found_at || !description) {
     return res.status(400).json({ error: "Missing required fields: title, category, location_id, found_at, description" });
@@ -588,6 +642,7 @@ app.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBanne
     importance,
     description,
     image_url,
+    listing_type,
     resolved: false,
     poster_id: req.user.id,
     poster_name,
@@ -694,7 +749,6 @@ app.post("/api/upload-url", writeLimiter, requireAuth, require2FA, requireNotBan
     return res.status(400).json({ error: "Invalid image type" });
   }
 
-  // Enforce max file size (5MB)
   const fileSize = parseInt(req.body.fileSize);
   if (fileSize && fileSize > 5 * 1024 * 1024) {
     return res.status(400).json({ error: "Image must be under 5MB" });
@@ -787,29 +841,28 @@ app.get("/api/locations", requireAuth, require2FA, async (req, res) => {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CONVERSATIONS & MESSAGE ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// POST /conversations is find-or-create: reopening an existing conversation returns its id.
+// Closing a conversation inserts a system message, then deletes it — hidden_conversations
+// records which users have "closed" a thread so it doesn't reappear in their inbox.
 
 app.get("/api/conversations", requireAuth, require2FA, async (req, res) => {
   const userId = req.user.id;
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
 
-  const { data: convos, error } = await supabase
-    .from("conversations")
-    .select("*")
-    .or(`participant_1.eq.${userId},participant_2.eq.${userId}`)
-    .order("created_at", { ascending: false });
+  // Fetch conversations and hidden list in parallel
+  const [convosResult, hiddenResult] = await Promise.all([
+    supabase.from("conversations").select("*").or(`participant_1.eq.${userId},participant_2.eq.${userId}`).order("created_at", { ascending: false }),
+    supabase.from("hidden_conversations").select("conversation_id").eq("user_id", userId),
+  ]);
 
-  if (error) return dbError(res, error, "GET /api/conversations");
+  if (convosResult.error) return dbError(res, convosResult.error, "GET /api/conversations");
+  const convos = convosResult.data;
   if (!convos || convos.length === 0) {
     return res.json({ conversations: [], profiles: {}, listings: {}, page, limit, total: 0, hasMore: false });
   }
 
-  const { data: hiddenData } = await supabase
-    .from("hidden_conversations")
-    .select("conversation_id")
-    .eq("user_id", userId);
-
-  const hiddenIds = new Set((hiddenData || []).map((h) => h.conversation_id));
+  const hiddenIds = new Set((hiddenResult.data || []).map((h) => h.conversation_id));
   const visible = convos.filter((c) => !hiddenIds.has(c.id));
 
   const total = visible.length;
@@ -819,26 +872,33 @@ app.get("/api/conversations", requireAuth, require2FA, async (req, res) => {
   const otherIds = paginated.map((c) =>
     c.participant_1 === userId ? c.participant_2 : c.participant_1
   );
+  const listingIds = paginated.map((c) => c.listing_id).filter(Boolean);
 
-  const { data: profileData } = await supabase
-    .from("profiles")
-    .select("id, first_name, last_name")
-    .in("id", otherIds);
+  // Fetch profiles and listings in parallel
+  const [profileResult, listingResult] = await Promise.all([
+    supabase.from("profiles").select("id, first_name, last_name").in("id", otherIds),
+    listingIds.length > 0
+      ? supabase.from("listings").select("item_id, title").in("item_id", listingIds)
+      : Promise.resolve({ data: [] }),
+  ]);
 
   const profileMap = {};
-  (profileData || []).forEach((p) => { profileMap[p.id] = p; });
-
-  const listingIds = paginated.map((c) => c.listing_id).filter(Boolean);
+  (profileResult.data || []).forEach((p) => { profileMap[p.id] = p; });
   const listingMap = {};
-  if (listingIds.length > 0) {
-    const { data: listingData } = await supabase
-      .from("listings")
-      .select("item_id, title")
-      .in("item_id", listingIds);
-    (listingData || []).forEach((l) => { listingMap[l.item_id] = l; });
+  (listingResult.data || []).forEach((l) => { listingMap[l.item_id] = l; });
+
+  // Fetch unread counts per conversation in parallel
+  const unreadCounts = {};
+  if (paginated.length > 0) {
+    const unreadResults = await Promise.all(
+      paginated.map((c) =>
+        supabase.from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", c.id).neq("sender_id", userId).eq("read", false)
+      )
+    );
+    paginated.forEach((c, i) => { unreadCounts[c.id] = unreadResults[i].count ?? 0; });
   }
 
-  res.json({ conversations: paginated, profiles: profileMap, listings: listingMap, page, limit, total, hasMore: offset + limit < total });
+  res.json({ conversations: paginated, profiles: profileMap, listings: listingMap, unreadCounts, page, limit, total, hasMore: offset + limit < total });
 });
 
 // Must be a participant to view
@@ -946,22 +1006,66 @@ app.get("/api/conversations/:id/messages", requireAuth, require2FA, requireConve
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 10));
   const offset = (page - 1) * limit;
 
-  const { data, error, count } = await supabase
-    .from("messages")
-    .select("*", { count: "exact" })
-    .eq("conversation_id", req.params.id)
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1);
+  // Fetch messages and closed status in parallel
+  const [msgResult, hiddenResult] = await Promise.all([
+    supabase.from("messages").select("*", { count: "exact" }).eq("conversation_id", req.params.id).order("created_at", { ascending: false }).range(offset, offset + limit - 1),
+    supabase.from("hidden_conversations").select("id", { count: "exact", head: true }).eq("conversation_id", req.params.id),
+  ]);
 
-  if (error) return dbError(res, error, "GET /api/conversations/messages");
-
-  const { count: hiddenCount } = await supabase
-    .from("hidden_conversations")
-    .select("id", { count: "exact", head: true })
-    .eq("conversation_id", req.params.id);
+  if (msgResult.error) return dbError(res, msgResult.error, "GET /api/conversations/messages");
 
   // Reverse so messages display oldest-first in the UI
-  res.json({ messages: (data || []).reverse(), isClosed: (hiddenCount ?? 0) > 0, page, limit, total: count ?? 0, hasMore: offset + limit < (count ?? 0) });
+  res.json({ messages: (msgResult.data || []).reverse(), isClosed: (hiddenResult.count ?? 0) > 0, page, limit, total: msgResult.count ?? 0, hasMore: offset + limit < (msgResult.count ?? 0) });
+});
+
+// Total count of unread messages across all of the user's visible conversations.
+// Used by the navbar badge — lightweight head-count query, no message content returned.
+app.get("/api/messages/unread-count", requireAuth, require2FA, async (req, res) => {
+  console.log(`[unread-count] reached — user=${req.user?.id}`);
+  const userId = req.user.id;
+
+  // Find all conversations the user is in
+  const { data: convos, error: convoErr } = await supabase
+    .from("conversations")
+    .select("id")
+    .or(`participant_1.eq.${userId},participant_2.eq.${userId}`);
+
+  if (convoErr) return dbError(res, convoErr, "GET /api/messages/unread-count");
+  if (!convos || convos.length === 0) return res.json({ count: 0 });
+
+  // Exclude hidden/closed conversations
+  const { data: hiddenData } = await supabase
+    .from("hidden_conversations")
+    .select("conversation_id")
+    .eq("user_id", userId);
+
+  const hiddenIds = new Set((hiddenData || []).map((h) => h.conversation_id));
+  const visibleIds = convos.map((c) => c.id).filter((id) => !hiddenIds.has(id));
+  if (visibleIds.length === 0) return res.json({ count: 0 });
+
+  // Count messages sent by others that this user hasn't read yet
+  const { count, error } = await supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .in("conversation_id", visibleIds)
+    .neq("sender_id", userId)
+    .eq("read", false);
+
+  if (error) return dbError(res, error, "GET /api/messages/unread-count");
+  res.json({ count: count ?? 0 });
+});
+
+// Mark all unread messages in a conversation as read (those sent by the other participant).
+app.patch("/api/conversations/:id/read", requireAuth, require2FA, requireConversationParticipant, async (req, res) => {
+  const { error } = await supabase
+    .from("messages")
+    .update({ read: true })
+    .eq("conversation_id", req.params.id)
+    .neq("sender_id", req.user.id)
+    .eq("read", false);
+
+  if (error) return dbError(res, error, "PATCH /api/conversations/read");
+  res.json({ ok: true });
 });
 
 // Send messages — must be a participant, must not be banned
@@ -983,12 +1087,32 @@ app.post("/api/conversations/:id/messages", writeLimiter, requireAuth, require2F
     .single();
 
   if (error) return dbError(res, error, "POST /api/conversations/messages");
+
+  // Send push notification to the other participant
+  const otherId = req.conversation.participant_1 === req.user.id
+    ? req.conversation.participant_2
+    : req.conversation.participant_1;
+
+  const { data: senderProfile } = await supabase
+    .from("profiles")
+    .select("first_name")
+    .eq("id", req.user.id)
+    .single();
+
+  const senderName = senderProfile?.first_name || "Someone";
+  const preview = content.length > 80 ? content.slice(0, 80) + "..." : content;
+  sendPushNotification(otherId, senderName, preview, { conversationId: req.params.id }).catch(() => {});
+
   res.json(data);
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // REPORTS ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Users submit reports against a listing or another user. Moderators review them and
+// issue a decision: no violation, or a 3-day / 30-day / permanent ban. Bans can be reversed.
+// For theft reports, GET /reports enriches the response with conversation context so
+// moderators can see who first contacted the poster about the item.
 
 app.post("/api/reports", strictLimiter, requireAuth, require2FA, requireNotBanned, async (req, res) => {
   const reason = sanitize(req.body.reason, 200);
@@ -1395,6 +1519,8 @@ app.get("/api/reports/ban-info/:userId", requireAuth, require2FA, requireModerat
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // MOD MESSAGE VIEWER
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Moderator-only endpoint to read the conversation between a reporter and a reported user,
+// used to provide evidence context when reviewing harassment or theft reports.
 
 app.get("/api/mod/messages", requireAuth, require2FA, requireModerator, async (req, res) => {
   const { reporter, reported } = req.query;
@@ -1587,6 +1713,223 @@ app.delete("/api/support/:id", requireAuth, require2FA, requireModerator, async 
   if (error) return dbError(res, error, "DELETE /api/support/:id");
   res.json({ success: true });
 });
+
+// SUPPORT TICKETS ENDPOINTS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Fetch all support tickets (moderators only, includes reply counts)
+app.get("/api/support-tickets", requireAuth, require2FA, requireModerator, async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("support_tickets")
+      .select("id, user_id, category, description, status, created_at, support_replies(id, user_id, is_moderator, message, created_at)")
+      .order("created_at", { ascending: false });
+
+    if (error) return dbError(res, error, "fetching support tickets");
+
+    res.json({ tickets: data });
+  } catch (error) {
+    dbError(res, error, "fetching support tickets");
+  }
+});
+
+// Fetch current user's own support tickets
+app.get("/api/support-tickets/mine", requireAuth, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("support_tickets")
+      .select("id, user_id, category, description, status, created_at, support_replies(id, user_id, is_moderator, message, created_at)")
+      .eq("user_id", req.user.id)
+      .order("created_at", { ascending: false });
+
+    if (error) return dbError(res, error, "fetching user support tickets");
+
+    res.json({ tickets: data });
+  } catch (error) {
+    dbError(res, error, "fetching user support tickets");
+  }
+});
+
+// Create a new support ticket
+app.post("/api/support-tickets", requireAuth, async (req, res) => {
+  const { category, description } = req.body;
+
+  if (!category || !description) {
+    return res.status(400).json({ error: "Category and description are required." });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("support_tickets")
+      .insert({
+        user_id: req.user.id,
+        category: sanitize(category, 50),
+        description: sanitize(description, 500),
+        status: "open",
+      })
+      .select();
+
+    if (error) return dbError(res, error, "creating support ticket");
+
+    res.status(201).json(data[0]);
+  } catch (error) {
+    dbError(res, error, "creating support ticket");
+  }
+});
+
+// Update a support ticket status (moderators only)
+app.patch("/api/support-tickets/:id", requireAuth, require2FA, requireModerator, async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const VALID_STATUSES = ["open", "in_progress", "resolved", "closed"];
+  if (!status || !VALID_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `Status must be one of: ${VALID_STATUSES.join(", ")}.` });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("support_tickets")
+      .update({ status })
+      .eq("id", id)
+      .select();
+
+    if (error) return dbError(res, error, "updating support ticket");
+    if (!data || data.length === 0) return res.status(404).json({ error: "Ticket not found." });
+
+    res.json(data[0]);
+  } catch (error) {
+    dbError(res, error, "updating support ticket");
+  }
+});
+
+// Post a reply to a support ticket (moderator or ticket owner)
+app.post("/api/support-tickets/:id/replies", requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { message } = req.body;
+
+  if (!message || !message.trim()) {
+    return res.status(400).json({ error: "Message is required." });
+  }
+
+  try {
+    // Verify the ticket exists and the requester is either the owner or a moderator
+    const { data: ticket, error: ticketError } = await supabase
+      .from("support_tickets")
+      .select("id, user_id, status")
+      .eq("id", id)
+      .single();
+
+    if (ticketError || !ticket) return res.status(404).json({ error: "Ticket not found." });
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_moderator")
+      .eq("id", req.user.id)
+      .single();
+
+    const isModerator = !!profile?.is_moderator;
+
+    if (!isModerator && ticket.user_id !== req.user.id) {
+      return res.status(403).json({ error: "Forbidden." });
+    }
+
+    if (ticket.status === "closed") {
+      return res.status(400).json({ error: "Cannot reply to a closed ticket." });
+    }
+
+    const { data, error } = await supabase
+      .from("support_replies")
+      .insert({
+        ticket_id: id,
+        user_id: req.user.id,
+        is_moderator: isModerator,
+        message: sanitize(message, 1000),
+      })
+      .select();
+
+    if (error) return dbError(res, error, "posting reply");
+
+    // If a moderator replies and ticket is still open, move it to in_progress
+    if (isModerator && ticket.status === "open") {
+      await supabase.from("support_tickets").update({ status: "in_progress" }).eq("id", id);
+    }
+
+    res.status(201).json(data[0]);
+  } catch (error) {
+    dbError(res, error, "posting reply");
+  }
+});
+
+// Catch-all: log any request that didn't match a route
+app.use((req, res) => {
+  console.log(`[404] No route matched: ${req.method} ${req.path}`);
+  res.status(404).json({ error: "Not found" });
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PUSH NOTIFICATIONS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Register or update an Expo push token for the current user.
+app.post("/api/push-tokens", requireAuth, require2FA, async (req, res) => {
+  const { expoPushToken, platform } = req.body;
+  if (!expoPushToken || typeof expoPushToken !== "string") {
+    return res.status(400).json({ error: "expoPushToken is required" });
+  }
+
+  const { error } = await supabase
+    .from("push_tokens")
+    .upsert(
+      { user_id: req.user.id, expo_push_token: expoPushToken, platform: platform || "unknown" },
+      { onConflict: "user_id,expo_push_token" }
+    );
+
+  if (error) return dbError(res, error, "POST /api/push-tokens");
+  res.json({ ok: true });
+});
+
+// Remove a push token (e.g. on logout).
+app.delete("/api/push-tokens", requireAuth, async (req, res) => {
+  const { expoPushToken } = req.body;
+  if (!expoPushToken) return res.status(400).json({ error: "expoPushToken is required" });
+
+  await supabase
+    .from("push_tokens")
+    .delete()
+    .eq("user_id", req.user.id)
+    .eq("expo_push_token", expoPushToken);
+
+  res.json({ ok: true });
+});
+
+// Send push notification to a user via Expo Push API.
+async function sendPushNotification(userId, title, body, data = {}) {
+  const { data: tokens } = await supabase
+    .from("push_tokens")
+    .select("expo_push_token")
+    .eq("user_id", userId);
+
+  if (!tokens || tokens.length === 0) return;
+
+  const messages = tokens.map((t) => ({
+    to: t.expo_push_token,
+    sound: "default",
+    title,
+    body,
+    data,
+  }));
+
+  try {
+    await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(messages),
+    });
+  } catch (err) {
+    console.error("Push notification error:", err);
+  }
+}
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

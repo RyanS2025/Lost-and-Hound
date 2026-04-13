@@ -776,6 +776,9 @@ function ReportCard({ report, fullListing, groupedReports = null, onUpdateStatus
                     <Box
                       key={r.id}
                       onClick={() => setReviewModalReport(r)}
+                      tabIndex={0}
+                      role="button"
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setReviewModalReport(r); } }}
                       sx={{
                         p: 1,
                         borderRadius: 1.5,
@@ -787,6 +790,7 @@ function ReportCard({ report, fullListing, groupedReports = null, onUpdateStatus
                           borderColor: isDark ? "rgba(255,255,255,0.26)" : "#d8b2b0",
                           transform: "translateY(-1px)",
                         },
+                        "&:focus-visible": { outline: "2px solid #A84D48", outlineOffset: 2 },
                       }}
                     >
                       <Box sx={{ display: "flex", justifyContent: "space-between", gap: 1, flexWrap: "wrap", mb: 0.4 }}>
@@ -1263,6 +1267,15 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
   const [actionError, setActionError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [supportTickets, setSupportTickets] = useState([]);
+  const [loadingSupport, setLoadingSupport] = useState(false);
+  const [supportError, setSupportError] = useState("");
+  const [expandedTicket, setExpandedTicket] = useState(null);
+  const [ticketReply, setTicketReply] = useState({});
+  const [ticketReplySubmitting, setTicketReplySubmitting] = useState({});
+  const [ticketReplyError, setTicketReplyError] = useState({});
+  const [ticketStatusUpdating, setTicketStatusUpdating] = useState({});
+  const [supportStatusFilter, setSupportStatusFilter] = useState("open");
 
   const fetchReports = async (page = 1, append = false) => {
     if (page === 1) setLoading(true);
@@ -1289,7 +1302,64 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
     }
   };
 
-  useEffect(() => { if (profile?.is_moderator) fetchReports(); }, [profile]);
+  const fetchSupportTickets = async () => {
+    setLoadingSupport(true);
+    setSupportError("");
+    try {
+      const payload = await apiFetch("/api/support-tickets");
+      setSupportTickets(payload?.tickets || []);
+    } catch {
+      setSupportError("Failed to load support tickets.");
+    } finally {
+      setLoadingSupport(false);
+    }
+  };
+
+  const handleTicketReply = async (ticketId) => {
+    const message = (ticketReply[ticketId] || "").trim();
+    if (!message) return;
+    setTicketReplySubmitting((prev) => ({ ...prev, [ticketId]: true }));
+    setTicketReplyError((prev) => ({ ...prev, [ticketId]: "" }));
+    try {
+      await apiFetch(`/api/support-tickets/${ticketId}/replies`, {
+        method: "POST",
+        body: JSON.stringify({ message }),
+      });
+      setTicketReply((prev) => ({ ...prev, [ticketId]: "" }));
+      await fetchSupportTickets();
+    } catch (err) {
+      setTicketReplyError((prev) => ({ ...prev, [ticketId]: err.message || "Failed to send reply." }));
+    } finally {
+      setTicketReplySubmitting((prev) => ({ ...prev, [ticketId]: false }));
+    }
+  };
+
+  const handleTicketStatus = async (ticketId, newStatus) => {
+    setTicketStatusUpdating((prev) => ({ ...prev, [ticketId]: true }));
+    try {
+      await apiFetch(`/api/support-tickets/${ticketId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: newStatus }),
+      });
+      setSupportTickets((prev) =>
+        prev.map((t) => (t.id === ticketId ? { ...t, status: newStatus } : t))
+      );
+    } catch {
+      /* silently fail — ticket list will reflect true state on next fetch */
+    } finally {
+      setTicketStatusUpdating((prev) => ({ ...prev, [ticketId]: false }));
+    }
+  };
+
+  useEffect(() => {
+    if (profile?.is_moderator) fetchReports();
+  }, [profile]);
+
+  useEffect(() => {
+    if (section === "support-categories") {
+      fetchSupportTickets();
+    }
+  }, [section]);
 
   const updateStatus = async (reportId, newStatus) => {
     setActionError("");
@@ -1556,7 +1626,7 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
               />
             ) : (
               <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                {groupedRenderItems.map(({ primaryReport, relatedReports }) => (
+                               {groupedRenderItems.map(({ primaryReport, relatedReports }) => (
                   <ReportCard
                     key={primaryReport.id}
                     report={primaryReport}
@@ -1621,21 +1691,201 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
             ticketType="Bug Report"
           />
         )}
-        {section === "support-categories" && (
-          <SupportTicketsSection
-            tickets={tickets}
-            loading={ticketsLoading}
-            statusTab={ticketStatusTab}
-            onTabChange={setTicketStatusTab}
-            onFetch={fetchTickets}
-            onUpdateStatus={updateTicketStatus}
-            ticketType="Support"
-            onDelete={setTicketDeleteTarget}
-            actionError={ticketActionError}
-            isDark={isDark}
-            timeZone={timeZone}
-          />
-        )}
+        {section === "support-categories" && (() => {
+          const SUPPORT_STATUS_TABS = ["open", "in_progress", "resolved", "closed"];
+          const SUPPORT_STATUS_LABELS = { open: "Open", in_progress: "In Progress", resolved: "Resolved", closed: "Closed" };
+          const filteredTickets = supportTickets.filter((t) => t.status === supportStatusFilter);
+          return (
+            <Box>
+              {supportError && <Alert severity="error" sx={{ mb: 2 }}>{supportError}</Alert>}
+
+              {/* Status filter tabs */}
+              <Box sx={{ display: "flex", gap: 0.5, mb: 2, flexWrap: "wrap" }}>
+                {SUPPORT_STATUS_TABS.map((s) => {
+                  const count = supportTickets.filter((t) => t.status === s).length;
+                  return (
+                    <Button
+                      key={s}
+                      size="small"
+                      variant={supportStatusFilter === s ? "contained" : "outlined"}
+                      onClick={() => setSupportStatusFilter(s)}
+                      sx={{
+                        borderRadius: 2,
+                        fontWeight: 700,
+                        fontSize: "0.75rem",
+                        ...(supportStatusFilter === s
+                          ? { background: isDark ? "#FF4500" : "#A84D48", color: "#fff", "&:hover": { background: isDark ? "#E03D00" : "#8f3e3a" } }
+                          : { borderColor: isDark ? "#555" : "#ccc", color: "text.secondary" }),
+                      }}
+                    >
+                      {SUPPORT_STATUS_LABELS[s]} {count > 0 && `(${count})`}
+                    </Button>
+                  );
+                })}
+              </Box>
+
+              {loadingSupport ? (
+                <Box sx={{ display: "flex", justifyContent: "center", mt: 6 }}>
+                  <CircularProgress sx={{ color: "#A84D48" }} />
+                </Box>
+              ) : filteredTickets.length === 0 ? (
+                <EmptySection
+                  icon={<SupportAgentIcon sx={{ color: "#A84D48", fontSize: 28 }} />}
+                  title="No Tickets"
+                  description={`No ${SUPPORT_STATUS_LABELS[supportStatusFilter].toLowerCase()} tickets.`}
+                  isDark={isDark}
+                />
+              ) : (
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                  {filteredTickets.map((ticket) => {
+                    const isExpanded = expandedTicket === ticket.id;
+                    const replies = ticket.support_replies || [];
+                    const isUpdating = !!ticketStatusUpdating[ticket.id];
+                    const isReplying = !!ticketReplySubmitting[ticket.id];
+                    const replyErr = ticketReplyError[ticket.id] || "";
+                    const canReply = ticket.status !== "closed";
+
+                    return (
+                      <Box
+                        key={ticket.id}
+                        sx={{
+                          border: "1px solid",
+                          borderColor: isDark ? "rgba(255,255,255,0.12)" : "#ecdcdc",
+                          borderRadius: 2,
+                          background: isDark ? "#1A1A1B" : "#fff",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {/* Ticket header — click to expand */}
+                        <Box
+                          sx={{ p: 2, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 1 }}
+                          onClick={() => setExpandedTicket(isExpanded ? null : ticket.id)}
+                        >
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", mb: 0.5 }}>
+                              <Chip
+                                label={ticket.status.replace("_", " ")}
+                                size="small"
+                                sx={{
+                                  fontWeight: 700,
+                                  fontSize: "0.68rem",
+                                  textTransform: "capitalize",
+                                  background: { open: isDark ? "#3a2f22" : "#fff3cd", in_progress: isDark ? "#1e2d40" : "#dbeafe", resolved: isDark ? "#1f3527" : "#dcfce7", closed: isDark ? "#2c3138" : "#f1f5f9" }[ticket.status],
+                                  color: { open: isDark ? "#f6c66a" : "#92400e", in_progress: isDark ? "#93c5fd" : "#1e40af", resolved: isDark ? "#6ee7b7" : "#16a34a", closed: isDark ? "#cbd5e1" : "#64748b" }[ticket.status],
+                                }}
+                              />
+                              <Chip label={ticket.category} size="small" sx={{ background: isDark ? "rgba(255,255,255,0.07)" : "rgba(168,77,72,0.08)", color: isDark ? "#ccc" : "#A84D48", fontWeight: 600, fontSize: "0.68rem" }} />
+                              {replies.length > 0 && (
+                                <Typography variant="caption" sx={{ color: "text.secondary" }}>{replies.length} {replies.length === 1 ? "reply" : "replies"}</Typography>
+                              )}
+                            </Box>
+                            <Typography variant="body2" sx={{ color: "text.secondary", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: isExpanded ? "normal" : "nowrap" }}>
+                              {ticket.description}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: "text.disabled", display: "block", mt: 0.25 }}>
+                              {formatRelativeDate(ticket.created_at)} · user {ticket.user_id?.slice(0, 8)}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ color: "text.secondary", mt: 0.25, flexShrink: 0 }}>
+                            <ExpandMoreIcon fontSize="small" sx={{ transform: isExpanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+                          </Box>
+                        </Box>
+
+                        {/* Expanded: replies + actions */}
+                        {isExpanded && (
+                          <>
+                            <Box sx={{ borderTop: "1px solid", borderColor: isDark ? "rgba(255,255,255,0.08)" : "#f0e8e8", px: 2, pt: 1.5, pb: 2 }}>
+                              <Typography variant="body2" sx={{ mb: replies.length > 0 ? 2 : 1.5, whiteSpace: "pre-wrap" }}>{ticket.description}</Typography>
+
+                              {replies.length > 0 && (
+                                <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mb: 2 }}>
+                                  <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary", textTransform: "uppercase", letterSpacing: 0.5 }}>Thread</Typography>
+                                  {replies.map((reply) => (
+                                    <Box
+                                      key={reply.id}
+                                      sx={{
+                                        p: 1.5,
+                                        borderRadius: 1.5,
+                                        background: reply.is_moderator
+                                          ? (isDark ? "rgba(255,69,0,0.12)" : "rgba(168,77,72,0.06)")
+                                          : (isDark ? "rgba(255,255,255,0.04)" : "#f9f5f4"),
+                                        border: `1px solid ${reply.is_moderator ? (isDark ? "rgba(255,69,0,0.35)" : "rgba(168,77,72,0.2)") : (isDark ? "rgba(255,255,255,0.08)" : "#ecdcdc")}`,
+                                      }}
+                                    >
+                                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
+                                        <Chip
+                                          label={reply.is_moderator ? "Support Team" : "User"}
+                                          size="small"
+                                          sx={{
+                                            background: reply.is_moderator ? (isDark ? "#FF4500" : "#A84D48") : (isDark ? "#333" : "#eee"),
+                                            color: reply.is_moderator ? "#fff" : "text.secondary",
+                                            fontWeight: 700, fontSize: "0.63rem", height: 18,
+                                          }}
+                                        />
+                                        <Typography variant="caption" sx={{ color: "text.disabled" }}>{formatRelativeDate(reply.created_at)}</Typography>
+                                      </Box>
+                                      <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>{reply.message}</Typography>
+                                    </Box>
+                                  ))}
+                                </Box>
+                              )}
+
+                              {/* Reply box */}
+                              {canReply && (
+                                <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mb: 1.5 }}>
+                                  {replyErr && <Alert severity="error" sx={{ py: 0 }}>{replyErr}</Alert>}
+                                  <TextField
+                                    multiline minRows={2} maxRows={6} fullWidth size="small"
+                                    placeholder="Reply to this ticket..."
+                                    value={ticketReply[ticket.id] || ""}
+                                    onChange={(e) => setTicketReply((prev) => ({ ...prev, [ticket.id]: e.target.value }))}
+                                    inputProps={{ maxLength: 1000 }}
+                                    sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5 } }}
+                                  />
+                                  <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+                                    <Button
+                                      variant="contained" size="small"
+                                      disabled={!(ticketReply[ticket.id] || "").trim() || isReplying}
+                                      onClick={() => handleTicketReply(ticket.id)}
+                                      endIcon={isReplying ? <CircularProgress size={13} color="inherit" /> : null}
+                                      sx={{ background: isDark ? "#FF4500" : "#A84D48", "&:hover": { background: isDark ? "#E03D00" : "#8f3e3a" }, fontWeight: 700, borderRadius: 1.5 }}
+                                    >
+                                      Send Reply
+                                    </Button>
+                                  </Box>
+                                </Box>
+                              )}
+
+                              {/* Status controls */}
+                              <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", pt: 1, borderTop: "1px solid", borderColor: isDark ? "rgba(255,255,255,0.06)" : "#f0e8e8" }}>
+                                <Typography variant="caption" sx={{ color: "text.secondary", alignSelf: "center", mr: 0.5 }}>Set status:</Typography>
+                                {[["in_progress", "In Progress"], ["resolved", "Resolved"], ["closed", "Closed"]].map(([val, label]) => (
+                                  ticket.status !== val && (
+                                    <Button
+                                      key={val} size="small" variant="outlined" disabled={isUpdating}
+                                      onClick={() => handleTicketStatus(ticket.id, val)}
+                                      sx={{
+                                        fontSize: "0.72rem", fontWeight: 700, borderRadius: 1.5,
+                                        borderColor: isDark ? "#555" : "#ccc", color: "text.secondary",
+                                        "&:hover": { borderColor: isDark ? "#FF4500" : "#A84D48", color: isDark ? "#FF4500" : "#A84D48" },
+                                      }}
+                                    >
+                                      {isUpdating ? <CircularProgress size={12} /> : label}
+                                    </Button>
+                                  )
+                                ))}
+                              </Box>
+                            </Box>
+                          </>
+                        )}
+                      </Box>
+                    );
+                  })}
+                </Box>
+              )}
+            </Box>
+          );
+        })()}
       </Box>
 
       <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} PaperProps={{ sx: { background: isDark ? "#1A1A1B" : "#fff", border: isDark ? "1px solid rgba(255,255,255,0.16)" : "none", m: 2 } }}>

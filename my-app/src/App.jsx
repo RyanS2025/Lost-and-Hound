@@ -1,8 +1,10 @@
 import './App.css';
-import { Routes, Route, Link } from "react-router-dom";
+import { Routes, Route, Link, useLocation } from "react-router-dom";
 import { supabase } from "../backend/supabaseClient";
 import { useAuth } from "./AuthContext";
 import LoginPage from "./pages/LoginPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import FeedPage from './pages/FeedPage';
 import MapPage from "./pages/MapPage";
 import MessagePage from "./pages/MessagePage";
@@ -10,7 +12,7 @@ import SettingsPage from "./pages/SettingsPage";
 import DashboardPage from "./pages/DashboardPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import AppFooter from "./components/AppFooter";
-import { AppBar, Toolbar, Button, Typography, Container, Box, Paper, CircularProgress } from '@mui/material';
+import { AppBar, Toolbar, Button, Typography, Container, Box, Paper, CircularProgress, Badge } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import HomeIcon from '@mui/icons-material/Home';
@@ -26,12 +28,18 @@ import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/timezone';
+import apiFetch from './utils/apiFetch';
 
-// --- App: Main application component with routing and navigation ---
 export default function App() {
-  const { user, profile, logout } = useAuth();
+  const { user, profile, sessionToken, logout, isPasswordRecovery, setIsPasswordRecovery } = useAuth();
+  const location = useLocation();
   const darkBg = "#101214";
   const isCompactNav = useMediaQuery("(max-width:1100px)");
+
+  // Scroll to top on route change
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
 
   const [themeMode, setThemeMode] = useState(() => {
     const saved = localStorage.getItem("themeMode");
@@ -43,6 +51,128 @@ export default function App() {
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches
   );
+
+  // Conversations state — lifted here so data persists across page navigations
+  const [msgConversations, setMsgConversations] = useState([]);
+  const [msgProfiles, setMsgProfiles] = useState({});
+  const [msgListings, setMsgListings] = useState({});
+  const [msgUnreadCounts, setMsgUnreadCounts] = useState({});
+  const [msgConversationsLoaded, setMsgConversationsLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!user || !sessionToken) {
+      setMsgConversations([]);
+      setMsgProfiles({});
+      setMsgListings({});
+      setMsgUnreadCounts({});
+      setMsgConversationsLoaded(false);
+      return;
+    }
+    const fetchConversations = async () => {
+      try {
+        const result = await apiFetch("/api/conversations");
+        setMsgConversations(result?.conversations || []);
+        setMsgProfiles(result?.profiles || {});
+        setMsgListings(result?.listings || {});
+        setMsgUnreadCounts(result?.unreadCounts || {});
+      } catch (err) {
+        console.error("Fetch conversations error:", err);
+      }
+      setMsgConversationsLoaded(true);
+    };
+    fetchConversations();
+
+    // Live update: refresh conversation list when new messages or conversations change
+    const convoChannel = supabase
+      .channel("convo-list-web")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, fetchConversations)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "conversations" }, fetchConversations)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "conversations" }, fetchConversations)
+      .subscribe();
+
+    return () => { supabase.removeChannel(convoChannel); };
+  }, [user?.id, sessionToken]);
+
+  // Shared listings state — fetched once, used by Feed and Map pages
+  const [sharedItems, setSharedItems] = useState([]);
+  const [sharedItemsLoaded, setSharedItemsLoaded] = useState(false);
+
+  const fetchAllItems = useCallback(async () => {
+    try {
+      await apiFetch("/api/listings/cleanup", { method: "POST" }).catch(() => {});
+      let allItems = [];
+      let page = 1;
+      let hasMore = true;
+      while (hasMore) {
+        const result = await apiFetch(`/api/listings?page=${page}&limit=100`);
+        allItems = [...allItems, ...(result?.data || [])];
+        hasMore = result?.hasMore ?? false;
+        page++;
+      }
+      setSharedItems(allItems);
+    } catch (err) {
+      console.error("Fetch listings error:", err);
+    }
+    setSharedItemsLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!user || !sessionToken) {
+      setSharedItems([]);
+      setSharedItemsLoaded(false);
+      return;
+    }
+    fetchAllItems();
+  }, [user?.id, sessionToken, fetchAllItems]);
+
+  // Unread message count — shown as a badge on the Messages nav button
+  const [unreadCount, setUnreadCount] = useState(0);
+  useEffect(() => {
+    if (!user || !sessionToken) { setUnreadCount(0); return; }
+
+    // Fetch the current unread count from the backend
+    const fetchUnread = () =>
+      apiFetch("/api/messages/unread-count")
+        .then(d => setUnreadCount(d.count ?? 0))
+        .catch(() => {});
+
+    fetchUnread();
+
+    // Subscribe to new message inserts so the badge updates in real time
+    // without the user needing to refresh the page
+    const channel = supabase
+      .channel("unread-badge")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, fetchUnread)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, fetchUnread)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, fetchUnread)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "conversations" }, fetchUnread)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id, sessionToken]);
+
+  // Handle email link verification (password recovery, etc.)
+  // The email links directly to our app with token_hash & type params,
+  // bypassing Supabase's /auth/v1/verify endpoint so Microsoft SafeLinks
+  // can't consume the token by pre-fetching it.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tokenHash = params.get("token_hash");
+    const type = params.get("type");
+    const code = params.get("code");
+
+    if (tokenHash && type) {
+      supabase.auth.verifyOtp({ token_hash: tokenHash, type }).then(({ error }) => {
+        if (error) console.error("Token verification failed:", error.message);
+        window.history.replaceState({}, "", window.location.pathname);
+      });
+    } else if (code) {
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        if (error) console.error("Code exchange failed:", error.message);
+        window.history.replaceState({}, "", window.location.pathname);
+      });
+    }
+  }, []);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -198,6 +328,57 @@ export default function App() {
     }
   }, [profile, user]);
 
+  // Password recovery: Supabase gives a valid session via the email link,
+  // so intercept before the normal auth check to show the reset form.
+  if (isPasswordRecovery) {
+    // `user` is only set after verifyOtp resolves and PASSWORD_RECOVERY fires.
+    // Showing the form before that means the session doesn't exist yet, so any
+    // submit attempt gets 401 "Invalid token" from requireAuth.
+    // Wait for the session to be ready; time out after 8 s if something went wrong.
+    const sessionReady = !!user;
+    return (
+      <ThemeProvider theme={appTheme}>
+        <CssBaseline />
+        {!sessionReady ? (
+          <Box
+            sx={{
+              minHeight: "100vh",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: effectiveTheme === "dark" ? darkBg : "#f5f0f0",
+              backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`,
+              backgroundSize: "24px 24px",
+            }}
+          >
+            <Box sx={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <CircularProgress
+                size={340}
+                thickness={1}
+                sx={{ color: effectiveTheme === "dark" ? darkAccent : "#A84D48", position: "absolute" }}
+              />
+              <Box
+                component="img"
+                src="/TabLogo.png"
+                alt="Lost & Hound"
+                sx={{ width: 230, height: 230, objectFit: "contain" }}
+              />
+            </Box>
+          </Box>
+        ) : (
+          <ResetPasswordPage
+            effectiveTheme={effectiveTheme}
+            onComplete={async () => {
+              setIsPasswordRecovery(false);
+              await supabase.auth.signOut();
+              window.location.href = "/";
+            }}
+          />
+        )}
+      </ThemeProvider>
+    );
+  }
+
   // Keep showing LoginPage while auth/MFA is in progress.
   // This avoids a blank screen if /api/profile is blocked by require2FA.
   if (!user || loginTransition || !profile) {
@@ -238,12 +419,27 @@ export default function App() {
             </Box>
           </Box>
         ) : (
-          <LoginPage
-            loginTransition={loginTransition}
-            onLoginSuccess={onLoginSuccess}
-            onLoginCancel={onLoginCancel}
-            effectiveTheme={effectiveTheme}
-          />
+          <Routes>
+            <Route
+              path="/forgot-password"
+              element={<ForgotPasswordPage effectiveTheme={effectiveTheme} />}
+            />
+            <Route
+              path="/reset-password"
+              element={<ResetPasswordPage effectiveTheme={effectiveTheme} />}
+            />
+            <Route
+              path="*"
+              element={
+                <LoginPage
+                  loginTransition={loginTransition}
+                  onLoginSuccess={onLoginSuccess}
+                  onLoginCancel={onLoginCancel}
+                  effectiveTheme={effectiveTheme}
+                />
+              }
+            />
+          </Routes>
         )}
       </ThemeProvider>
     );
@@ -268,7 +464,7 @@ export default function App() {
               }}
             >
               <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <Box component="img" src="/LostandHoundLogo.PNG" alt="Lost & Hound logo"
+                <Box component="img" src="/TabLogo.PNG" alt="Lost & Hound logo"
                   sx={{ height: 32, width: 32, objectFit: "contain", filter: "brightness(0) invert(1)" }} />
                 <Typography variant="h6" fontWeight={900} sx={{ letterSpacing: 0.5, display: { xs: "none", sm: "block" } }}>
                   Lost &amp; Hound
@@ -368,9 +564,9 @@ export default function App() {
           >
             <Box
               component="img"
-              src="/LostandHoundLogo.PNG"
+              src="/TabLogo.png"
               alt="Lost & Hound logo"
-              sx={{ height: 32, width: 32, objectFit: "contain", filter: "brightness(0) invert(1)" }}
+              sx={{ height: 48, width: 48, objectFit: "contain"}}
             />
             <Typography variant="h6" fontWeight={900} sx={{ letterSpacing: 0.5, display: { xs: "none", sm: "block" } }}>
               Lost &amp; Hound
@@ -398,7 +594,11 @@ export default function App() {
             color="inherit"
             component={Link}
             to="/messages"
-            startIcon={<MessageIcon />}
+            startIcon={
+              <Badge badgeContent={unreadCount} color="error" max={99}>
+                <MessageIcon />
+              </Badge>
+            }
             sx={{ minWidth: 0 }}
           >
             {!isCompactNav ? "Messages" : null}
@@ -463,9 +663,9 @@ export default function App() {
       >
         <Box sx={{ mt: 0, pb: { xs: "78px", sm: "64px" } }}>
           <Routes>
-            <Route path="/" element={<FeedPage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
-            <Route path="/map" element={<MapPage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
-            <Route path="/messages" element={<MessagePage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
+            <Route path="/" element={<FeedPage effectiveTheme={effectiveTheme} timeZone={timeZone} sharedItems={sharedItems} setSharedItems={setSharedItems} sharedItemsLoaded={sharedItemsLoaded} refreshItems={fetchAllItems} />} />
+            <Route path="/map" element={<MapPage effectiveTheme={effectiveTheme} timeZone={timeZone} sharedItems={sharedItems} setSharedItems={setSharedItems} sharedItemsLoaded={sharedItemsLoaded} refreshItems={fetchAllItems} />} />
+            <Route path="/messages" element={<MessagePage effectiveTheme={effectiveTheme} timeZone={timeZone} conversations={msgConversations} setConversations={setMsgConversations} profiles={msgProfiles} setProfiles={setMsgProfiles} listings={msgListings} setListings={setMsgListings} unreadCounts={msgUnreadCounts} setUnreadCounts={setMsgUnreadCounts} conversationsLoaded={msgConversationsLoaded} />} />
             <Route
               path="/settings"
               element={

@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { setOptions, importLibrary } from "@googlemaps/js-api-loader";
 import { useAuth } from "../AuthContext";
 import {
   Box, Typography, Paper, Slider, Chip, IconButton, CircularProgress,
-  Collapse, Button, Modal, Autocomplete, TextField, SwipeableDrawer,
+  Collapse, Button, Modal, Autocomplete, TextField,
 } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import MyLocationIcon from "@mui/icons-material/MyLocation";
@@ -26,6 +26,8 @@ setOptions({
 // --- Constants ---
 const IMPORTANCE_LABELS = { 3: "High", 2: "Medium", 1: "Low" };
 const IMPORTANCE_COLORS = { 3: "#b91c1c", 2: "#a16207", 1: "#1d4ed8" };
+const LISTING_TYPE_LABELS = { found: "Found", lost: "Lost" };
+const LISTING_TYPE_COLORS = { found: "#0891b2", lost: "#4f46e5" };
 const RADIUS_MARKS = [
   { value: 50, label: "50ft" },
   { value: 150, label: "150ft" },
@@ -112,13 +114,27 @@ function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAUL
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mb: 2 }}>
           <Chip label={IMPORTANCE_LABELS[item.importance]} size="small" sx={{ background: IMPORTANCE_COLORS[item.importance] + "22", color: IMPORTANCE_COLORS[item.importance], fontWeight: 800 }} />
           <Chip label={item.category} size="small" sx={{ background: isDark ? "#343536" : "#f5eded", color: "#A84D48", fontWeight: 700 }} />
+          {item.listing_type && (
+            <Chip
+              label={LISTING_TYPE_LABELS[item.listing_type] ?? item.listing_type}
+              size="small"
+              sx={{
+                background: (LISTING_TYPE_COLORS[item.listing_type] ?? "#888") + "22",
+                color: LISTING_TYPE_COLORS[item.listing_type] ?? "#888",
+                border: `1px solid ${(LISTING_TYPE_COLORS[item.listing_type] ?? "#888")}44`,
+                fontWeight: 800,
+              }}
+            />
+          )}
           {item.resolved && <Chip label="Resolved" size="small" sx={{ background: isDark ? "#1f3527" : "#dcfce7", color: isDark ? "#6ee7b7" : "#16a34a", border: isDark ? "1px solid rgba(110,231,183,0.42)" : "none", fontWeight: 800 }} />}
         </Box>
 
         <Paper variant="outlined" sx={{ p: 2, mb: 2, background: isDark ? "#232324" : "#fdf7f7", borderColor: isDark ? "rgba(255,255,255,0.14)" : "#ecdcdc", borderRadius: 2 }}>
           <Typography variant="caption" fontWeight={800} color="#a07070" sx={{ letterSpacing: 0.5, display: "block", mb: 0.75 }}>LOCATION</Typography>
           <Typography fontWeight={700} fontSize={14}>{item.locations?.name ?? "Unknown location"}</Typography>
-          <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600}>Found at: {item.found_at}</Typography>
+          <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600}>
+            {item.listing_type === "lost" ? "Last seen at" : "Found at"}: {item.found_at}
+          </Typography>
         </Paper>
 
         <Box sx={{ mb: 3 }}>
@@ -129,7 +145,9 @@ function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAUL
         {!item.resolved && !isOwner && (
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, px: 1.25, py: 0.75, mb: 1.5, borderRadius: 1.5, background: isDark ? "#3a2f22" : "#fff3cd", border: isDark ? "1px solid rgba(245,158,11,0.5)" : "1px solid #ffc107" }}>
             <Typography variant="caption" sx={{ color: isDark ? "#f6c66a" : "#7d4e00", fontWeight: 600, lineHeight: 1.4 }}>
-              Only the original poster can mark this item as returned.
+              {item.listing_type === "lost"
+                ? "Only the original poster can mark this item as found."
+                : "Only the original poster can mark this item as returned."}
             </Typography>
           </Box>
         )}
@@ -146,7 +164,10 @@ function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAUL
               }}
               sx={{ background: item.resolved ? "#16a34a" : "#A84D48", "&:hover": { background: item.resolved ? "#15803d" : "#8f3e3a" }, fontWeight: 800, borderRadius: 2 }}
             >
-              {item.resolved ? "Already Returned" : returning ? "Marking..." : "Returned Item"}
+              {item.resolved
+                ? (item.listing_type === "lost" ? "Already Found" : "Already Returned")
+                : returning ? "Marking..."
+                : (item.listing_type === "lost" ? "I Found This!" : "Returned Item")}
             </Button>
           )}
           {!isOwner && (
@@ -256,18 +277,36 @@ function SidePanelContent({ isDark, radius, setRadius, nearbyItems, mapInstanceR
                 </Box>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography fontWeight={800} fontSize={13} noWrap>{item.title}</Typography>
-                  <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600} noWrap>
-                    {item.locations?.name ?? "Unknown"} · {formatRelativeDate(item.date, timeZone, { compact: true })}
+                  <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600} noWrap sx={{ display: "block" }}>
+                    {item.locations?.name ?? "Unknown"}
+                  </Typography>
+                  <Typography variant="caption" color={isDark ? "#818384" : "text.disabled"} fontWeight={600} sx={{ display: "block", fontSize: 11 }}>
+                    {formatRelativeDate(item.date, timeZone, { compact: true })}
                   </Typography>
                 </Box>
-                <Chip
-                  label={IMPORTANCE_LABELS[item.importance]} size="small"
-                  sx={{
-                    background: IMPORTANCE_COLORS[item.importance] + "22",
-                    color: IMPORTANCE_COLORS[item.importance],
-                    fontWeight: 800, fontSize: 10, flexShrink: 0,
-                  }}
-                />
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, flexShrink: 0, alignItems: "flex-end" }}>
+                  <Chip
+                    label={IMPORTANCE_LABELS[item.importance]} size="small"
+                    sx={{
+                      background: IMPORTANCE_COLORS[item.importance] + "22",
+                      color: IMPORTANCE_COLORS[item.importance],
+                      fontWeight: 800, fontSize: 10,
+                    }}
+                  />
+                  {/* Lost/Found badge on side panel cards */}
+                  {item.listing_type && (
+                    <Chip
+                      label={LISTING_TYPE_LABELS[item.listing_type] ?? item.listing_type}
+                      size="small"
+                      sx={{
+                        background: (LISTING_TYPE_COLORS[item.listing_type] ?? "#888") + "22",
+                        color: LISTING_TYPE_COLORS[item.listing_type] ?? "#888",
+                        border: `1px solid ${(LISTING_TYPE_COLORS[item.listing_type] ?? "#888")}44`,
+                        fontWeight: 800, fontSize: 10,
+                      }}
+                    />
+                  )}
+                </Box>
               </Box>
             </Paper>
           ))}
@@ -278,7 +317,7 @@ function SidePanelContent({ isDark, radius, setRadius, nearbyItems, mapInstanceR
 }
 
 // --- MapPage ---
-export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE }) {
+export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE, sharedItems, setSharedItems, sharedItemsLoaded, refreshItems }) {
   const isDark = effectiveTheme === "dark";
   const isMobile = useMediaQuery("(max-width:900px)");
   const pageBg = isDark ? "#101214" : "#f9f5f4";
@@ -296,8 +335,7 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
 
   const [selectedCampus, setSelectedCampus] = useState(initialCampus);
   const [campusBuildings, setCampusBuildings] = useState([]);
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const loading = !sharedItemsLoaded;
   const [searchPin, setSearchPin] = useState(null);
   const [radius, setRadius] = useState(150);
   const [nearbyItems, setNearbyItems] = useState([]);
@@ -305,7 +343,8 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
   const [refreshing, setRefreshing] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [showResolved, setShowResolved] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // "all" shows both types. "found" / "lost" narrows markers and the side panel list.
+  const [listingTypeFilter, setListingTypeFilter] = useState("all");
 
   const activeCampus = CAMPUSES.find((c) => c.id === selectedCampus) ?? CAMPUSES[0];
 
@@ -329,47 +368,25 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
     })();
   }, [selectedCampus]);
 
-  // ---- Fetch all listings ----
-  const fetchItems = useCallback(async () => {
-    setLoading(true);
-
-    try {
-      await apiFetch("/api/listings/cleanup", { method: "POST" });
-
-      // Fetch all pages for the map view
-      let allItems = [];
-      let page = 1;
-      let hasMore = true;
-      while (hasMore) {
-        const result = await apiFetch(`/api/listings?page=${page}&limit=100`);
-        allItems = [...allItems, ...(result?.data || [])];
-        hasMore = result?.hasMore ?? false;
-        page++;
-      }
-
-      const normalized = allItems.map((item) => {
-        let lat = item.lat;
-        let lng = item.lng;
-        if (lat == null && item.locations?.coordinates) {
-          const parsed = parseCoordinates(item.locations.coordinates);
-          if (parsed) { lat = parsed.lat; lng = parsed.lng; }
-        }
-        return { ...item, _lat: lat, _lng: lng };
-      });
-      setItems(normalized);
-    } catch (err) {
-      console.error("Failed to fetch listings:", err);
-      setItems([]);
-    } finally {
-      setLoading(false);
+  // Normalize shared items with lat/lng for map display
+  const items = useMemo(() => sharedItems.map((item) => {
+    let lat = item.lat;
+    let lng = item.lng;
+    if (lat == null && item.locations?.coordinates) {
+      const parsed = parseCoordinates(item.locations.coordinates);
+      if (parsed) { lat = parsed.lat; lng = parsed.lng; }
     }
-  }, []);
+    return { ...item, _lat: lat, _lng: lng };
+  }), [sharedItems]);
 
-  useEffect(() => { fetchItems(); }, [fetchItems]);
+  // Silently refresh in background on page visit (stale-while-revalidate)
+  useEffect(() => {
+    if (sharedItemsLoaded) refreshItems();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchItems();
+    await refreshItems();
     if (mapInstanceRef.current) {
       mapInstanceRef.current.panTo(activeCampus.center);
       mapInstanceRef.current.setZoom(activeCampus.zoom);
@@ -392,7 +409,7 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
   const handleClaim = async (item_id) => {
     try {
       await apiFetch(`/api/listings/${item_id}/resolve`, { method: "PATCH" });
-      setItems(prev => prev.map(i => i.item_id === item_id ? { ...i, resolved: true } : i));
+      setSharedItems(prev => prev.map(i => i.item_id === item_id ? { ...i, resolved: true } : i));
       if (selectedItem?.item_id === item_id) setSelectedItem(prev => ({ ...prev, resolved: true }));
     } catch (err) {
       console.error("Failed to resolve listing:", err);
@@ -445,13 +462,8 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
       });
 
       map.addListener("click", (e) => {
-        const pos = { lat: e.latLng.lat(), lng: e.latLng.lng() };
-        setSearchPin(pos);
-        if (isMobile) {
-          setDrawerOpen(true);
-        } else {
-          setShowPanel(true);
-        }
+        setSearchPin({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+        setShowPanel(true);
       });
     })();
 
@@ -467,13 +479,8 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
     if (!map) return;
 
     const listener = map.addListener("click", (e) => {
-      const pos = { lat: e.latLng.lat(), lng: e.latLng.lng() };
-      setSearchPin(pos);
-      if (isMobileRef.current) {
-        setDrawerOpen(true);
-      } else {
-        setShowPanel(true);
-      }
+      setSearchPin({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+      setShowPanel(true);
     });
 
     return () => {
@@ -611,10 +618,12 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
     const nearby = items.filter((i) => {
       if (i._lat == null || i._lng == null) return false;
       if (!showResolved && i.resolved) return false;
+      // Only apply the type filter when the user has selected found or lost specifically.
+      if (listingTypeFilter !== "all" && i.listing_type !== listingTypeFilter) return false;
       return haversine(searchPin, { lat: i._lat, lng: i._lng }) <= radius;
     });
     setNearbyItems(nearby);
-  }, [searchPin, radius, items, showResolved]);
+  }, [searchPin, radius, items, showResolved, listingTypeFilter]);
 
   // ---- Trigger map resize when layout changes ----
   useEffect(() => {
@@ -659,11 +668,8 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
   const clearSearch = () => {
     setSearchPin(null);
     setShowPanel(false);
-    setDrawerOpen(false);
     setNearbyItems([]);
   };
-
-  const showMobileFab = isMobile && !!searchPin && !drawerOpen;
 
   return (
     <>
@@ -727,6 +733,26 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
         }}>
           <Typography variant={isMobile ? "h5" : "h4"} fontWeight={900}>Campus Map</Typography>
           <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {/* Listing type toggle — cycles All → Lost → Found → All */}
+            {(() => {
+              const cycle = ["all", "lost", "found"];
+              const typeColor = listingTypeFilter === "all" ? "#A84D48" : LISTING_TYPE_COLORS[listingTypeFilter];
+              const typeLabel = listingTypeFilter === "all" ? "All" : LISTING_TYPE_LABELS[listingTypeFilter];
+              return (
+                <Chip
+                  label={`Type: ${typeLabel}`}
+                  clickable
+                  onClick={() => setListingTypeFilter(cycle[(cycle.indexOf(listingTypeFilter) + 1) % cycle.length])}
+                  sx={{
+                    fontWeight: 800, fontSize: 12,
+                    background: typeColor,
+                    color: "#fff",
+                    border: `1.5px solid ${typeColor}`,
+                    "&:hover": { background: typeColor, opacity: 0.85 },
+                  }}
+                />
+              );
+            })()}
             <Chip
               label={showResolved ? "Hide Resolved" : "Show Resolved"}
               clickable
@@ -765,16 +791,14 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
         <Box sx={{
           display: "flex", gap: 2.5,
           flexDirection: { xs: "column", md: "row" },
-          flex: isMobile ? 1 : undefined,
-          minHeight: 0,
         }}>
           {/* Map container */}
           <Paper
             elevation={3}
             sx={{
               flex: 1,
-              minHeight: { xs: 280, md: 400 },
-              height: { xs: "calc(100dvh - 160px)", md: "calc(100vh - 240px)" },
+              minHeight: { xs: 240, md: 400 },
+              height: { xs: "40vh", md: "calc(100vh - 240px)" },
               overflow: "hidden", borderRadius: 3, position: "relative",
               border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
               background: isDark ? "#1A1A1B" : "#fff",
@@ -852,8 +876,8 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
             )}
           </Paper>
 
-          {/* ===== DESKTOP side panel (hidden on mobile) ===== */}
-          {!isMobile && (
+          {/* Desktop side panel — slides in horizontally beside the map (md+) */}
+          <Box sx={{ display: { xs: "none", md: "block" } }}>
             <Collapse
               in={showPanel && !!searchPin}
               orientation="horizontal"
@@ -884,86 +908,33 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
                 />
               </Paper>
             </Collapse>
-          )}
+          </Box>
+
+          {/* Mobile inline panel — appears below the map on all small screens (xs) */}
+          <Box sx={{ display: { xs: "block", md: "none" } }}>
+            {searchPin && (
+              <Paper
+                elevation={2}
+                sx={{
+                  p: 2.5, borderRadius: 3,
+                  border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc",
+                  background: isDark ? "#1A1A1B" : "#fff",
+                }}
+              >
+                <SidePanelContent
+                  isDark={isDark}
+                  radius={radius}
+                  setRadius={setRadius}
+                  nearbyItems={nearbyItems}
+                  mapInstanceRef={mapInstanceRef}
+                  setSelectedItem={setSelectedItem}
+                  timeZone={timeZone}
+                />
+              </Paper>
+            )}
+          </Box>
         </Box>
       </Box>
-
-      {/* ===== MOBILE: floating button to re-open drawer ===== */}
-      {showMobileFab && (
-        <Button
-          variant="contained"
-          onClick={() => setDrawerOpen(true)}
-          startIcon={<ListIcon />}
-          sx={{
-            position: "fixed",
-            bottom: 50,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 1100,
-            background: "#A84D48",
-            "&:hover": { background: "#8f3e3a" },
-            fontWeight: 800,
-            borderRadius: 99,
-            px: 3,
-            py: 1,
-            boxShadow: "0 4px 20px rgba(168,77,72,0.35)",
-            textTransform: "none",
-            fontSize: 14,
-          }}
-        >
-          {nearbyItems.length} item{nearbyItems.length !== 1 ? "s" : ""} nearby
-        </Button>
-      )}
-
-      {/* ===== MOBILE: SwipeableDrawer instead of Collapse ===== */}
-      {isMobile && (
-        <SwipeableDrawer
-          anchor="bottom"
-          open={drawerOpen && !!searchPin}
-          onClose={() => setDrawerOpen(false)}
-          onOpen={() => setDrawerOpen(true)}
-          disableSwipeToOpen
-          swipeAreaWidth={0}
-          ModalProps={{ keepMounted: true }}
-          PaperProps={{
-            sx: {
-              borderTopLeftRadius: 16,
-              borderTopRightRadius: 16,
-              maxHeight: "70vh",
-              background: isDark ? "#1A1A1B" : "#fff",
-              border: isDark ? "1px solid rgba(255,255,255,0.16)" : "none",
-              overflow: "visible",
-            },
-          }}
-        >
-          {/* Drag handle */}
-          <Box sx={{ display: "flex", justifyContent: "center", pt: 1.25, pb: 0.5 }}>
-            <Box sx={{
-              width: 36, height: 4, borderRadius: 2,
-              background: isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.2)",
-            }} />
-          </Box>
-          <Box sx={{ px: 2.5, pb: 3, overflowY: "auto", maxHeight: "calc(70vh - 24px)" }}>
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
-              <Typography fontWeight={800} fontSize={15}>Nearby Items</Typography>
-              <IconButton size="small" onClick={() => setDrawerOpen(false)}>
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Box>
-            <SidePanelContent
-              isDark={isDark}
-              radius={radius}
-              setRadius={setRadius}
-              nearbyItems={nearbyItems}
-              mapInstanceRef={mapInstanceRef}
-              setSelectedItem={(item) => {
-                setSelectedItem(item);
-              }}
-              timeZone={timeZone}
-            />
-          </Box>
-        </SwipeableDrawer>
-      )}
 
       <DetailModal item={selectedItem} onClose={() => setSelectedItem(null)} onClaim={handleClaim} isDark={isDark} timeZone={timeZone} />
       </Box>

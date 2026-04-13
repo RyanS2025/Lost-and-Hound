@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../../backend/supabaseClient";
 import {
   Paper,
@@ -12,9 +13,13 @@ import {
   FormControlLabel,
   CircularProgress,
   LinearProgress,
+  IconButton,
+  Tooltip,
 } from "@mui/material";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import TermsModal from "../components/TermsModal";
 import LoginSupportModal from "../components/LoginSupportModal";
+import DemoModal from "../components/DemoModal";
 import apiFetch from "../utils/apiFetch";
 
 const NAME_MAX_LENGTH = 25;
@@ -114,6 +119,7 @@ export default function LoginPage({
   effectiveTheme = "light",
 }) {
   const isDark = effectiveTheme === "dark";
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -132,6 +138,8 @@ export default function LoginPage({
   const [mfaUri, setMfaUri] = useState("");
   const [mfaLoading, setMfaLoading] = useState(false);
   const [mfaVerifying, setMfaVerifying] = useState(false);
+  const [resendingEmail, setResendingEmail] = useState(false);
+  const [resendMessage, setResendMessage] = useState("");
 
   // Terms modal state
   const [termsOpen, setTermsOpen] = useState(false);
@@ -139,6 +147,8 @@ export default function LoginPage({
 
   // Support modal state
   const [supportOpen, setSupportOpen] = useState(false);
+  // Demo modal state
+  const [demoOpen, setDemoOpen] = useState(false);
 
   // Refs to read Chrome's autofilled DOM values (Chrome bypasses onChange)
   const emailRef = useRef(null);
@@ -240,6 +250,7 @@ export default function LoginPage({
             first_name: firstName.trim(),
             last_name: lastName.trim(),
           },
+          emailRedirectTo: window.location.origin,
         },
       });
 
@@ -258,6 +269,25 @@ export default function LoginPage({
       setLastName("");
     } catch (err) {
       setError(cleanErrorMessage(err.message || err.code));
+    }
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!email) return;
+    setResendingEmail(true);
+    setResendMessage("");
+    try {
+      const { error: resendError } = await supabase.auth.resend({
+        type: "signup",
+        email,
+        options: { emailRedirectTo: window.location.origin },
+      });
+      if (resendError) throw resendError;
+      setResendMessage("Verification email resent! Check your inbox.");
+    } catch (err) {
+      setResendMessage("Failed to resend. Please try again.");
+    } finally {
+      setResendingEmail(false);
     }
   };
 
@@ -414,22 +444,6 @@ export default function LoginPage({
             }
           }
         }
-    } catch (err) {
-      setError(cleanErrorMessage(err.message || err.code));
-    }
-  };
-
-  const handleForgotPassword = async () => {
-    setError("");
-    setMessage("");
-    if (!email) {
-      setError("Enter your email above first.");
-      return;
-    }
-    try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email);
-      if (resetError) throw resetError;
-      setMessage("Password reset email sent! Check your inbox.");
     } catch (err) {
       setError(cleanErrorMessage(err.message || err.code));
     }
@@ -654,6 +668,24 @@ export default function LoginPage({
             >
               Made for Oasis @ Northeastern
             </Typography>
+
+            <Typography
+              variant="caption"
+              onClick={() => setDemoOpen(true)}
+              sx={{
+                color: BRAND.leftPanelBody,
+                mt: 1,
+                position: "relative",
+                zIndex: 1,
+                cursor: "pointer",
+                fontWeight: 700,
+                textDecoration: "underline",
+                textUnderlineOffset: 3,
+                "&:hover": { opacity: 0.85 },
+              }}
+            >
+              Want to preview our project?
+            </Typography>
           </Box>
 
           {/* --- Right panel: form --- */}
@@ -725,7 +757,7 @@ export default function LoginPage({
                 </Typography>
                 <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
                   {mfaQrCodeSvg
-                    ? "Scan the QR code in your authenticator app (Duo is highly reccomnded) then enter the 6-digit code below."
+                    ? "Scan the QR code in your authenticator app (Duo is highly recommended) then enter the 6-digit code below."
                     : "Use the 6-digit code from your authenticator app to finish signing in."}
                 </Typography>
 
@@ -759,11 +791,26 @@ export default function LoginPage({
                   </Box>
                 )}
 
-                {mfaUri && (
-                  <Typography variant="caption" sx={{ display: "block", mb: 2, color: "text.secondary", wordBreak: "break-all" }}>
-                    Trouble scanning? Use this setup URI: {mfaUri}
-                  </Typography>
-                )}
+                {mfaUri && (() => {
+                  const secret = new URL(mfaUri).searchParams.get("secret") ?? mfaUri;
+                  return (
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="caption" sx={{ display: "block", mb: 0.5, color: "text.secondary" }}>
+                        Trouble scanning? Enter this code manually in your authenticator app:
+                      </Typography>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, background: "rgba(0,0,0,0.06)", borderRadius: 1, px: 1.5, py: 0.75 }}>
+                        <Typography variant="body2" sx={{ fontFamily: "monospace", letterSpacing: 1, flexGrow: 1, userSelect: "all" }}>
+                          {secret}
+                        </Typography>
+                        <Tooltip title="Copy">
+                          <IconButton size="small" onClick={() => navigator.clipboard.writeText(secret)}>
+                            <ContentCopyIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    </Box>
+                  );
+                })()}
 
                 <TextField
                   required
@@ -995,6 +1042,21 @@ export default function LoginPage({
                       Need Help?
                     </MuiLink>
                   </Box>
+                  <MuiLink
+                    component="button"
+                    variant="body2"
+                    onClick={() => navigate("/forgot-password")}
+                    sx={{
+                      cursor: "pointer",
+                      color: BRAND.accent,
+                      fontWeight: 600,
+                      display: "block",
+                      mt: 2,
+                      textAlign: "center",
+                    }}
+                  >
+                    Forgot password?
+                  </MuiLink>
                 )}
 
                 {error && (
@@ -1024,6 +1086,30 @@ export default function LoginPage({
                           </MuiLink>{" "}
                           and release the email from there.
                         </Typography>
+                        <MuiLink
+                          component="button"
+                          variant="body2"
+                          onClick={handleResendConfirmation}
+                          disabled={resendingEmail}
+                          sx={{
+                            display: "block",
+                            mt: 1.5,
+                            color: "inherit",
+                            fontWeight: 700,
+                            cursor: resendingEmail ? "default" : "pointer",
+                            opacity: resendingEmail ? 0.6 : 1,
+                          }}
+                        >
+                          {resendingEmail ? "Sending..." : "Resend verification email"}
+                        </MuiLink>
+                        {resendMessage && (
+                          <Typography
+                            variant="caption"
+                            sx={{ display: "block", mt: 0.5, color: "inherit", fontWeight: 600 }}
+                          >
+                            {resendMessage}
+                          </Typography>
+                        )}
                       </>
                     ) : (
                       error
@@ -1085,6 +1171,10 @@ export default function LoginPage({
       <LoginSupportModal
         open={supportOpen}
         onClose={() => setSupportOpen(false)}
+      {/* Demo preview modal */}
+      <DemoModal
+        open={demoOpen}
+        onClose={() => setDemoOpen(false)}
         effectiveTheme={effectiveTheme}
       />
     </>

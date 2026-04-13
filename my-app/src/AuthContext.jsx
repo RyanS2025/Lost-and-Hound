@@ -15,11 +15,22 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
   const [sessionToken, setSessionToken] = useState(null);
+  // Detect recovery token in URL synchronously to prevent flash of login page.
+  // Supabase's JS client auto-detects token_hash & type in the URL and verifies
+  // the token internally — we don't call verifyOtp manually to avoid a duplicate
+  // call that would 403 (token already consumed by Supabase's auto-detection).
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return !!(params.get("token_hash") && params.get("type") === "recovery");
+  });
 
   useEffect(() => {
     // onAuthStateChange fires immediately with INITIAL_SESSION.
     // Track session token changes so profile refetches after MFA verify updates JWT claims.
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setIsPasswordRecovery(true);
+      }
       const nextUser = session?.user || null;
       setSessionToken(session?.access_token || null);
       setUser(prev => {
@@ -36,8 +47,8 @@ export function AuthProvider({ children }) {
   // Fetch profile when user ID changes or when auth token changes (e.g. after MFA verify).
   useEffect(() => {
     const fetchProfile = async () => {
-      if (!user?.id || !sessionToken) {
-        setProfile(null);
+      if (!user?.id || !sessionToken || isPasswordRecovery) {
+        if (!isPasswordRecovery) setProfile(null);
         return;
       }
       try {
@@ -50,7 +61,7 @@ export function AuthProvider({ children }) {
       };
 
     fetchProfile();
-  }, [user?.id, sessionToken]);
+  }, [user?.id, sessionToken, isPasswordRecovery]);
 
   const logout = async () => {
     setSessionToken(null);
@@ -59,7 +70,9 @@ export function AuthProvider({ children }) {
 
   // Forgot password function
   const forgotPassword = async (email) => {
-    return supabase.auth.resetPasswordForEmail(email);
+    return supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
   };
 
   // Allow components to update profile fields in memory (e.g. after settings save)
@@ -70,7 +83,7 @@ export function AuthProvider({ children }) {
   if (loading) return <div>Loading...</div>;
 
   return (
-    <AuthContext.Provider value={{ user, profile, updateProfile, logout, forgotPassword }}>
+    <AuthContext.Provider value={{ user, profile, sessionToken, updateProfile, logout, forgotPassword, isPasswordRecovery, setIsPasswordRecovery }}>
       {children}
     </AuthContext.Provider>
   );

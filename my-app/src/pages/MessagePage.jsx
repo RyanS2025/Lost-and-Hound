@@ -16,7 +16,7 @@ import { DEFAULT_TIME_ZONE, formatTime } from "../utils/timezone";
 
 const MESSAGE_MAX_LENGTH = 500;
 
-export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE }) {
+export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE, conversations, setConversations, profiles, setProfiles, listings, setListings, unreadCounts = {}, setUnreadCounts = () => {}, conversationsLoaded }) {
   const isDark = effectiveTheme === "dark";
   const isMobile = useMediaQuery("(max-width:900px)");
   const pageBg = isDark ? "#101214" : "#f9f5f4";
@@ -25,20 +25,22 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
   const mutedTextColor = isDark ? "#818384" : "text.disabled";
   const { user, profile } = useAuth();
 
-  const [conversations, setConversations] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
   const [msgHasMore, setMsgHasMore] = useState(false);
   const [msgPage, setMsgPage] = useState(1);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState(null);
-  const [profiles, setProfiles] = useState({});
-  const [listings, setListings] = useState({});
   const [newMessage, setNewMessage] = useState("");
+  const [sending, setSending] = useState(false);
   const [reportTarget, setReportTarget] = useState(null);
   const [searchParams] = useSearchParams();
-  const bottomRef = useRef(null);
+  const scrollContainerRef = useRef(null);
+  const scrollIntentRef = useRef("none");
+  const prevScrollHeightRef = useRef(0);
   const handledConvoIdRef = useRef(null);
+  const messageCacheRef = useRef({});
 
   const hideConversation = async (convo, e) => {
     e.stopPropagation();
@@ -53,32 +55,94 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
 
   const sendMessage = async () => {
     const trimmedMessage = newMessage.trim();
-    if (!trimmedMessage || !selectedConversation || isClosed || trimmedMessage.length > MESSAGE_MAX_LENGTH) return;
+    if (!trimmedMessage || !selectedConversation || isClosed || sending || trimmedMessage.length > MESSAGE_MAX_LENGTH) return;
+
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMsg = {
+      id: tempId,
+      conversation_id: selectedConversation.id,
+      sender_id: user.id,
+      content: trimmedMessage,
+      created_at: new Date().toISOString(),
+      is_system: false,
+    };
+
+    scrollIntentRef.current = "bottom-instant";
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setNewMessage("");
+    setSending(true);
+
     try {
       await apiFetch(`/api/conversations/${selectedConversation.id}/messages`, {
         method: "POST",
         body: JSON.stringify({ content: trimmedMessage }),
       });
-      setNewMessage("");
     } catch (err) {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setNewMessage(trimmedMessage);
       console.error("Send message error:", err);
     }
+    setSending(false);
   };
 
+
+  // Save messages to cache whenever they change
+  useEffect(() => {
+    if (selectedConversation && messages.length > 0) {
+      messageCacheRef.current[selectedConversation.id] = messages.filter(
+        (m) => !(typeof m.id === "string" && m.id.startsWith("temp-"))
+      );
+    }
+  }, [messages, selectedConversation]);
+
+  // Prefetch messages for the top 3 most-recent conversations in the background.
+  // The existing cache-hit path at the `selectedConversation` effect will pick
+  // these up, making first-click on a top-3 thread render instantly. This
+  // turns the messages page into a "tap → instant" experience for ~70% of
+  // typical clicks (power-law distribution of conversation popularity).
+  useEffect(() => {
+    if (!conversationsLoaded || !conversations?.length) return;
+    const top3 = conversations.slice(0, 3);
+    const toFetch = top3.filter((c) => !messageCacheRef.current[c.id]);
+    if (toFetch.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      const results = await Promise.all(
+        toFetch.map((c) =>
+          apiFetch(`/api/conversations/${c.id}/messages`)
+            .then((r) => ({ id: c.id, data: r }))
+            .catch(() => null)
+        )
+      );
+      if (cancelled) return;
+      for (const result of results) {
+        if (!result) continue;
+        messageCacheRef.current[result.id] = result.data?.messages || [];
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [conversations, conversationsLoaded]);
+
+  // Cross-conversation invalidation: when a new message arrives for ANY
+  // conversation (not just the selected one), drop its cache entry so the
+  // next click re-fetches. Prevents stale threads in the prefetch cache.
   useEffect(() => {
     if (!user) return;
-    const fetchConversations = async () => {
-      try {
-        const result = await apiFetch("/api/conversations");
-        setConversations(result?.conversations || []);
-        setProfiles(result?.profiles || {});
-        setListings(result?.listings || {});
-      } catch (err) {
-        console.error("Fetch conversations error:", err);
-      }
-    };
-    fetchConversations();
-  }, [user]);
+    const channel = supabase
+      .channel("msg-cache-invalidation-web")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
+        const convoId = payload?.new?.conversation_id;
+        if (!convoId) return;
+        // Don't drop the currently-selected convo's cache — its own
+        // subscription keeps it fresh via setMessages.
+        if (selectedConversation?.id === convoId) return;
+        delete messageCacheRef.current[convoId];
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user, selectedConversation]);
 
   useEffect(() => {
     if (!selectedConversation) {
@@ -94,25 +158,47 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
     let closedChannel;
     let active = true;
 
+    // Show cached messages instantly if available
+    const cached = messageCacheRef.current[selectedConversation.id];
+    if (cached && cached.length > 0) {
+      scrollIntentRef.current = "bottom-instant";
+      setMessages(cached);
+      setLoadingMessages(false);
+    } else {
+      setLoadingMessages(true);
+    }
+
     const setup = async () => {
       try {
         const result = await apiFetch(
           `/api/conversations/${selectedConversation.id}/messages`
         );
         if (active) {
+          scrollIntentRef.current = "bottom-instant";
           setMessages(result?.messages || []);
           setIsClosed(result?.isClosed || false);
           setMsgHasMore(result?.hasMore ?? false);
           setMsgPage(1);
+          setLoadingMessages(false);
         }
+        // Mark all messages from the other participant as read so the navbar badge decrements
+        apiFetch(`/api/conversations/${selectedConversation.id}/read`, { method: "PATCH" }).catch(() => {});
       } catch (err) {
         console.error("Fetch messages error:", err);
+        setLoadingMessages(false);
       }
 
       channel = supabase
         .channel(`messages-${selectedConversation.id}`)
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${selectedConversation.id}` }, (payload) => {
-          setMessages((prev) => [...prev, payload.new]);
+          scrollIntentRef.current = "bottom-instant";
+          setMessages((prev) => {
+            const cleaned = prev.filter((m) =>
+              !(typeof m.id === "string" && m.id.startsWith("temp-") && m.sender_id === payload.new.sender_id)
+            );
+            if (cleaned.some((m) => m.id === payload.new.id)) return cleaned;
+            return [...cleaned, payload.new];
+          });
         })
         .subscribe();
 
@@ -135,7 +221,15 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
   }, [selectedConversation]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const intent = scrollIntentRef.current;
+    scrollIntentRef.current = "none";
+    if (intent === "bottom-instant") {
+      container.scrollTop = container.scrollHeight;
+    } else if (intent === "preserve") {
+      container.scrollTop = container.scrollHeight - prevScrollHeightRef.current;
+    }
   }, [messages]);
 
   useEffect(() => {
@@ -235,7 +329,11 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
                 display: isMobile && selectedConversation ? "none" : "block",
               }}
             >
-              {conversations.length === 0 ? (
+              {!conversationsLoaded ? (
+                <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+                  <CircularProgress size={24} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} />
+                </Box>
+              ) : conversations.length === 0 ? (
                 <Typography variant="caption" color={mutedTextColor} fontWeight={700} sx={{ p: 2, display: "block" }}>
                   No conversations yet
                 </Typography>
@@ -243,13 +341,17 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
                 conversations.map((convo) => (
                   <Box
                     key={convo.id}
-                    onClick={() => setSelectedConversation(convo)}
+                    onClick={() => { setSelectedConversation(convo); setUnreadCounts((prev) => ({ ...prev, [convo.id]: 0 })); }}
+                    tabIndex={0}
+                    role="button"
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedConversation(convo); } }}
                     sx={{
                       p: 2, cursor: "pointer",
                       background: selectedConversation?.id === convo.id ? (isDark ? "#2D2D2E" : "#fdf0f0") : "transparent",
                       borderBottom: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid #f5eded",
                       display: "flex", alignItems: "center", justifyContent: "space-between",
                       "&:hover": { background: isDark ? "#343536" : "#fdf7f7", "& .delete-btn": { opacity: 1 } },
+                      "&:focus-visible": { outline: "2px solid #A84D48", outlineOffset: -2 },
                     }}
                   >
                     {(() => {
@@ -257,14 +359,28 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
                       const other = profiles[otherId];
                       const listing = listings[convo.listing_id];
                       return (
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Typography fontWeight={700} fontSize={13} noWrap>
-                            {listing ? listing.title : "Unknown Listing"}
-                          </Typography>
-                          <Typography variant="caption" color={secondaryTextColor} noWrap>
-                            {other ? `${other.first_name} ${other.last_name}` : "Loading..."}
-                          </Typography>
-                        </Box>
+                        <>
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Typography fontWeight={700} fontSize={13} noWrap>
+                              {listing ? listing.title : "Unknown Listing"}
+                            </Typography>
+                            <Typography variant="caption" color={secondaryTextColor} noWrap>
+                              {other ? `${other.first_name} ${other.last_name}` : "Loading..."}
+                            </Typography>
+                          </Box>
+                          {unreadCounts[convo.id] > 0 && (
+                            <Box sx={{
+                              minWidth: 20, height: 20, borderRadius: 10, px: 0.5,
+                              backgroundColor: "#A84D48", display: "flex",
+                              alignItems: "center", justifyContent: "center",
+                              ml: 1, flexShrink: 0,
+                            }}>
+                              <Typography sx={{ color: "#fff", fontSize: 11, fontWeight: 800, lineHeight: 1 }}>
+                                {unreadCounts[convo.id]}
+                              </Typography>
+                            </Box>
+                          )}
+                        </>
                       );
                     })()}
                     <IconButton
@@ -342,7 +458,12 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
                   </Box>
 
                   {/* Messages — scrollable area */}
-                  <Box sx={{ flex: 1, overflowY: "auto", p: 2, display: "flex", flexDirection: "column", gap: 1, minHeight: 0 }}>
+                  <Box ref={scrollContainerRef} sx={{ flex: 1, overflowY: "auto", p: 2, display: "flex", flexDirection: "column", gap: 1, minHeight: 0 }}>
+                    {loadingMessages ? (
+                      <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <CircularProgress size={28} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} />
+                      </Box>
+                    ) : <>
                     {msgHasMore && (
                       <Box sx={{ display: "flex", justifyContent: "center", mb: 1 }}>
                         <Button
@@ -355,6 +476,8 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
                                 `/api/conversations/${selectedConversation.id}/messages?page=${nextPage}&limit=10`
                               );
                               const olderMsgs = result?.messages || [];
+                              prevScrollHeightRef.current = scrollContainerRef.current?.scrollHeight || 0;
+                              scrollIntentRef.current = "preserve";
                               setMessages(prev => [...olderMsgs, ...prev]);
                               setMsgHasMore(result?.hasMore ?? false);
                               setMsgPage(nextPage);
@@ -415,7 +538,8 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
                         </Box>
                       );
                     })}
-                    <div ref={bottomRef} />
+                    <div />
+                    </>}
                   </Box>
 
                   {/* Input — pinned to bottom */}
@@ -431,7 +555,7 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
                         fullWidth size="small" placeholder="Type a message..."
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value.slice(0, MESSAGE_MAX_LENGTH))}
-                        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !sending) { e.preventDefault(); sendMessage(); } }}
                         helperText={`${newMessage.length}/${MESSAGE_MAX_LENGTH}`}
                         inputProps={{ maxLength: MESSAGE_MAX_LENGTH }}
                         sx={{
@@ -446,8 +570,8 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
                           },
                         }}
                       />
-                      <IconButton onClick={sendMessage} disabled={!newMessage.trim() || newMessage.trim().length > MESSAGE_MAX_LENGTH} sx={{ color: "#A84D48" }}>
-                        <SendIcon />
+                      <IconButton onClick={sendMessage} disabled={sending || !newMessage.trim() || newMessage.trim().length > MESSAGE_MAX_LENGTH} sx={{ color: "#A84D48" }}>
+                        {sending ? <CircularProgress size={20} sx={{ color: "#A84D48" }} /> : <SendIcon />}
                       </IconButton>
                     </Box>
                   )}
