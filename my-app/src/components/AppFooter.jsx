@@ -11,7 +11,7 @@ import {
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import TermsModal from "./TermsModal";
-
+import SupportModal from "./SupportModal";
 const MODAL_CONTENT = {
   credits: {
     title: "Credits",
@@ -40,6 +40,7 @@ const MODAL_CONTENT = {
 export default function AppFooter({ effectiveTheme = "light" }) {
   const [openModal, setOpenModal] = useState(null);
   const [termsOpen, setTermsOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
   const isDark = effectiveTheme === "dark";
 
   const styles = useMemo(
@@ -112,8 +113,8 @@ export default function AppFooter({ effectiveTheme = "light" }) {
             Privacy
           </Button>
           {/* TODO: wire support channel once contact workflow is finalized. */}
-          <Button size="small" disabled sx={{ color: styles.text, fontWeight: 700 }}>
-            Support (Coming Soon)
+          <Button size="small" sx={{ color: styles.accent, fontWeight: 700 }} onClick={() => setSupportOpen(true)}>
+            Support
           </Button>
           <Button
             size="small"
@@ -166,6 +167,12 @@ export default function AppFooter({ effectiveTheme = "light" }) {
         onClose={() => setTermsOpen(false)}
         readOnly
         effectiveTheme={effectiveTheme}
+      />
+
+      <SupportModal
+        open={supportOpen} // Render the modal when supportOpen is true
+        onClose={() => setSupportOpen(false)} // Close the modal when requested
+        effectiveTheme={effectiveTheme} // Pass the theme prop if needed
       />
     </>
   );

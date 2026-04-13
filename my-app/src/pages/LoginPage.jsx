@@ -18,6 +18,7 @@ import {
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import TermsModal from "../components/TermsModal";
+import LoginSupportModal from "../components/LoginSupportModal";
 import DemoModal from "../components/DemoModal";
 import apiFetch from "../utils/apiFetch";
 
@@ -144,6 +145,8 @@ export default function LoginPage({
   const [termsOpen, setTermsOpen] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
 
+  // Support modal state
+  const [supportOpen, setSupportOpen] = useState(false);
   // Demo modal state
   const [demoOpen, setDemoOpen] = useState(false);
 
@@ -1012,6 +1015,33 @@ export default function LoginPage({
                 </Box>
 
                 {!isSignUp && (
+                  <Box sx={{ display: "flex", justifyContent: "center", gap: 2, mt: 2 }}>
+                    <MuiLink
+                      component="button"
+                      variant="body2"
+                      onClick={handleForgotPassword}
+                      sx={{
+                        cursor: "pointer",
+                        color: BRAND.accent,
+                        fontWeight: 600,
+                      }}
+                    >
+                      Forgot password?
+                    </MuiLink>
+                    <Typography variant="body2" sx={{ color: "text.secondary" }}>·</Typography>
+                    <MuiLink
+                      component="button"
+                      variant="body2"
+                      onClick={() => setSupportOpen(true)}
+                      sx={{
+                        cursor: "pointer",
+                        color: BRAND.accent,
+                        fontWeight: 600,
+                      }}
+                    >
+                      Need Help?
+                    </MuiLink>
+                  </Box>
                   <MuiLink
                     component="button"
                     variant="body2"
@@ -1137,6 +1167,10 @@ export default function LoginPage({
         }}
       />
 
+      {/* Support modal — available from login page without authentication */}
+      <LoginSupportModal
+        open={supportOpen}
+        onClose={() => setSupportOpen(false)}
       {/* Demo preview modal */}
       <DemoModal
         open={demoOpen}

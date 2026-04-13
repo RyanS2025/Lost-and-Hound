@@ -972,6 +972,233 @@ function ReportCard({ report, fullListing, groupedReports = null, onUpdateStatus
 }
 
 // ============================================================
+// TICKET STATUS CONFIG
+// ============================================================
+const TICKET_STATUS_CONFIG = {
+  open:        { label: "Open",        bg: "#fff3cd", color: "#92400e", border: "#ffc107" },
+  in_progress: { label: "In Progress", bg: "#dbeafe", color: "#1e40af", border: "#93c5fd" },
+  resolved:    { label: "Resolved",    bg: "#dcfce7", color: "#16a34a", border: "#86efac" },
+  closed:      { label: "Closed",      bg: "#f1f5f9", color: "#64748b", border: "#cbd5e1" },
+};
+const TICKET_STATUS_CONFIG_DARK = {
+  open:        { label: "Open",        bg: "#3a2f22", color: "#f6c66a", border: "rgba(245,158,11,0.5)" },
+  in_progress: { label: "In Progress", bg: "#1e2a3a", color: "#93c5fd", border: "rgba(147,197,253,0.45)" },
+  resolved:    { label: "Resolved",    bg: "#1f3527", color: "#6ee7b7", border: "rgba(110,231,183,0.42)" },
+  closed:      { label: "Closed",      bg: "#2c3138", color: "#cbd5e1", border: "rgba(148,163,184,0.45)" },
+};
+
+// ============================================================
+// TICKET CARD
+// ============================================================
+function TicketCard({ ticket, onUpdateStatus, onDelete, processing, isDark, timeZone }) {
+  const [expanded, setExpanded] = useState(false);
+  const statusCfg = (isDark ? TICKET_STATUS_CONFIG_DARK : TICKET_STATUS_CONFIG)[ticket.status] ?? TICKET_STATUS_CONFIG.open;
+  const cardBg = isDark ? "#1A1A1B" : "#fff";
+  const cardBorder = isDark ? "rgba(255,255,255,0.12)" : "#ecdcdc";
+
+  return (
+    <Paper
+      variant="outlined"
+      sx={{
+        borderRadius: 2.5,
+        borderColor: cardBorder,
+        background: cardBg,
+        p: { xs: 1.5, sm: 2 },
+        transition: "box-shadow 0.15s",
+        "&:hover": { boxShadow: isDark ? "0 2px 12px rgba(0,0,0,0.4)" : "0 2px 12px rgba(168,77,72,0.08)" },
+      }}
+    >
+      {/* Top row */}
+      <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, flexWrap: "wrap", mb: 0.75 }}>
+        {ticket.ticket_type && (
+          <Chip
+            label={ticket.ticket_type}
+            size="small"
+            sx={{
+              fontWeight: 700, fontSize: 11,
+              background: isDark ? "rgba(168,77,72,0.2)" : "#A84D4815",
+              color: isDark ? "#FF6B3D" : "#A84D48",
+              border: isDark ? "1px solid rgba(168,77,72,0.3)" : "1px solid #d4a0a0",
+            }}
+          />
+        )}
+        <Chip
+          label={ticket.category}
+          size="small"
+          sx={{
+            fontWeight: 700, fontSize: 11,
+            background: isDark ? "rgba(255,255,255,0.08)" : "#f5eded",
+            color: isDark ? "#D7DADC" : "#5e3030",
+            border: isDark ? "1px solid rgba(255,255,255,0.12)" : "1px solid #e5d0d0",
+          }}
+        />
+        <Chip
+          label={statusCfg.label}
+          size="small"
+          sx={{
+            fontWeight: 700, fontSize: 11,
+            background: statusCfg.bg,
+            color: statusCfg.color,
+            border: `1px solid ${statusCfg.border}`,
+          }}
+        />
+        <Box sx={{ flex: 1 }} />
+        <Typography variant="caption" sx={{ color: isDark ? "#818384" : "#aaa", flexShrink: 0 }}>
+          {formatRelativeDate(ticket.created_at, timeZone, { compact: true })}
+        </Typography>
+      </Box>
+
+      {/* Title */}
+      <Typography fontWeight={800} fontSize={14} sx={{ mb: 0.5, color: isDark ? "#D7DADC" : "#2d1a1a", overflowWrap: "anywhere" }}>
+        {ticket.ticket_title}
+      </Typography>
+
+      {/* Expand toggle */}
+      <Button
+        size="small"
+        endIcon={<ExpandMoreIcon sx={{ fontSize: 16, transition: "transform 0.2s", transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }} />}
+        onClick={() => setExpanded(!expanded)}
+        sx={{ color: "#A84D48", fontWeight: 700, fontSize: 12, mb: 0.5, "&:hover": { background: "rgba(168,77,72,0.08)" } }}
+      >
+        {expanded ? "Hide" : "View Details"}
+      </Button>
+
+      <Collapse in={expanded}>
+        <Box
+          sx={{
+            mt: 1, mb: 1.5, p: 1.5, borderRadius: 2,
+            background: isDark ? "#232324" : "#fdf7f7",
+            border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid #f0e8e8",
+          }}
+        >
+          <Typography variant="body2" sx={{ color: isDark ? "#C8CACC" : "#5e5e5e", lineHeight: 1.6, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            {ticket.ticket_desc}
+          </Typography>
+        </Box>
+      </Collapse>
+
+      {/* Actions */}
+      <Box sx={{
+        display: "flex", gap: { xs: 0.5, sm: 1 }, pt: 1.5,
+        borderTop: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid #f0e8e8",
+        alignItems: "center", flexWrap: "wrap",
+      }}>
+        {ticket.status === "open" && (
+          <Button size="small" onClick={() => onUpdateStatus(ticket.id, "in_progress")} disabled={processing}
+            sx={{ color: "#1e40af", fontWeight: 700, fontSize: 12, "&:hover": { background: "rgba(30,64,175,0.08)" } }}>
+            Start
+          </Button>
+        )}
+        {ticket.status === "in_progress" && (
+          <Button size="small" onClick={() => onUpdateStatus(ticket.id, "resolved")} disabled={processing}
+            sx={{ color: "#16a34a", fontWeight: 700, fontSize: 12, "&:hover": { background: "rgba(22,163,74,0.08)" } }}>
+            Resolve
+          </Button>
+        )}
+        {(ticket.status === "open" || ticket.status === "in_progress") && (
+          <Button size="small" onClick={() => onUpdateStatus(ticket.id, "closed")} disabled={processing}
+            sx={{ color: "#64748b", fontWeight: 700, fontSize: 12, "&:hover": { background: "rgba(100,116,139,0.08)" } }}>
+            Close
+          </Button>
+        )}
+        {(ticket.status === "resolved" || ticket.status === "closed") && (
+          <Button size="small" onClick={() => onUpdateStatus(ticket.id, "open")} disabled={processing}
+            sx={{ color: "#92400e", fontWeight: 700, fontSize: 12, "&:hover": { background: "rgba(146,64,14,0.08)" } }}>
+            Reopen
+          </Button>
+        )}
+        <Box sx={{ flex: 1 }} />
+        <IconButton size="small" onClick={() => onDelete(ticket.id)} sx={{ color: isDark ? "#818384" : "#ccc", "&:hover": { color: "#dc2626" } }}>
+          <DeleteIcon fontSize="small" />
+        </IconButton>
+      </Box>
+    </Paper>
+  );
+}
+
+// ============================================================
+// SUPPORT TICKETS SECTION
+// ============================================================
+function SupportTicketsSection({ tickets, loading, statusTab, onTabChange, onFetch, onUpdateStatus, onDelete, actionError, isDark, timeZone, ticketType }) {
+  useEffect(() => { onFetch(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const typeFiltered = ticketType ? tickets.filter((t) => t.ticket_type === ticketType) : tickets;
+  const filtered = typeFiltered.filter((t) => t.status === statusTab);
+  const counts = {
+    open:        typeFiltered.filter((t) => t.status === "open").length,
+    in_progress: typeFiltered.filter((t) => t.status === "in_progress").length,
+    resolved:    typeFiltered.filter((t) => t.status === "resolved").length,
+    closed:      typeFiltered.filter((t) => t.status === "closed").length,
+  };
+
+  return (
+    <>
+      {actionError && <Alert severity="error" sx={{ mb: 2 }}>{actionError}</Alert>}
+      <Box sx={{
+        display: "flex", justifyContent: "space-between",
+        alignItems: { xs: "stretch", sm: "center" },
+        flexDirection: { xs: "column", sm: "row" },
+        gap: 1, mb: 2,
+      }}>
+        <Tabs
+          value={statusTab}
+          onChange={(_, v) => onTabChange(v)}
+          variant="scrollable"
+          allowScrollButtonsMobile
+          sx={{
+            minHeight: { xs: 32, sm: 36 },
+            "& .MuiTab-root": { fontWeight: 700, textTransform: "none", minHeight: { xs: 32, sm: 36 }, fontSize: { xs: 12, sm: 13 }, px: { xs: 1.25, sm: 2 } },
+            "& .Mui-selected": { color: "#A84D48" },
+            "& .MuiTabs-indicator": { backgroundColor: "#A84D48" },
+          }}
+        >
+          <Tab value="open"        label={`Open (${counts.open})`} />
+          <Tab value="in_progress" label={`In Progress (${counts.in_progress})`} />
+          <Tab value="resolved"    label={`Resolved (${counts.resolved})`} />
+          <Tab value="closed"      label={`Closed (${counts.closed})`} />
+        </Tabs>
+        <Button
+          size="small"
+          startIcon={<RefreshIcon sx={{ fontSize: 16 }} />}
+          onClick={onFetch}
+          disabled={loading}
+          sx={{ color: "#A84D48", fontWeight: 700, fontSize: 12, alignSelf: { xs: "flex-end", sm: "center" } }}
+        >
+          Refresh
+        </Button>
+      </Box>
+
+      {loading ? (
+        <Box sx={{ display: "flex", justifyContent: "center", mt: 6 }}>
+          <CircularProgress sx={{ color: "#A84D48" }} />
+        </Box>
+      ) : filtered.length === 0 ? (
+        <EmptySection
+          icon={<SupportAgentIcon sx={{ color: "#A84D48", fontSize: 28 }} />}
+          title={`No ${statusTab.replace("_", " ")} tickets`}
+          description="No support tickets in this status right now."
+          isDark={isDark}
+        />
+      ) : (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+          {filtered.map((ticket) => (
+            <TicketCard
+              key={ticket.id}
+              ticket={ticket}
+              onUpdateStatus={onUpdateStatus}
+              onDelete={onDelete}
+              processing={false}
+              isDark={isDark}
+              timeZone={timeZone}
+            />
+          ))}
+        </Box>
+      )}
+    </>
+  );
+}
+
+// ============================================================
 // DASHBOARD PAGE
 // ============================================================
 export default function DashboardPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE }) {
@@ -981,6 +1208,55 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
   const navigate = useNavigate();
 
   const [section, setSection] = useState("reports");
+
+  // Support ticket state
+  const [tickets, setTickets] = useState([]);
+  const [ticketsLoading, setTicketsLoading] = useState(false);
+  const [ticketStatusTab, setTicketStatusTab] = useState("open");
+  const [feedbackStatusTab, setFeedbackStatusTab] = useState("open");
+  const [bugStatusTab, setBugStatusTab] = useState("open");
+  const [ticketActionError, setTicketActionError] = useState("");
+  const [ticketDeleteTarget, setTicketDeleteTarget] = useState(null);
+
+  const fetchTickets = async () => {
+    setTicketsLoading(true);
+    setTicketActionError("");
+    try {
+      const payload = await apiFetch("/api/support?page=1&limit=100");
+      setTickets(payload?.tickets || []);
+    } catch {
+      setTicketActionError("Failed to load support tickets.");
+      setTickets([]);
+    } finally {
+      setTicketsLoading(false);
+    }
+  };
+
+  const updateTicketStatus = async (ticketId, newStatus) => {
+    setTicketActionError("");
+    try {
+      await apiFetch(`/api/support/${ticketId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: newStatus }),
+      });
+      setTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, status: newStatus } : t)));
+    } catch {
+      setTicketActionError("Failed to update ticket.");
+    }
+  };
+
+  const deleteTicket = async () => {
+    if (!ticketDeleteTarget) return;
+    setTicketActionError("");
+    try {
+      await apiFetch(`/api/support/${ticketDeleteTarget}`, { method: "DELETE" });
+      setTickets((prev) => prev.filter((t) => t.id !== ticketDeleteTarget));
+    } catch {
+      setTicketActionError("Failed to delete ticket.");
+    }
+    setTicketDeleteTarget(null);
+  };
+
   const [reports, setReports] = useState([]);
   const [fullListings, setFullListings] = useState({});
   const [loading, setLoading] = useState(true);
@@ -1386,10 +1662,34 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
         )}
 
         {section === "feedback" && (
-          <EmptySection icon={<FeedbackIcon sx={{ color: "#A84D48", fontSize: 28 }} />} title="Feedback — Coming Soon" description="This section will display user feedback and feature requests." isDark={isDark} />
+          <SupportTicketsSection
+            tickets={tickets}
+            loading={ticketsLoading}
+            statusTab={feedbackStatusTab}
+            onTabChange={setFeedbackStatusTab}
+            onFetch={fetchTickets}
+            onUpdateStatus={updateTicketStatus}
+            onDelete={setTicketDeleteTarget}
+            actionError={ticketActionError}
+            isDark={isDark}
+            timeZone={timeZone}
+            ticketType="Feedback"
+          />
         )}
         {section === "bugs" && (
-          <EmptySection icon={<BugReportIcon sx={{ color: "#A84D48", fontSize: 28 }} />} title="Bug Reports — Coming Soon" description="This section will display bug reports with status tracking." isDark={isDark} />
+          <SupportTicketsSection
+            tickets={tickets}
+            loading={ticketsLoading}
+            statusTab={bugStatusTab}
+            onTabChange={setBugStatusTab}
+            onFetch={fetchTickets}
+            onUpdateStatus={updateTicketStatus}
+            onDelete={setTicketDeleteTarget}
+            actionError={ticketActionError}
+            isDark={isDark}
+            timeZone={timeZone}
+            ticketType="Bug Report"
+          />
         )}
         {section === "support-categories" && (() => {
           const SUPPORT_STATUS_TABS = ["open", "in_progress", "resolved", "closed"];
@@ -1594,6 +1894,15 @@ export default function DashboardPage({ effectiveTheme = "light", timeZone = DEF
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setDeleteTarget(null)} sx={{ color: "text.secondary" }}>Cancel</Button>
           <Button variant="contained" color="error" onClick={deleteReport} sx={{ fontWeight: 600 }}>Delete</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!ticketDeleteTarget} onClose={() => setTicketDeleteTarget(null)} slotProps={{ paper: { sx: { background: isDark ? "#1A1A1B" : "#fff", border: isDark ? "1px solid rgba(255,255,255,0.16)" : "none", m: 2 } } }}>
+        <DialogTitle sx={{ fontWeight: 700 }}>Delete this ticket?</DialogTitle>
+        <DialogContent><DialogContentText>This will permanently remove the support ticket. This cannot be undone.</DialogContentText></DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setTicketDeleteTarget(null)} sx={{ color: "text.secondary" }}>Cancel</Button>
+          <Button variant="contained" color="error" onClick={deleteTicket} sx={{ fontWeight: 600 }}>Delete</Button>
         </DialogActions>
       </Dialog>
     </Box>
