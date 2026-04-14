@@ -1,136 +1,221 @@
-# Lost & Hound
+<div align="center">
 
-A lost and found web application created by Northeastern University students. This platform is **not officially affiliated with or endorsed by Northeastern University**—it is an independent student-made project. Users can post lost or found items, browse listings by category or location, view items on an interactive campus map, and message other students directly.
+<img src="docs/hero.png" alt="Lost & Hound — The smarter campus lost and found" width="100%" style="border-radius:14px;" />
 
-> **Disclaimer:** Lost & Hound is a student-made project and is not an official Northeastern University service.
+<br /><br />
 
-# Link
-[thelostandhound.com](https://thelostandhound.com)
+<h1>Lost & Hound</h1>
+
+**The smarter campus lost & found — built for students, by students.**
+
+Post what you've found. Find what you've lost. Connect with your campus in real time.
+
+<br />
+
+[![Live](https://img.shields.io/badge/Live%20at-thelostandhound.com-A84D48?style=for-the-badge)](https://thelostandhound.com)
+[![Campuses](https://img.shields.io/badge/12%20Global-Campuses-6366f1?style=for-the-badge)](#campuses)
+[![AI Safety](https://img.shields.io/badge/AI-Content%20Screening-0ea5e9?style=for-the-badge)](#ai-powered-safety)
+[![Real-Time](https://img.shields.io/badge/Real--Time-Live%20Updates-16a34a?style=for-the-badge)](#real-time-everything)
+
+</div>
+
+---
+
+## The Problem
+
+Every campus has the same broken system: a group chat full of "anyone seen my keys?", a whiteboard in the dorm lobby, maybe a lost-and-found closet nobody knows how to access. Items go unclaimed. Owners never find out someone handed their wallet to the front desk.
+
+**Lost & Hound fixes that.**
+
+One platform. Real-time listings. A live map. Direct messaging between finder and owner — no phone numbers, no public posts. Items found and returned, the way it should work.
+
+---
+
+## What It Looks Like
+
+### The Feed
+Every lost and found listing on your campus in one clean, filterable view. Search by keyword, filter by category, sort by importance or date. High-priority items — like a Husky Card lost before an exam — float to the top.
+
+### The Map
+Every listing with a location drops a pin on a live campus map. Open the map, find a cluster near the library, tap the pin — full listing details appear instantly. Filter by category and search radius without leaving the map.
+
+### Messages
+Found something? Message the owner directly through Lost & Hound. Conversations are attached to the listing so context is never lost. Real-time delivery — messages appear instantly on both sides without refreshing.
 
 ---
 
 ## Features
 
-- **Authentication** — Sign up and log in with `@northeastern.edu` email addresses via Supabase Auth, with Terms & Conditions acceptance required before account creation
-- **Two-Factor Authentication** — TOTP-based MFA required on every login; trusted-device tokens skip re-prompt on known devices
-- **Feed** — Browse, search, filter, and sort listings; create new posts with photo uploads, building selection, and map pin placement
-- **Map** — Google Maps-powered item map with campus switching, location search, search radius filtering, and claim/report actions
-- **Messages** — Real-time direct messaging tied to listings, including conversation close/hide behavior
-- **Reporting & Moderation** — Report posts/users, review in moderator queues, and apply decision workflows with ban reversal
-- **Account Safety** — Temporary or permanent bans enforced server-side
-- **Settings** — Manage name, password reset, theme preference (light/dark/auto), and default campus
-- **Auto-expiry** — Old listings are automatically cleaned up server-side
+### Posting & Browsing
+
+- **Lost & Found listings** — post with a title, description, category, importance level, optional photo, and exact campus pin drop
+- **Auto-expiry** — old listings clean themselves up automatically, so the feed stays current
+- **HEIC photo support** — upload straight from your iPhone camera roll, no conversion needed
+- **Categories** — Husky Card, Keys, Wallet/Purse, Bag, Jacket, Electronics, and more
+- **Importance levels** — mark High, Medium, or Low so the most urgent items surface first
+- **Editing & deletion** — update or remove your own listings at any time
+
+### The Map
+
+- **Live Google Maps integration** — pins appear the moment a listing is posted
+- **Campus switching** — jump between any of 12 global Northeastern campuses instantly
+- **Building search** — type a building name to navigate the map directly
+- **Radius filtering** — narrow results to items within 50 ft, 150 ft, 300 ft, or 500 ft of a location
+- **Type & category filters** — show only Lost items, only Found items, or a specific category
+
+### Messaging
+
+- **Real-time direct messages** — no polling, no refresh, instant delivery both ways
+- **Listing-linked conversations** — every conversation is tied to a specific item
+- **Unread badge** — a live counter in the nav bar shows how many messages are waiting
+- **Conversation management** — close or hide threads once resolved
+
+### Reporting & Safety
+
+- **Report listings or users** — flag anything inappropriate directly from the feed or map
+- **Stolen item reports** — dedicated high-priority queue separate from regular lost & found
+- **Feedback submission** — send feature requests or suggestions directly to the team
+- **Bug reports** — report issues with severity levels that route straight to the engineering board
+- **Support tickets** — open a help request and get a response from a real moderator
+
+---
+
+## Campuses
+
+Lost & Hound is built for all Northeastern University global campuses. Set your home campus once — the feed and map default to your location.
+
+| | Campus | Location |
+|---|---|---|
+| 🇺🇸 | Boston | Massachusetts |
+| 🇺🇸 | Burlington | Massachusetts |
+| 🇺🇸 | New York City | New York |
+| 🇺🇸 | Charlotte | North Carolina |
+| 🇺🇸 | Miami | Florida |
+| 🇺🇸 | Portland | Maine |
+| 🇺🇸 | Seattle | Washington |
+| 🇺🇸 | San Jose | California |
+| 🇺🇸 | Oakland | California |
+| 🇺🇸 | Arlington | Virginia |
+| 🇨🇦 | Toronto | Ontario |
+| 🇬🇧 | London | United Kingdom |
+
+---
+
+## Security & Account Safety
+
+Lost & Hound takes security seriously — your account and your data are protected at every layer.
+
+**Two-Factor Authentication**
+Enable 2FA from your settings page. Every login requires a one-time verification code in addition to your password. Trusted devices are remembered so you aren't re-prompted on the same machine.
+
+**Email verification**
+Password reset links are delivered by email and built to be safe against Microsoft SafeLinks pre-fetch attacks — the reset token isn't consumed until you actually click it.
+
+**Account suspension**
+Accounts that violate community guidelines can be suspended temporarily or permanently. The affected user sees the exact reason and end date, with no ambiguity.
+
+**Privacy-first messaging**
+Direct messages never expose phone numbers or personal contact information. You communicate through the platform — that's it.
+
+---
+
+## AI-Powered Safety
+
+**Every photo is screened before it goes live.**
+
+When a user uploads an image to a listing, it's automatically checked by Google Cloud Vision AI. Explicit, violent, or otherwise unsafe content is rejected before it ever reaches the feed — protecting every member of the community automatically.
+
+**Profanity filtering** on listing titles and descriptions catches policy violations at submission time, not after the fact.
+
+---
+
+## Real-Time Everything
+
+Lost & Hound doesn't ask you to refresh.
+
+- New listings appear in the feed instantly
+- Map pins drop the moment someone posts
+- Message delivery is live on both sides
+- The unread badge updates without a page reload
+- Moderator dashboards sync the instant a ticket or report changes
+
+This is powered by database-level subscriptions — changes propagate from server to every connected client in real time.
+
+---
+
+## Moderation Dashboard
+
+Moderators get a dedicated control panel with a full suite of tools to keep the platform healthy.
+
+| Section | What It Does |
+|---|---|
+| **Reports** | Review flagged listings and user reports — approve or dismiss |
+| **Stolen Reports** | Priority queue for theft and ownership disputes |
+| **Feedback** | Track user suggestions — mark Open, In Progress, or Resolved |
+| **Bugs** | Engineering-style bug board with Critical / High / Medium / Low severity |
+| **Support** | Claim and respond to user help tickets |
+| **My Work** | Personal queue of assigned tickets and overdue items |
+| **Statistics** | Live platform stats: total users, active listings, referral sources, weekly growth |
+
+The dashboard updates live — no refresh button. New tickets, reports, and messages appear the instant they come in.
+
+---
+
+## For Site Owners
+
+Owners get an additional **Finances** view inside the dashboard — a private billing page showing live infrastructure costs, API usage tracking, projected vs. actual monthly spend, and custom expense tracking across all services. Only visible to designated owner accounts.
+
+---
+
+## How It Works — In 60 Seconds
+
+```
+1. Sign up with your Northeastern email
+2. Choose your campus — Boston, London, New York, or any of 12 locations
+3. Browse the live feed or open the map
+4. Post something you found, or report something lost
+5. Message the owner or finder directly — no middleman
+6. Mark the item resolved when it's returned
+```
 
 ---
 
 ## Tech Stack
 
+Lost & Hound is built on a production-grade stack chosen for real-time performance, security, and reliability.
+
 | Layer | Technology |
-|-------|-----------|
-| Frontend | React 19 + Vite |
-| UI Components | Material UI (MUI) v7 |
-| Routing | React Router DOM v7 |
-| Backend API | Express 5 |
-| Security Headers | Helmet |
-| Auth / Database / Storage | Supabase |
-| Maps | Google Maps JS API |
-| Rate Limiting | express-rate-limit |
+|---|---|
+| Frontend | React 19, Material UI v7, Vite |
+| Backend | Node.js, Express 5 |
+| Database & Auth | Supabase (PostgreSQL) |
+| Real-Time | Supabase Realtime WebSocket subscriptions |
+| Maps | Google Maps JavaScript API |
+| AI Safety | Google Cloud Vision API |
+| Email | Resend |
+| Hosting | Railway |
+
+**Security architecture:**
+- All API routes require authenticated Supabase sessions
+- Role-based middleware guards on moderator and owner routes
+- 2FA enforced server-side — no route access without verification
+- Row-Level Security on all database tables
+- Parameterized queries throughout — no SQL injection surface
+- AI image moderation on every upload before storage
+- Device token validation to prevent session fixation
 
 ---
 
-## Getting Started
+## Disclaimer
 
-### Prerequisites
-
-- Node.js 18+
-- A [Supabase](https://supabase.com) project with the required tables and storage bucket
-- A [Google Maps JavaScript API](https://developers.google.com/maps) key with the Maps JS API enabled
-
-### Installation
-
-```bash
-# Clone the repository
-git clone <repo-url>
-cd my-app
-
-# Install frontend dependencies
-npm install
-
-# Install backend dependencies
-cd backend
-npm install
-```
-
-### Environment Variables
-
-**Frontend** — Create `.env` in the `my-app/` root:
-
-```env
-VITE_SUPABASE_URL=your_supabase_project_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-VITE_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
-```
-
-**Backend** — Create `.env` in `my-app/backend/`:
-
-```env
-SUPABASE_URL=your_supabase_project_url
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-CORS_ORIGIN=http://localhost:5173
-```
-
-> **Important:** Both `.env` files must be in `.gitignore`. The service role key bypasses all Row Level Security — never commit it.
-
-### Running Locally
-
-You need **two terminals** — one for the backend, one for the frontend:
-
-```bash
-# Terminal 1: Start the backend
-cd my-app/backend
-node server.js
-# → Server running on port 3001
-
-# Terminal 2: Start the frontend
-cd my-app
-npm run dev
-# → http://localhost:5173
-```
-
-### Building for Production
-
-```bash
-npm run build
-npm run preview   # preview the production build locally
-```
+Lost & Hound is an independent student project and is **not officially affiliated with or endorsed by Northeastern University**.
 
 ---
 
-## Available Scripts
+<div align="center">
 
-| Script | Description |
-|--------|-------------|
-| `npm run dev` | Start the Vite development server |
-| `npm run build` | Build for production |
-| `npm run preview` | Preview the production build |
-| `npm run lint` | Run ESLint |
+Built with care at Northeastern University &nbsp;·&nbsp; [thelostandhound.com](https://thelostandhound.com)
 
----
+© 2026 Lost & Hound. All rights reserved.
 
-## Notes
-
-- Account registration is restricted to `@northeastern.edu` email addresses
-- New users must accept Terms & Conditions before creating an account
-- Password reset is handled via a Supabase-sent email link
-- Theme preference supports **Light**, **Dark**, and **Default (auto/system)**
-- Real-time messaging uses Supabase Realtime on the frontend
-- All data operations go through the Express API
-- This is a student-made project and is not an official Northeastern University service
-
----
-
-## License
-
-© 2026 Lost & Hound. All rights reserved. See [LICENSE](./LICENSE) for details.
-
-Originally developed during Oasis @ Northeastern.
+</div>
