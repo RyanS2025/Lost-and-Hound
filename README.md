@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="docs/hero.png" alt="Lost & Hound — The smarter campus lost and found" width="100%" style="border-radius:14px;" />
-
 <br /><br />
 
 <h1>Lost & Hound</h1>
@@ -18,6 +16,8 @@ Post what you've found. Find what you've lost. Connect with your campus in real 
 [![Real-Time](https://img.shields.io/badge/Real--Time-Live%20Updates-16a34a?style=for-the-badge)](#real-time-everything)
 
 </div>
+
+<img src="docs/hero.png" alt="Lost & Hound — The smarter campus lost and found" width="100%" style="border-radius:14px;" />
 
 ---
 
