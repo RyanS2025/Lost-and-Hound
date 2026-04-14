@@ -37,6 +37,7 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/timezone';
 import apiFetch from './utils/apiFetch';
+import { prefetchDashboard, clearDashboardCache } from './utils/dashboardPrefetch';
 
 export default function App() {
   const { user, profile, sessionToken, logout, updateProfile, isPasswordRecovery, setIsPasswordRecovery } = useAuth();
@@ -48,6 +49,18 @@ export default function App() {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [location.pathname]);
+
+  // Background prefetch — fire as soon as we know user is a moderator
+  useEffect(() => {
+    if (profile?.is_moderator) {
+      prefetchDashboard();
+    }
+  }, [profile?.is_moderator]);
+
+  const handleLogout = useCallback(() => {
+    clearDashboardCache();
+    logout();
+  }, [logout]);
 
   const [themeMode, setThemeMode] = useState(() => {
     const saved = localStorage.getItem("themeMode");
@@ -488,7 +501,7 @@ export default function App() {
               >
                 {!isCompactNav ? navThemeToggle.label : null}
               </Button>
-              <Button color="inherit" onClick={logout} endIcon={<LogoutIcon />} sx={{ minWidth: 0 }}>
+              <Button color="inherit" onClick={handleLogout} endIcon={<LogoutIcon />} sx={{ minWidth: 0 }}>
                 {!isCompactNav ? "Log Out" : null}
               </Button>
             </Toolbar>
@@ -534,7 +547,7 @@ export default function App() {
                   {profile.ban_reason}
                 </Typography>
               )}
-              <Button variant="contained" onClick={logout}
+              <Button variant="contained" onClick={handleLogout}
                 sx={{ background: effectiveTheme === "dark" ? darkAccent : "#A84D48", "&:hover": { background: effectiveTheme === "dark" ? darkAccentHover : "#8f3e3a" }, fontWeight: 700, borderRadius: 2, px: 4 }}>
                 LOG OUT
               </Button>
@@ -647,7 +660,7 @@ export default function App() {
           </Button>
           <Button
             color="inherit"
-            onClick={logout}
+            onClick={handleLogout}
             endIcon={<LogoutIcon />}
             sx={{ minWidth: 0 }}
           >

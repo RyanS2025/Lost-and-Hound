@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useOutletContext } from "react-router-dom";
 import {
-  Box, Typography, Paper, Chip, CircularProgress,
+  Box, Typography, Paper, Chip, Button,
 } from "@mui/material";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import FlagIcon from "@mui/icons-material/Flag";
 import PriorityHighIcon from "@mui/icons-material/PriorityHigh";
@@ -13,9 +14,8 @@ import SupportAgentIcon from "@mui/icons-material/SupportAgent";
 import AssignmentIcon from "@mui/icons-material/Assignment";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import apiFetch from "../../utils/apiFetch";
-
-// Module-level cache — survives component unmount/remount (navigation away and back)
-let summaryCache = null;
+import { summaryCache } from "../../utils/dashboardPrefetch";
+import { supabase } from "../../../backend/supabaseClient";
 
 function StatChip({ label, value, urgent = false, isDark }) {
   return (
@@ -105,23 +105,51 @@ function SectionCard({ to, icon, title, description, stats, accentColor, isDark,
   );
 }
 
+const POLL_INTERVAL = 30_000;
+
 export default function DashboardOverviewPage() {
   const { isDark } = useOutletContext();
-  const [summary, setSummary] = useState(summaryCache);
-  const [loading, setLoading] = useState(!summaryCache);
+  const [summary, setSummary] = useState(summaryCache.data);
+  const [refreshing, setRefreshing] = useState(false);
+  const mountedRef = useRef(true);
+
+  const fetchSummary = useRef(() => {});
+
+  fetchSummary.current = () =>
+    apiFetch("/api/dashboard/summary")
+      .then((d) => { if (mountedRef.current) { summaryCache.data = d; setSummary(d); } })
+      .catch(() => {});
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchSummary.current();
+    setRefreshing(false);
+  };
 
   useEffect(() => {
-    if (summaryCache) {
-      // Already have data — show it immediately and revalidate silently
-      apiFetch("/api/dashboard/summary")
-        .then((d) => { summaryCache = d; setSummary(d); })
-        .catch(() => {});
-      return;
-    }
-    apiFetch("/api/dashboard/summary")
-      .then((d) => { summaryCache = d; setSummary(d); })
-      .catch(() => setSummary(null))
-      .finally(() => setLoading(false));
+    mountedRef.current = true;
+
+    fetchSummary.current();
+
+    // Realtime subscription — re-fetch summary the instant any ticket or report changes
+    const channel = supabase
+      .channel("dashboard-overview-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "support_tickets" }, () => {
+        fetchSummary.current();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "reports" }, () => {
+        fetchSummary.current();
+      })
+      .subscribe();
+
+    // Fallback poll — catches anything realtime misses (e.g. dropped connections)
+    const id = setInterval(() => fetchSummary.current(), POLL_INTERVAL);
+
+    return () => {
+      mountedRef.current = false;
+      clearInterval(id);
+      supabase.removeChannel(channel);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const s = summary;
@@ -208,11 +236,23 @@ export default function DashboardOverviewPage() {
 
   return (
     <>
-      {loading && !summary && (
-        <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
-          <CircularProgress sx={{ color: "#A84D48" }} />
-        </Box>
-      )}
+      <Box sx={{ position: "relative" }}>
+        <Button
+          size="small"
+          startIcon={<RefreshIcon sx={{ fontSize: 14, transition: "transform 0.4s", transform: refreshing ? "rotate(180deg)" : "none" }} />}
+          onClick={handleRefresh}
+          disabled={refreshing}
+          sx={{
+            position: "absolute",
+            top: { xs: -44, sm: -54 },
+            right: 0,
+            fontSize: 12, textTransform: "none", color: "text.secondary",
+            "&:hover": { background: isDark ? "#343536" : "#f5f5f5" },
+          }}
+        >
+          Refresh
+        </Button>
+      </Box>
 
       <Box sx={{
         display: "grid",
@@ -224,7 +264,7 @@ export default function DashboardOverviewPage() {
             key={section.to}
             {...section}
             isDark={isDark}
-            loading={loading && !summary}
+            loading={!summary}
           />
         ))}
       </Box>

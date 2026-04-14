@@ -1,33 +1,37 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import apiFetch from "../../utils/apiFetch";
+import { ticketCache } from "../../utils/dashboardPrefetch";
 
 /**
  * Shared state + fetch logic for a paginated ticket list.
  * Each ticket-type page (Feedback, Bugs, Support) uses this hook.
  */
-export function useTicketList(ticketType) {
-  const [tickets, setTickets] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
+export function useTicketList(ticketType, { pollInterval = 30_000 } = {}) {
+  const cache = ticketCache[ticketType] || null;
+
+  const [tickets, setTickets] = useState(cache?.tickets || []);
+  const [loading, setLoading] = useState(!cache);
+  const [hasMore, setHasMore] = useState(cache?.hasMore ?? false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
   const [statusTab, setStatusTab] = useState("open");
   const [actionError, setActionError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const cacheRef = useRef(null);
 
   const fetchTickets = useCallback(async (pg = 1, append = false) => {
-    if (pg === 1 && cacheRef.current) {
+    const cached = ticketCache[ticketType];
+
+    if (pg === 1 && cached) {
       // Serve stale cache immediately, revalidate in background
-      setTickets(cacheRef.current.tickets);
-      setHasMore(cacheRef.current.hasMore);
+      setTickets(cached.tickets);
+      setHasMore(cached.hasMore);
       setPage(1);
       setLoading(false);
       apiFetch(`/api/support-tickets?ticket_type=${encodeURIComponent(ticketType)}&page=1&limit=20`)
         .then((payload) => {
           const t = payload?.tickets || [];
           const h = payload?.hasMore ?? false;
-          cacheRef.current = { tickets: t, hasMore: h };
+          ticketCache[ticketType] = { tickets: t, hasMore: h };
           setTickets(t);
           setHasMore(h);
         })
@@ -48,14 +52,31 @@ export function useTicketList(ticketType) {
       setTickets((prev) => (append ? [...prev, ...t] : t));
       setHasMore(h);
       setPage(pg);
-      if (pg === 1) cacheRef.current = { tickets: t, hasMore: h };
+      if (pg === 1) ticketCache[ticketType] = { tickets: t, hasMore: h };
     } catch {
-      if (!cacheRef.current) setActionError("Failed to load tickets.");
+      if (!ticketCache[ticketType]) setActionError("Failed to load tickets.");
     } finally {
       setLoading(false);
       setLoadingMore(false);
     }
   }, [ticketType]);
+
+  // Background poll — silent revalidation, no loading state
+  useEffect(() => {
+    if (!pollInterval) return;
+    const id = setInterval(() => {
+      apiFetch(`/api/support-tickets?ticket_type=${encodeURIComponent(ticketType)}&page=1&limit=20`)
+        .then((payload) => {
+          const t = payload?.tickets || [];
+          const h = payload?.hasMore ?? false;
+          ticketCache[ticketType] = { tickets: t, hasMore: h };
+          setTickets(t);
+          setHasMore(h);
+        })
+        .catch(() => {});
+    }, pollInterval);
+    return () => clearInterval(id);
+  }, [ticketType, pollInterval]);
 
   const handleStatus = useCallback(async (ticketId, newStatus) => {
     try {
@@ -65,13 +86,13 @@ export function useTicketList(ticketType) {
       });
       setTickets((prev) => {
         const next = prev.map((t) => (t.id === ticketId ? { ...t, ...updated } : t));
-        if (cacheRef.current) cacheRef.current = { ...cacheRef.current, tickets: next };
+        if (ticketCache[ticketType]) ticketCache[ticketType] = { ...ticketCache[ticketType], tickets: next };
         return next;
       });
     } catch {
-      /* silently fail — list will reflect true state on next fetch */
+      /* silently fail — list will reflect true state on next poll */
     }
-  }, []);
+  }, [ticketType]);
 
   const deleteTicket = useCallback(async () => {
     if (!deleteTarget) return;
@@ -79,14 +100,14 @@ export function useTicketList(ticketType) {
       await apiFetch(`/api/support-tickets/${deleteTarget}`, { method: "DELETE" });
       setTickets((prev) => {
         const next = prev.filter((t) => t.id !== deleteTarget);
-        if (cacheRef.current) cacheRef.current = { ...cacheRef.current, tickets: next };
+        if (ticketCache[ticketType]) ticketCache[ticketType] = { ...ticketCache[ticketType], tickets: next };
         return next;
       });
     } catch {
       setActionError("Failed to delete ticket.");
     }
     setDeleteTarget(null);
-  }, [deleteTarget]);
+  }, [deleteTarget, ticketType]);
 
   return {
     tickets, loading, hasMore, loadingMore, page, setPage,
