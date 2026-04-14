@@ -1,7 +1,5 @@
 <div align="center">
 
-<br /><br />
-
 <h1>Lost & Hound</h1>
 
 **The smarter campus lost & found — built for students, by students.**
