@@ -2,10 +2,12 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { createClient } from "@supabase/supabase-js";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
+import { Resend } from "resend";
+import cron from "node-cron";
 
 dotenv.config();
 
@@ -13,6 +15,8 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
 const app = express();
 
@@ -40,33 +44,166 @@ app.use(express.json({ limit: "100kb" }));
 // RATE LIMITING
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// Three tiers: general (all routes), write (creating posts/messages), strict (reports/deletions).
+// Four tiers: general (all routes), write (creating posts/messages), strict (reports/deletions), guest upload.
+// Authenticated reads (polls, prefetches, dashboard) get a much higher ceiling via keyGenerator bucketing.
+
+// Paths that must never be blocked — login depends on these being reachable
+const AUTH_CRITICAL_PATHS = new Set(["/api/profile", "/api/auth/check-device", "/api/auth/trust-device"]);
 
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 500,           // raised from 100 — polling + prefetch burns through 100 quickly
   standardHeaders: true,
   legacyHeaders: false,
+  // Authenticated requests get their own bucket by user id; anonymous share IP bucket
+  keyGenerator: (req) => req.cookies?.sb_session || req.headers?.authorization || ipKeyGenerator(req),
+  skip: (req) => AUTH_CRITICAL_PATHS.has(req.path),
   message: { error: "Too many requests. Please try again later." },
 });
 
 const writeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 60,            // raised from 20 — active dev/testing needs headroom
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => req.cookies?.sb_session || req.headers?.authorization || ipKeyGenerator(req),
   message: { error: "Too many requests. Please slow down." },
 });
 
 const strictLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 15,            // raised from 5 — still strict for guest lookups but not painful
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests. Please try again later." },
 });
 
+// For unauthenticated image uploads — more lenient than strictLimiter since
+// magic-byte verification auto-rejects bad files, but stricter than writeLimiter
+const guestUploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,            // raised from 15
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many upload attempts. Please try again later." },
+});
+
 app.use("/api/", generalLimiter);
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PUBLIC STATS + REFERRAL
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// GET /api/stats/user-count — no auth, shown on the login page community counter
+app.get("/api/stats/user-count", generalLimiter, async (_req, res) => {
+  try {
+    const { count, error } = await supabase
+      .from("profiles")
+      .select("id", { count: "exact", head: true });
+    if (error) return res.json({ count: 0 });
+    res.json({ count: count ?? 0 });
+  } catch {
+    res.json({ count: 0 });
+  }
+});
+
+const REFERRAL_SOURCES = new Set([
+  "word_of_mouth", "social_media", "northeastern_website",
+  "professor_class", "flyer_poster", "oasis_event", "other",
+]);
+
+// GET /api/stats/overview — mod-only, used by the Stats page
+app.get("/api/stats/overview", requireAuth, require2FA, requireModerator, async (_req, res) => {
+  try {
+    const [usersRes, ticketsRes, reportsRes, referralsRes] = await Promise.all([
+      supabase.from("profiles").select("id, created_at", { count: "exact" }).order("created_at", { ascending: false }).limit(5000),
+      supabase.from("support_tickets").select("id, ticket_type, status", { count: "exact" }).limit(5000),
+      supabase.from("reports").select("id, status", { count: "exact" }).limit(5000),
+      supabase.from("referral_sources").select("source").limit(5000),
+    ]);
+
+    const users    = usersRes.data    || [];
+    const tickets  = ticketsRes.data  || [];
+    const reports  = reportsRes.data  || [];
+    const refs     = referralsRes.data || [];
+
+    // Referral counts by source
+    const referralCounts = {};
+    for (const r of refs) referralCounts[r.source] = (referralCounts[r.source] || 0) + 1;
+
+    // New users in last 7 and 30 days
+    const now   = new Date();
+    const day7  = new Date(now - 7  * 86400000);
+    const day30 = new Date(now - 30 * 86400000);
+    const newUsers7  = users.filter(u => new Date(u.created_at) >= day7).length;
+    const newUsers30 = users.filter(u => new Date(u.created_at) >= day30).length;
+
+    // Users per day for the last 30 days (for sparkline)
+    const usersByDay = {};
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(now - i * 86400000);
+      const key = d.toISOString().slice(0, 10);
+      usersByDay[key] = 0;
+    }
+    for (const u of users) {
+      const key = new Date(u.created_at).toISOString().slice(0, 10);
+      if (key in usersByDay) usersByDay[key]++;
+    }
+
+    res.json({
+      users: {
+        total:    usersRes.count  ?? users.length,
+        new7:     newUsers7,
+        new30:    newUsers30,
+        byDay:    usersByDay,
+      },
+      tickets: {
+        total:    ticketsRes.count ?? tickets.length,
+        bugs:     tickets.filter(t => t.ticket_type === "Bug Report").length,
+        support:  tickets.filter(t => t.ticket_type === "Support").length,
+        feedback: tickets.filter(t => t.ticket_type === "Feedback").length,
+        open:     tickets.filter(t => t.status === "open").length,
+      },
+      reports: {
+        total:   reportsRes.count ?? reports.length,
+        pending: reports.filter(r => r.status === "pending").length,
+      },
+      referrals: {
+        total:  refs.length,
+        counts: referralCounts,
+      },
+    });
+  } catch (err) {
+    console.error("Stats overview error:", err);
+    res.status(500).json({ error: "Failed to load stats" });
+  }
+});
+
+// POST /api/referral — no auth; fire-and-forget from sign-up flow
+app.post("/api/referral", strictLimiter, async (req, res) => {
+  const { source } = req.body || {};
+  if (!source || !REFERRAL_SOURCES.has(source)) {
+    return res.status(400).json({ error: "Invalid source" });
+  }
+  const { error } = await supabase.from("referral_sources").insert({ source });
+  if (error) return res.status(500).json({ error: "Failed to save referral" });
+  res.json({ success: true });
+});
+
+// POST /api/referral/user — auth required; one-time poll for existing users
+// Records source (optional) and marks profile as answered so poll never shows again
+app.post("/api/referral/user", requireAuth, require2FA, async (req, res) => {
+  const { source } = req.body || {};
+  try {
+    if (source && REFERRAL_SOURCES.has(source)) {
+      await supabase.from("referral_sources").insert({ source });
+    }
+    await supabase.from("profiles").update({ referral_answered: true }).eq("id", req.user.id);
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ error: "Failed to record response." });
+  }
+});
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // INPUT VALIDATION HELPERS
@@ -369,7 +506,7 @@ const CLEANUP_COOLDOWN = 60 * 60 * 1000; // 1 hour
 app.get("/api/profile", requireAuth, require2FA, async (req, res) => {
   const { data, error } = await supabase
     .from("profiles")
-    .select("first_name, last_name, default_campus, is_moderator, banned_until, ban_reason")
+    .select("first_name, last_name, default_campus, is_moderator, banned_until, ban_reason, referral_answered")
     .eq("id", req.user.id)
     .single();
 
@@ -384,10 +521,11 @@ app.get("/api/profile", requireAuth, require2FA, async (req, res) => {
             first_name: sanitize(meta.first_name, PROFILE_NAME_MAX_LENGTH),
             last_name: sanitize(meta.last_name, PROFILE_NAME_MAX_LENGTH),
             default_campus: "boston",
+            referral_answered: true, // new signups answered the required dropdown at registration
           },
           { onConflict: "id" }
         )
-        .select("first_name, last_name, default_campus, is_moderator, banned_until, ban_reason")
+        .select("first_name, last_name, default_campus, is_moderator, banned_until, ban_reason, referral_answered")
         .single();
 
       if (upsertErr) return res.status(500).json({ error: "Failed to create profile" });
@@ -754,7 +892,14 @@ app.post("/api/upload-url", writeLimiter, requireAuth, require2FA, requireNotBan
     return res.status(400).json({ error: "Image must be under 5MB" });
   }
 
-  const path = `${req.user.id}/${Date.now()}.${ext}`;
+  const folder = sanitize(req.body.folder || "", 50);
+  const UPLOAD_ALLOWED_FOLDERS = new Set(["", "support"]);
+  if (!UPLOAD_ALLOWED_FOLDERS.has(folder)) {
+    return res.status(400).json({ error: "Invalid folder." });
+  }
+  const path = folder
+    ? `${req.user.id}/${folder}/${Date.now()}.${ext}`
+    : `${req.user.id}/${Date.now()}.${ext}`;
 
   const { data, error } = await supabase.storage
     .from("listing-images")
@@ -806,6 +951,66 @@ app.post("/api/verify-image", requireAuth, require2FA, requireNotBanned, async (
 
   if (!isJpeg && !isPng && !isGif && !isWebp) {
     // Not a real image — delete it from storage
+    await supabase.storage.from("listing-images").remove([filePath]);
+    return res.status(400).json({ error: "File is not a valid image. Upload rejected." });
+  }
+
+  res.json({ valid: true });
+});
+
+// Guest image upload — no auth required, scoped to guest/support/ path
+app.post("/api/upload-url/guest", guestUploadLimiter, async (req, res) => {
+  const filename = sanitize(req.body.filename, 200);
+  if (!filename) return res.status(400).json({ error: "Filename is required" });
+
+  const ext = filename.split(".").pop().toLowerCase();
+  const allowedExts = ["jpg", "jpeg", "png", "webp", "gif"];
+  if (!allowedExts.includes(ext)) {
+    return res.status(400).json({ error: "Only image files are allowed (jpg, jpeg, png, webp, gif)" });
+  }
+
+  const contentType = sanitize(req.body.contentType, 100);
+  const allowedMimes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+  if (contentType && !allowedMimes.includes(contentType)) {
+    return res.status(400).json({ error: "Invalid image type" });
+  }
+
+  const fileSize = parseInt(req.body.fileSize);
+  if (fileSize && fileSize > 5 * 1024 * 1024) {
+    return res.status(400).json({ error: "Image must be under 5MB" });
+  }
+
+  const path = `guest/support/${Date.now()}.${ext}`;
+  const { data, error } = await supabase.storage.from("listing-images").createSignedUploadUrl(path);
+  if (error) return dbError(res, error, "POST /api/upload-url/guest");
+
+  const { data: publicUrlData } = supabase.storage.from("listing-images").getPublicUrl(path);
+  res.json({ signedUrl: data.signedUrl, publicUrl: publicUrlData.publicUrl, path });
+});
+
+// Guest image verification — no auth, only allows guest/support/ paths
+app.post("/api/verify-image/guest", guestUploadLimiter, async (req, res) => {
+  const filePath = sanitize(req.body.path, 500);
+  if (!filePath) return res.status(400).json({ error: "File path is required" });
+
+  // Scope enforcement: guests can only verify their own guest/support/ uploads
+  if (!filePath.startsWith("guest/support/")) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const { data, error } = await supabase.storage.from("listing-images").download(filePath);
+  if (error || !data) return res.status(404).json({ error: "File not found" });
+
+  const buffer = Buffer.from(await data.arrayBuffer());
+  const header = buffer.subarray(0, 12);
+
+  const isJpeg = header[0] === 0xFF && header[1] === 0xD8 && header[2] === 0xFF;
+  const isPng  = header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47;
+  const isGif  = header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46;
+  const isWebp = header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46
+              && header[8] === 0x57 && header[9] === 0x45 && header[10] === 0x42 && header[11] === 0x50;
+
+  if (!isJpeg && !isPng && !isGif && !isWebp) {
     await supabase.storage.from("listing-images").remove([filePath]);
     return res.status(400).json({ error: "File is not a valid image. Upload rejected." });
   }
@@ -1568,6 +1773,98 @@ app.get("/api/mod/messages", requireAuth, require2FA, requireModerator, async (r
 // SUPPORT TICKETS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// ── Ticket confirmation email ──────────────────────────────
+async function sendReplyNotificationEmail({ toEmail, toName, ticketTitle, ticketCode, replyMessage, moderatorName }) {
+  if (!resend || !process.env.RESEND_FROM || !toEmail) return;
+  const from = process.env.RESEND_FROM;
+  const subject = `A moderator replied to your ticket — Lost & Hound`;
+  const html = `<div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: auto; padding: 40px; border: 1px solid #e0e0e0; border-radius: 8px; color: #000000;">
+
+  <h2 style="color: #A84D48; border-bottom: 2px solid #000000; padding-bottom: 10px; margin-top: 0;">
+    You have a new reply
+  </h2>
+
+  <p style="font-size: 16px; line-height: 1.5;">
+    ${toName ? `Hi <strong>${toName}</strong>, a` : "A"} member of the <strong>Lost & Hound</strong> support team has responded to your ticket.
+  </p>
+
+  <div style="background-color: #fdf5f5; border-left: 4px solid #A84D48; border-radius: 0 6px 6px 0; padding: 16px 20px; margin: 24px 0;">
+    <p style="margin: 0 0 6px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: #A84D48;">${moderatorName || "Support Team"} replied</p>
+    <p style="margin: 0; font-size: 15px; line-height: 1.6; color: #000000;">${replyMessage.replace(/\n/g, "<br>")}</p>
+  </div>
+
+  <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 28px;">
+    <tr>
+      <td style="padding: 10px 0; border-bottom: 1px solid #eeeeee; color: #666666;">Ticket</td>
+      <td style="padding: 10px 0; border-bottom: 1px solid #eeeeee; font-weight: bold; text-align: right;">${ticketTitle}</td>
+    </tr>
+    <tr>
+      <td style="padding: 10px 0; color: #666666;">Ticket Code</td>
+      <td style="padding: 10px 0; font-weight: bold; text-align: right; letter-spacing: 2px;">${ticketCode}</td>
+    </tr>
+  </table>
+
+  <div style="text-align: center; margin: 32px 0;">
+    <a href="https://thelostandhound.com" style="display: inline-block; background-color: #A84D48; color: #ffffff; text-decoration: none; font-weight: bold; font-size: 15px; padding: 14px 32px; border-radius: 6px;">View Your Ticket</a>
+  </div>
+
+  <p style="font-size: 12px; color: #666666; border-top: 1px solid #eeeeee; padding-top: 20px;">
+    To reply, visit <a href="https://thelostandhound.com" style="color: #A84D48;">thelostandhound.com</a> and use your ticket code <strong>${ticketCode}</strong> with your email address. If you did not submit this ticket, you can safely ignore this email.
+  </p>
+
+</div>`;
+
+  try {
+    await resend.emails.send({ from, to: toEmail, subject, html });
+  } catch (err) {
+    console.error("[Resend] Failed to send reply notification:", err?.message);
+  }
+}
+
+async function sendTicketConfirmationEmail({ toEmail, toName, ticketCode, ticketType, category }) {
+  if (!resend || !process.env.RESEND_FROM || !toEmail) return;
+  const from = process.env.RESEND_FROM;
+  const subject = `We received your ${ticketType} ticket — Lost & Hound`;
+  const html = `<div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: auto; padding: 40px; border: 1px solid #e0e0e0; border-radius: 8px; color: #000000;">
+
+  <h2 style="color: #A84D48; border-bottom: 2px solid #000000; padding-bottom: 10px; margin-top: 0;">
+    Support Ticket Received
+  </h2>
+
+  <p style="font-size: 16px; line-height: 1.5;">
+    ${toName ? `Hi <strong>${toName}</strong>, we` : "We"} received your <strong>${ticketType}</strong> ticket for <strong>Lost & Hound</strong>. A moderator will review it and get back to you shortly.
+  </p>
+
+  <div style="background-color: #fdf5f5; border: 2px solid #A84D48; border-radius: 6px; padding: 24px; text-align: center; margin: 32px 0;">
+    <p style="margin: 0 0 6px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: #A84D48;">Your Ticket Code</p>
+    <p style="margin: 0; font-size: 36px; font-weight: bold; letter-spacing: 6px; color: #000000;">${ticketCode}</p>
+    <p style="margin: 10px 0 0; font-size: 13px; color: #666666;">Save this code — use it with your email address to check your ticket status anytime.</p>
+  </div>
+
+  <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 24px;">
+    <tr>
+      <td style="padding: 10px 0; border-bottom: 1px solid #eeeeee; color: #666666;">Type</td>
+      <td style="padding: 10px 0; border-bottom: 1px solid #eeeeee; font-weight: bold; text-align: right;">${ticketType}</td>
+    </tr>
+    <tr>
+      <td style="padding: 10px 0; color: #666666;">Category</td>
+      <td style="padding: 10px 0; font-weight: bold; text-align: right;">${category}</td>
+    </tr>
+  </table>
+
+  <p style="font-size: 12px; color: #666666; border-top: 1px solid #eeeeee; padding-top: 20px;">
+    If you did not submit this ticket, you can safely ignore this email.
+  </p>
+
+</div>`;
+
+  try {
+    await resend.emails.send({ from, to: toEmail, subject, html });
+  } catch (err) {
+    console.error("[Resend] Failed to send ticket confirmation:", err?.message);
+  }
+}
+
 const VALID_TICKET_TYPES = new Set(["Support", "Bug Report", "Feedback"]);
 
 const VALID_SUPPORT_CATEGORIES = new Set([
@@ -1597,10 +1894,16 @@ const SUPPORT_NAME_MAX = 50;
 const SUPPORT_VALID_STATUSES = new Set(["open", "in_progress", "resolved", "closed"]);
 
 const TICKET_ID_RE = /^\d+$/;
+const TICKET_CODE_RE = /^\d{5}$/;
+
+// Generates a random 5-digit code (10000–99999) for user-facing ticket lookup
+function generateTicketCode() {
+  return String(Math.floor(10000 + Math.random() * 90000));
+}
 
 // POST /api/support — authenticated user submits a ticket
 app.post("/api/support", requireAuth, writeLimiter, async (req, res) => {
-  const { ticketType, category, subject, description } = req.body;
+  const { ticketType, name, category, subject, description, image_url } = req.body;
 
   if (!ticketType || !category || !subject || !description) {
     return res.status(400).json({ error: "ticketType, category, subject, and description are required." });
@@ -1618,20 +1921,45 @@ app.post("/api/support", requireAuth, writeLimiter, async (req, res) => {
   if (!safeTitle) return res.status(400).json({ error: "Subject is required." });
   if (!safeDesc) return res.status(400).json({ error: "Description is required." });
 
-  const { error } = await supabase.from("support_tickets").insert({
+  // Validate image_url must come from our own Supabase storage bucket
+  let safeImageUrl = null;
+  if (image_url) {
+    const rawUrl = sanitize(image_url, 600);
+    const storagePrefix = `${process.env.SUPABASE_URL}/storage/v1/object/public/listing-images/`;
+    if (!rawUrl.startsWith(storagePrefix)) {
+      return res.status(400).json({ error: "Invalid image URL." });
+    }
+    safeImageUrl = rawUrl;
+  }
+
+  const { data: inserted, error } = await supabase.from("support_tickets").insert({
+    user_id: req.user.id,
+    name: name ? sanitize(name, SUPPORT_NAME_MAX) : null,
+    email: req.user.email || null,
     ticket_type: ticketType,
     category,
     ticket_title: safeTitle,
     ticket_desc: safeDesc,
-  });
+    image_url: safeImageUrl,
+    ticket_code: generateTicketCode(),
+  }).select("ticket_code");
 
   if (error) return dbError(res, error, "POST /api/support");
-  res.status(201).json({ success: true });
+  const code = inserted?.[0]?.ticket_code;
+  // Fire-and-forget — never block the response on email delivery
+  sendTicketConfirmationEmail({
+    toEmail: req.user.email,
+    toName: name ? sanitize(name, SUPPORT_NAME_MAX) : null,
+    ticketCode: code,
+    ticketType,
+    category,
+  });
+  res.status(201).json({ success: true, ticketCode: code });
 });
 
 // POST /api/support/guest — unauthenticated user submits a ticket (from login page)
 app.post("/api/support/guest", strictLimiter, async (req, res) => {
-  const { ticketType, name, email, category, subject, description } = req.body;
+  const { ticketType, name, email, category, subject, description, image_url } = req.body;
 
   if (!ticketType || !name || !email || !category || !subject || !description) {
     return res.status(400).json({ error: "ticketType, name, email, category, subject, and description are required." });
@@ -1656,15 +1984,110 @@ app.post("/api/support/guest", strictLimiter, async (req, res) => {
   if (!safeTitle) return res.status(400).json({ error: "Subject is required." });
   if (!safeDesc) return res.status(400).json({ error: "Description is required." });
 
-  const { error } = await supabase.from("support_tickets").insert({
+  // Validate image_url must come from the guest/support/ path in our own storage bucket
+  let safeImageUrl = null;
+  if (image_url) {
+    const rawUrl = sanitize(image_url, 600);
+    const guestStoragePrefix = `${process.env.SUPABASE_URL}/storage/v1/object/public/listing-images/guest/support/`;
+    if (!rawUrl.startsWith(guestStoragePrefix)) {
+      return res.status(400).json({ error: "Invalid image URL." });
+    }
+    safeImageUrl = rawUrl;
+  }
+
+  const { data: inserted, error } = await supabase.from("support_tickets").insert({
+    name: safeName,
+    email: email.trim().toLowerCase(),
     ticket_type: ticketType,
     category,
     ticket_title: safeTitle,
     ticket_desc: safeDesc,
-  });
+    image_url: safeImageUrl,
+    ticket_code: generateTicketCode(),
+  }).select("ticket_code");
 
   if (error) return dbError(res, error, "POST /api/support/guest");
-  res.status(201).json({ success: true });
+  const code = inserted?.[0]?.ticket_code;
+  sendTicketConfirmationEmail({
+    toEmail: email.trim().toLowerCase(),
+    toName: safeName,
+    ticketCode: code,
+    ticketType,
+    category,
+  });
+  res.status(201).json({ success: true, ticketCode: code });
+});
+
+// GET /api/support-tickets/guest-status — guest ticket lookup by email + ticket ID
+app.get("/api/support-tickets/guest-status", strictLimiter, async (req, res) => {
+  const email = sanitize(req.query.email || "", 200).trim().toLowerCase();
+  const ticketCode = sanitize(req.query.ticketCode || "", 5).trim();
+
+  if (!email || !ticketCode) {
+    return res.status(400).json({ error: "Email and ticket code are required." });
+  }
+  if (!TICKET_CODE_RE.test(ticketCode)) {
+    return res.status(400).json({ error: "Ticket code must be a 5-digit number." });
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ error: "Invalid email address." });
+  }
+
+  const { data, error } = await supabase
+    .from("support_tickets")
+    .select("id, ticket_code, ticket_type, category, ticket_title, ticket_desc, status, claimed_by, image_url, created_at, support_replies(id, is_moderator, message, created_at)")
+    .eq("ticket_code", ticketCode)
+    .eq("email", email)
+    .single();
+
+  // Return same error regardless of whether email or code is wrong — prevents enumeration
+  if (error || !data) {
+    return res.status(404).json({ error: "No ticket found with that email and code." });
+  }
+
+  res.json({ ticket: data });
+});
+
+// POST /api/support-tickets/guest-reply — guest submits a reply using email + ticket code
+app.post("/api/support-tickets/guest-reply", strictLimiter, async (req, res) => {
+  const email = sanitize(req.body.email || "", 200).trim().toLowerCase();
+  const ticketCode = sanitize(req.body.ticketCode || "", 5).trim();
+  const message = sanitize(req.body.message || "", 1000).trim();
+
+  if (!email || !ticketCode || !message) {
+    return res.status(400).json({ error: "Email, ticket code, and message are required." });
+  }
+  if (!TICKET_CODE_RE.test(ticketCode)) {
+    return res.status(400).json({ error: "Ticket code must be a 5-digit number." });
+  }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ error: "Invalid email address." });
+  }
+
+  const { data: ticket, error: fetchErr } = await supabase
+    .from("support_tickets")
+    .select("id, status, email, ticket_code")
+    .eq("ticket_code", ticketCode)
+    .eq("email", email)
+    .single();
+
+  if (fetchErr || !ticket) {
+    return res.status(404).json({ error: "No ticket found with that email and code." });
+  }
+  if (ticket.status === "closed") {
+    return res.status(400).json({ error: "Cannot reply to a closed ticket." });
+  }
+
+  const { data, error } = await supabase
+    .from("support_replies")
+    .insert({ ticket_id: ticket.id, user_id: null, is_moderator: false, message })
+    .select();
+
+  if (error) return dbError(res, error, "POST /api/support-tickets/guest-reply");
+  res.status(201).json(data[0]);
 });
 
 // GET /api/support — list tickets (moderators only)
@@ -1717,17 +2140,88 @@ app.delete("/api/support/:id", requireAuth, require2FA, requireModerator, async 
 // SUPPORT TICKETS ENDPOINTS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// Fetch all support tickets (moderators only, includes reply counts)
-app.get("/api/support-tickets", requireAuth, require2FA, requireModerator, async (_req, res) => {
+// Dashboard summary — lightweight counts for the overview page
+app.get("/api/dashboard/summary", requireAuth, require2FA, requireModerator, async (req, res) => {
+  const userId = req.user.id;
   try {
-    const { data, error } = await supabase
+    const [reportsRes, ticketsRes, myWorkRes] = await Promise.all([
+      supabase.from("reports").select("id, status, reason, details").limit(5000),
+      supabase.from("support_tickets").select("id, ticket_type, status, severity, deadline, claimed_by").limit(5000),
+      supabase.from("support_tickets").select("id, status, deadline").eq("assignee_id", userId).not("status", "in", '("closed","resolved")'),
+    ]);
+
+    const reports = reportsRes.data || [];
+    const tickets = ticketsRes.data || [];
+    const myWork  = myWorkRes.data || [];
+
+    const isStolen = (r) => {
+      const reason  = (r.reason  || "").toLowerCase();
+      const details = (r.details || "").toLowerCase();
+      return reason.includes("stolen") || details.includes("stolen")
+          || reason.includes("theft")  || details.includes("theft");
+    };
+
+    const regular = reports.filter(r => !isStolen(r));
+    const stolen  = reports.filter(r =>  isStolen(r));
+    const feedback = tickets.filter(t => t.ticket_type === "Feedback");
+    const bugs     = tickets.filter(t => t.ticket_type === "Bug Report");
+    const support  = tickets.filter(t => t.ticket_type === "Support");
+    const now = new Date();
+
+    res.json({
+      reports: {
+        pending:   regular.filter(r => r.status === "pending").length,
+        reviewed:  regular.filter(r => r.status === "reviewed").length,
+        dismissed: regular.filter(r => r.status === "dismissed").length,
+      },
+      stolen: {
+        pending: stolen.filter(r => r.status === "pending").length,
+        total:   stolen.length,
+      },
+      feedback: {
+        open:        feedback.filter(t => t.status === "open").length,
+        in_progress: feedback.filter(t => t.status === "in_progress").length,
+      },
+      bugs: {
+        open:        bugs.filter(t => t.status === "open").length,
+        in_progress: bugs.filter(t => t.status === "in_progress").length,
+        critical:    bugs.filter(t => t.severity === "critical" && !["closed","resolved"].includes(t.status)).length,
+      },
+      support: {
+        open:        support.filter(t => t.status === "open").length,
+        unclaimed:   support.filter(t => t.status === "open" && !t.claimed_by).length,
+        in_progress: support.filter(t => t.status === "in_progress").length,
+      },
+      myWork: {
+        total:   myWork.length,
+        overdue: myWork.filter(t => t.deadline && new Date(t.deadline) < now).length,
+      },
+    });
+  } catch (err) {
+    console.error("Dashboard summary error:", err);
+    res.status(500).json({ error: "Failed to load summary" });
+  }
+});
+
+// Fetch all support tickets with replies (moderators only)
+app.get("/api/support-tickets", requireAuth, require2FA, requireModerator, async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+    const ticketType = req.query.ticket_type || null;
+    const offset = (page - 1) * limit;
+
+    let query = supabase
       .from("support_tickets")
-      .select("id, user_id, category, description, status, created_at, support_replies(id, user_id, is_moderator, message, created_at)")
-      .order("created_at", { ascending: false });
+      .select("id, ticket_code, user_id, ticket_type, category, ticket_title, ticket_desc, name, email, status, image_url, claimed_by, resolved_by, resolved_at, severity, assignee, assignee_id, environment, estimated_effort, repro_steps, fix_notes, fix_pr_url, deadline, created_at, support_replies(id, is_moderator, message, created_at)", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
 
+    if (ticketType) query = query.eq("ticket_type", ticketType);
+
+    const { data, error, count } = await query;
     if (error) return dbError(res, error, "fetching support tickets");
-
-    res.json({ tickets: data });
+    res.json({ tickets: data, hasMore: (count ?? 0) > offset + limit, total: count ?? 0 });
   } catch (error) {
     dbError(res, error, "fetching support tickets");
   }
@@ -1736,135 +2230,296 @@ app.get("/api/support-tickets", requireAuth, require2FA, requireModerator, async
 // Fetch current user's own support tickets
 app.get("/api/support-tickets/mine", requireAuth, async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(20, Math.max(1, parseInt(req.query.limit) || 10));
+    const offset = (page - 1) * limit;
+
+    const { data, error, count } = await supabase
       .from("support_tickets")
-      .select("id, user_id, category, description, status, created_at, support_replies(id, user_id, is_moderator, message, created_at)")
+      .select("id, ticket_code, ticket_type, category, ticket_title, ticket_desc, status, claimed_by, image_url, created_at, support_replies(id, is_moderator, message, created_at)", { count: "exact" })
       .eq("user_id", req.user.id)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (error) return dbError(res, error, "fetching user support tickets");
-
-    res.json({ tickets: data });
+    res.json({ tickets: data, hasMore: (count ?? 0) > offset + limit });
   } catch (error) {
     dbError(res, error, "fetching user support tickets");
   }
 });
 
-// Create a new support ticket
-app.post("/api/support-tickets", requireAuth, async (req, res) => {
-  const { category, description } = req.body;
+const SEVERITY_VALUES = new Set(["critical", "high", "medium", "low"]);
+const ENVIRONMENT_VALUES = new Set(["web", "ios", "android", "all"]);
+const EFFORT_VALUES = new Set(["xs", "s", "m", "l", "xl"]);
 
-  if (!category || !description) {
-    return res.status(400).json({ error: "Category and description are required." });
-  }
-
+// List all moderators (for assignee dropdown)
+app.get("/api/moderators", requireAuth, require2FA, requireModerator, async (_req, res) => {
   try {
     const { data, error } = await supabase
-      .from("support_tickets")
-      .insert({
-        user_id: req.user.id,
-        category: sanitize(category, 50),
-        description: sanitize(description, 500),
-        status: "open",
-      })
-      .select();
-
-    if (error) return dbError(res, error, "creating support ticket");
-
-    res.status(201).json(data[0]);
-  } catch (error) {
-    dbError(res, error, "creating support ticket");
+      .from("profiles")
+      .select("id, first_name, last_name")
+      .eq("is_moderator", true)
+      .order("first_name");
+    if (error) return dbError(res, error, "GET /api/moderators");
+    res.json({ moderators: data.map(m => ({ id: m.id, name: `${m.first_name || ""} ${m.last_name || ""}`.trim() || "Moderator" })) });
+  } catch (err) {
+    dbError(res, err, "GET /api/moderators");
   }
 });
 
-// Update a support ticket status (moderators only)
-app.patch("/api/support-tickets/:id", requireAuth, require2FA, requireModerator, async (req, res) => {
-  const { id } = req.params;
-  const { status } = req.body;
-
-  const VALID_STATUSES = ["open", "in_progress", "resolved", "closed"];
-  if (!status || !VALID_STATUSES.includes(status)) {
-    return res.status(400).json({ error: `Status must be one of: ${VALID_STATUSES.join(", ")}.` });
-  }
-
+// My Work — tickets assigned to the requesting moderator
+app.get("/api/support-tickets/my-work", requireAuth, require2FA, requireModerator, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("support_tickets")
-      .update({ status })
-      .eq("id", id)
-      .select();
+      .select("id, ticket_code, user_id, ticket_type, category, ticket_title, ticket_desc, name, email, status, image_url, claimed_by, resolved_by, resolved_at, severity, assignee, assignee_id, environment, estimated_effort, repro_steps, fix_notes, fix_pr_url, deadline, created_at, support_replies(id, is_moderator, message, created_at)")
+      .eq("assignee_id", req.user.id)
+      .not("status", "eq", "closed")
+      .order("deadline", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: false });
+    if (error) return dbError(res, error, "GET /api/support-tickets/my-work");
+    res.json({ tickets: data });
+  } catch (err) {
+    dbError(res, err, "GET /api/support-tickets/my-work");
+  }
+});
+
+// Update a support ticket (status + optional engineering fields) — moderators only
+app.patch("/api/support-tickets/:id", requireAuth, require2FA, requireModerator, async (req, res) => {
+  if (!TICKET_ID_RE.test(req.params.id)) return res.status(400).json({ error: "Invalid id" });
+
+  const { status, severity, assignee, assignee_id, environment, estimated_effort, repro_steps, fix_notes, fix_pr_url, deadline } = req.body;
+
+  // status is optional — can PATCH only engineering fields
+  if (status !== undefined && !SUPPORT_VALID_STATUSES.has(status)) {
+    return res.status(400).json({ error: "Invalid status." });
+  }
+
+  const ENG_FIELDS = ["severity", "assignee", "assignee_id", "environment", "estimated_effort", "repro_steps", "fix_notes", "fix_pr_url", "deadline"];
+  const isEngEdit = ENG_FIELDS.some(f => req.body[f] !== undefined);
+
+  try {
+    // Ownership check: if ticket has an assignee_id set and this is an eng edit,
+    // only the assigned moderator (or any mod changing only status) can edit eng fields.
+    if (isEngEdit) {
+      const { data: current } = await supabase
+        .from("support_tickets")
+        .select("assignee_id")
+        .eq("id", req.params.id)
+        .single();
+      if (current?.assignee_id && current.assignee_id !== req.user.id) {
+        return res.status(403).json({ error: "This ticket is assigned to another moderator. Only the assigned moderator can edit engineering details." });
+      }
+    }
+
+    const updates = {};
+    if (status !== undefined) updates.status = status;
+
+    // Engineering fields — each validated before applying
+    if (severity !== undefined) {
+      if (severity !== null && !SEVERITY_VALUES.has(severity)) return res.status(400).json({ error: "Invalid severity." });
+      updates.severity = severity;
+    }
+    if (environment !== undefined) {
+      if (environment !== null && !ENVIRONMENT_VALUES.has(environment)) return res.status(400).json({ error: "Invalid environment." });
+      updates.environment = environment;
+    }
+    if (estimated_effort !== undefined) {
+      if (estimated_effort !== null && !EFFORT_VALUES.has(estimated_effort)) return res.status(400).json({ error: "Invalid effort value." });
+      updates.estimated_effort = estimated_effort;
+    }
+    if (assignee !== undefined) {
+      updates.assignee = assignee ? String(assignee).trim().slice(0, 80) || null : null;
+    }
+    if (assignee_id !== undefined) {
+      updates.assignee_id = assignee_id || null;
+    }
+    if (repro_steps !== undefined) {
+      updates.repro_steps = repro_steps ? String(repro_steps).trim().slice(0, 1000) || null : null;
+    }
+    if (fix_notes !== undefined) {
+      updates.fix_notes = fix_notes ? String(fix_notes).trim().slice(0, 1000) || null : null;
+    }
+    if (fix_pr_url !== undefined) {
+      if (fix_pr_url !== null && !String(fix_pr_url).startsWith("https://")) {
+        return res.status(400).json({ error: "fix_pr_url must start with https://" });
+      }
+      updates.fix_pr_url = fix_pr_url ? String(fix_pr_url).trim().slice(0, 300) : null;
+    }
+    if (deadline !== undefined) {
+      updates.deadline = deadline || null; // ISO string or null
+    }
+
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Nothing to update." });
+
+    // Auto-claim on start; record resolver on resolve
+    if (status === "in_progress" || status === "resolved") {
+      const { data: mod } = await supabase
+        .from("profiles")
+        .select("first_name, last_name")
+        .eq("id", req.user.id)
+        .single();
+      const modName = mod
+        ? `${mod.first_name || ""} ${mod.last_name || ""}`.trim() || "Moderator"
+        : "Moderator";
+
+      if (status === "in_progress") {
+        const { data: current } = await supabase
+          .from("support_tickets")
+          .select("claimed_by")
+          .eq("id", req.params.id)
+          .single();
+        if (current && !current.claimed_by) updates.claimed_by = modName;
+      }
+      if (status === "resolved") {
+        updates.resolved_by = modName;
+        updates.resolved_at = new Date().toISOString();
+      }
+    }
+
+    const { data, error } = await supabase
+      .from("support_tickets")
+      .update(updates)
+      .eq("id", req.params.id)
+      .select("id, status, claimed_by, resolved_by, resolved_at, severity, assignee, assignee_id, environment, estimated_effort, repro_steps, fix_notes, fix_pr_url, deadline");
 
     if (error) return dbError(res, error, "updating support ticket");
     if (!data || data.length === 0) return res.status(404).json({ error: "Ticket not found." });
-
     res.json(data[0]);
   } catch (error) {
     dbError(res, error, "updating support ticket");
   }
 });
 
-// Post a reply to a support ticket (moderator or ticket owner)
-app.post("/api/support-tickets/:id/replies", requireAuth, async (req, res) => {
-  const { id } = req.params;
-  const { message } = req.body;
+// Get replies for a support ticket (ticket owner or moderator)
+app.get("/api/support-tickets/:id/replies", requireAuth, async (req, res) => {
+  if (!TICKET_ID_RE.test(req.params.id)) return res.status(400).json({ error: "Invalid id" });
+  try {
+    const { data: ticket } = await supabase.from("support_tickets").select("id, user_id").eq("id", req.params.id).single();
+    if (!ticket) return res.status(404).json({ error: "Ticket not found." });
 
+    const { data: profile } = await supabase.from("profiles").select("is_moderator").eq("id", req.user.id).single();
+    const isModerator = profile?.is_moderator === true;
+
+    if (ticket.user_id !== req.user.id && !isModerator) return res.status(403).json({ error: "Forbidden." });
+
+    const { data, error } = await supabase
+      .from("support_replies")
+      .select("id, user_id, is_moderator, message, created_at")
+      .eq("ticket_id", req.params.id)
+      .order("created_at", { ascending: true });
+
+    if (error) return dbError(res, error, "GET replies");
+    res.json({ replies: data });
+  } catch (err) {
+    dbError(res, err, "GET replies");
+  }
+});
+
+// Post a reply as the ticket owner (authenticated user, not moderator)
+app.post("/api/support-tickets/:id/reply", requireAuth, writeLimiter, async (req, res) => {
+  if (!TICKET_ID_RE.test(req.params.id)) return res.status(400).json({ error: "Invalid id" });
+  const { message } = req.body;
+  if (!message || !message.trim()) return res.status(400).json({ error: "Message is required." });
+
+  try {
+    const { data: ticket } = await supabase.from("support_tickets").select("id, user_id, status").eq("id", req.params.id).single();
+    if (!ticket) return res.status(404).json({ error: "Ticket not found." });
+    if (ticket.user_id !== req.user.id) return res.status(403).json({ error: "Forbidden." });
+    if (ticket.status === "closed") return res.status(400).json({ error: "Cannot reply to a closed ticket." });
+
+    const { data, error } = await supabase
+      .from("support_replies")
+      .insert({ ticket_id: Number(req.params.id), user_id: req.user.id, is_moderator: false, message: sanitize(message, 1000) })
+      .select();
+
+    if (error) return dbError(res, error, "POST user reply");
+    res.status(201).json(data[0]);
+  } catch (err) {
+    dbError(res, err, "POST user reply");
+  }
+});
+
+// Post a reply to a support ticket (moderators only)
+app.post("/api/support-tickets/:id/replies", requireAuth, require2FA, requireModerator, async (req, res) => {
+  if (!TICKET_ID_RE.test(req.params.id)) return res.status(400).json({ error: "Invalid id" });
+
+  const { message } = req.body;
   if (!message || !message.trim()) {
     return res.status(400).json({ error: "Message is required." });
   }
 
   try {
-    // Verify the ticket exists and the requester is either the owner or a moderator
     const { data: ticket, error: ticketError } = await supabase
       .from("support_tickets")
-      .select("id, user_id, status")
-      .eq("id", id)
+      .select("id, status, claimed_by, email, name, ticket_title, ticket_code")
+      .eq("id", req.params.id)
       .single();
 
     if (ticketError || !ticket) return res.status(404).json({ error: "Ticket not found." });
+    if (ticket.status === "closed") return res.status(400).json({ error: "Cannot reply to a closed ticket." });
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("is_moderator")
-      .eq("id", req.user.id)
-      .single();
+    // Check if this is the first moderator reply (for email notification)
+    const { count: existingModReplies } = await supabase
+      .from("support_replies")
+      .select("id", { count: "exact", head: true })
+      .eq("ticket_id", req.params.id)
+      .eq("is_moderator", true);
+    const isFirstModReply = (existingModReplies ?? 0) === 0;
 
-    const isModerator = !!profile?.is_moderator;
-
-    if (!isModerator && ticket.user_id !== req.user.id) {
-      return res.status(403).json({ error: "Forbidden." });
-    }
-
-    if (ticket.status === "closed") {
-      return res.status(400).json({ error: "Cannot reply to a closed ticket." });
-    }
+    const safeMessage = sanitize(message, 1000);
 
     const { data, error } = await supabase
       .from("support_replies")
       .insert({
-        ticket_id: id,
-        user_id: req.user.id,
-        is_moderator: isModerator,
-        message: sanitize(message, 1000),
+        ticket_id: Number(req.params.id),
+        is_moderator: true,
+        message: safeMessage,
       })
       .select();
 
     if (error) return dbError(res, error, "posting reply");
 
-    // If a moderator replies and ticket is still open, move it to in_progress
-    if (isModerator && ticket.status === "open") {
-      await supabase.from("support_tickets").update({ status: "in_progress" }).eq("id", id);
+    // Auto-advance open tickets to in_progress when a moderator replies
+    const updates = {};
+    if (ticket.status === "open") updates.status = "in_progress";
+
+    // Auto-claim: first moderator to reply becomes the owner
+    let moderatorName = "Support Team";
+    if (!ticket.claimed_by) {
+      const { data: mod } = await supabase
+        .from("profiles")
+        .select("first_name, last_name")
+        .eq("id", req.user.id)
+        .single();
+      moderatorName = mod
+        ? `${mod.first_name || ""} ${mod.last_name || ""}`.trim() || "Support Team"
+        : "Support Team";
+      updates.claimed_by = moderatorName;
+    } else {
+      moderatorName = ticket.claimed_by;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await supabase.from("support_tickets").update(updates).eq("id", req.params.id);
+    }
+
+    // Send email only on the first mod reply — fire-and-forget
+    if (isFirstModReply && ticket.email) {
+      sendReplyNotificationEmail({
+        toEmail: ticket.email,
+        toName: ticket.name || null,
+        ticketTitle: ticket.ticket_title,
+        ticketCode: ticket.ticket_code,
+        replyMessage: safeMessage,
+        moderatorName,
+      });
     }
 
     res.status(201).json(data[0]);
   } catch (error) {
     dbError(res, error, "posting reply");
   }
-});
-
-// Catch-all: log any request that didn't match a route
-app.use((req, res) => {
-  console.log(`[404] No route matched: ${req.method} ${req.path}`);
-  res.status(404).json({ error: "Not found" });
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1930,6 +2585,133 @@ async function sendPushNotification(userId, title, body, data = {}) {
     console.error("Push notification error:", err);
   }
 }
+
+// Catch-all: log any request that didn't match a route
+app.use((req, res) => {
+  console.log(`[404] No route matched: ${req.method} ${req.path}`);
+  res.status(404).json({ error: "Not found" });
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// UNREAD MESSAGE EMAIL NOTIFICATIONS (cron — hourly)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+async function sendUnreadMessageEmail({ toEmail, toName, messageCount, conversationCount }) {
+  if (!resend || !process.env.RESEND_FROM || !toEmail) return;
+  const msgWord = messageCount === 1 ? "message" : "messages";
+  const convWord = conversationCount === 1 ? "conversation" : "conversations";
+  const subject = `You have ${messageCount} unread ${msgWord} on Lost & Hound`;
+  const html = `<div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: auto; padding: 40px; border: 1px solid #e0e0e0; border-radius: 8px; color: #000000;">
+
+  <h2 style="color: #A84D48; border-bottom: 2px solid #000000; padding-bottom: 10px; margin-top: 0;">
+    Unread Messages
+  </h2>
+
+  <p style="font-size: 16px; line-height: 1.5;">
+    ${toName ? `Hi <strong>${toName}</strong>, you have` : "You have"} <strong>${messageCount} unread ${msgWord}</strong> across <strong>${conversationCount} ${convWord}</strong> on Lost &amp; Hound.
+  </p>
+
+  <div style="text-align: center; margin: 32px 0;">
+    <a href="https://thelostandhound.com/messages" style="display: inline-block; background-color: #A84D48; color: #ffffff; text-decoration: none; font-weight: bold; font-size: 15px; padding: 14px 32px; border-radius: 6px;">View Messages</a>
+  </div>
+
+  <p style="font-size: 12px; color: #666666; border-top: 1px solid #eeeeee; padding-top: 20px;">
+    You're receiving this because someone sent you a message on <a href="https://thelostandhound.com" style="color: #A84D48;">Lost & Hound</a>. You won't receive another reminder for these messages unless you read them and receive new ones.
+  </p>
+
+</div>`;
+  try {
+    await resend.emails.send({ from: process.env.RESEND_FROM, to: toEmail, subject, html });
+  } catch (err) {
+    console.error("[Resend] Failed to send unread message notification:", err?.message);
+  }
+}
+
+async function processUnreadMessageNotifications() {
+  if (!resend || !process.env.RESEND_FROM) return;
+
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  // 1. Find unread messages older than 24h that haven't been notified yet
+  const { data: msgs, error: msgsErr } = await supabase
+    .from("messages")
+    .select("id, conversation_id, sender_id")
+    .eq("read", false)
+    .eq("email_notified", false)
+    .lt("created_at", cutoff);
+
+  if (msgsErr) { console.error("[UnreadNotif] Query error:", msgsErr.message); return; }
+  if (!msgs?.length) return;
+
+  // 2. Fetch the relevant conversations to determine recipients
+  const convIds = [...new Set(msgs.map((m) => m.conversation_id))];
+  const { data: convos } = await supabase
+    .from("conversations")
+    .select("id, participant_1, participant_2")
+    .in("id", convIds);
+  if (!convos?.length) return;
+
+  const convMap = Object.fromEntries(convos.map((c) => [c.id, c]));
+
+  // 3. Group message IDs by recipient user ID
+  const byRecipient = {}; // { [userId]: { messageIds: [], convIds: Set } }
+  for (const msg of msgs) {
+    const conv = convMap[msg.conversation_id];
+    if (!conv) continue;
+    const recipient = conv.participant_1 === msg.sender_id ? conv.participant_2 : conv.participant_1;
+    if (!byRecipient[recipient]) byRecipient[recipient] = { messageIds: [], convIds: new Set() };
+    byRecipient[recipient].messageIds.push(msg.id);
+    byRecipient[recipient].convIds.add(msg.conversation_id);
+  }
+
+  const recipientIds = Object.keys(byRecipient);
+  if (!recipientIds.length) return;
+
+  // 4. Fetch display names from profiles
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, first_name, last_name")
+    .in("id", recipientIds);
+  const profileMap = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+
+  // 5. Send one email per recipient, then mark their messages as notified
+  const notifiedIds = [];
+
+  for (const [recipientId, { messageIds, convIds }] of Object.entries(byRecipient)) {
+    try {
+      const { data: { user: authUser } } = await supabase.auth.admin.getUserById(recipientId);
+      const email = authUser?.email;
+      if (!email) continue;
+
+      const profile = profileMap[recipientId];
+      const name = profile ? `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || null : null;
+
+      await sendUnreadMessageEmail({
+        toEmail: email,
+        toName: name,
+        messageCount: messageIds.length,
+        conversationCount: convIds.size,
+      });
+
+      notifiedIds.push(...messageIds);
+    } catch (err) {
+      console.error(`[UnreadNotif] Failed for user ${recipientId}:`, err?.message);
+    }
+  }
+
+  // 6. Mark all successfully notified messages so they don't trigger again
+  if (notifiedIds.length > 0) {
+    await supabase.from("messages").update({ email_notified: true }).in("id", notifiedIds);
+    console.log(`[UnreadNotif] Notified ${Object.keys(byRecipient).length} users, ${notifiedIds.length} messages marked.`);
+  }
+}
+
+// Run every hour at :00 — only fires for messages that crossed the 24h threshold since last run
+cron.schedule("0 * * * *", () => {
+  processUnreadMessageNotifications().catch((err) =>
+    console.error("[UnreadNotif] Cron error:", err)
+  );
+});
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

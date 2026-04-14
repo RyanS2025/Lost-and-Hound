@@ -17,13 +17,21 @@ import {
   Tooltip,
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import TermsModal from "../components/TermsModal";
 import LoginSupportModal from "../components/LoginSupportModal";
 import DemoModal from "../components/DemoModal";
-import apiFetch from "../utils/apiFetch";
+import apiFetch, { API_BASE } from "../utils/apiFetch";
+import Select from "@mui/material/Select";
+import MenuItem from "@mui/material/MenuItem";
+import InputLabel from "@mui/material/InputLabel";
+import FormControl from "@mui/material/FormControl";
 
 const NAME_MAX_LENGTH = 25;
 const PASSWORD_MAX_LENGTH = 32;
+
+// Module-level cache — survives component unmount so counter is instant on return visits
+let userCountCache = null;
 
 /* ───────────────────────────────────────────
    Confetti canvas — lightweight, no deps
@@ -150,6 +158,37 @@ export default function LoginPage({
   // Demo modal state
   const [demoOpen, setDemoOpen] = useState(false);
 
+  // Referral source (sign-up only)
+  const [referralSource, setReferralSource] = useState("");
+
+  // Community counter — seed from cache so it's instant on re-visits
+  const [displayCount, setDisplayCount] = useState(userCountCache ?? 0);
+  const [targetCount, setTargetCount] = useState(userCountCache ?? 0);
+
+  // Fetch user count once on mount — public endpoint, no auth needed
+  useEffect(() => {
+    fetch(`${API_BASE}/api/stats/user-count`)
+      .then((r) => r.json())
+      .then((d) => {
+        const rounded = Math.floor((d.count || 0) / 10) * 10;
+        userCountCache = rounded;
+        setTargetCount(rounded);
+      })
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Animate displayCount up to targetCount in steps of 10
+  useEffect(() => {
+    if (targetCount <= displayCount) return;
+    let current = displayCount;
+    const id = setInterval(() => {
+      current += 10;
+      setDisplayCount(current);
+      if (current >= targetCount) clearInterval(id);
+    }, 50);
+    return () => clearInterval(id);
+  }, [targetCount]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Refs to read Chrome's autofilled DOM values (Chrome bypasses onChange)
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
@@ -238,6 +277,7 @@ export default function LoginPage({
   // Reset terms accepted when switching between sign-up and sign-in
   useEffect(() => {
     setTermsAccepted(false);
+    setReferralSource("");
   }, [isSignUp]);
 
   const doSignUp = async () => {
@@ -267,6 +307,14 @@ export default function LoginPage({
       setMessage("SIGNUP_SUCCESS");
       setFirstName("");
       setLastName("");
+      // Fire-and-forget referral — never block the success flow
+      if (referralSource) {
+        fetch(`${API_BASE}/api/referral`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: referralSource }),
+        }).catch(() => {});
+      }
     } catch (err) {
       setError(cleanErrorMessage(err.message || err.code));
     }
@@ -367,6 +415,11 @@ export default function LoginPage({
 
     if (isSignUp && (firstName.trim().length > NAME_MAX_LENGTH || lastName.trim().length > NAME_MAX_LENGTH)) {
       setError(`First and last name must be ${NAME_MAX_LENGTH} characters or fewer.`);
+      return;
+    }
+
+    if (isSignUp && !referralSource) {
+      setError("Please let us know how you found us.");
       return;
     }
 
@@ -655,6 +708,26 @@ export default function LoginPage({
               >
                 Northeastern's community-powered lost & found platform.
               </Typography>
+
+              {/* Community counter — always rendered to avoid pop-in */}
+              <Box sx={{ mt: 2.5, display: "flex", alignItems: "center", gap: 1 }}>
+                <Box sx={{
+                  background: "rgba(255,255,255,0.15)",
+                  border: "1px solid rgba(255,255,255,0.25)",
+                  borderRadius: 2,
+                  px: 1.5, py: 0.75,
+                  backdropFilter: "blur(6px)",
+                  minWidth: 52,
+                  textAlign: "center",
+                }}>
+                  <Typography sx={{ fontWeight: 900, fontSize: { xs: 20, md: 24 }, color: "#fff", lineHeight: 1, letterSpacing: "-0.5px" }}>
+                    {displayCount > 0 ? `${displayCount}+` : "0+"}
+                  </Typography>
+                </Box>
+                <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.85)", fontWeight: 600, lineHeight: 1.3 }}>
+                  Huskies in the community
+                </Typography>
+              </Box>
             </Box>
 
             <Typography
@@ -964,6 +1037,35 @@ export default function LoginPage({
                       <Typography variant="caption" sx={{ display: "block", mb: 1.5, color: isDark ? "#A9AAAB" : "text.secondary" }}>
                         Max {NAME_MAX_LENGTH} characters for first and last name.
                       </Typography>
+
+                      <Box sx={{ display: "flex", alignItems: "flex-start", gap: 0.75, mb: 1.5 }}>
+                        <FormControl fullWidth size="small">
+                          <InputLabel sx={{ fontSize: 14 }}>How did you find us?</InputLabel>
+                          <Select
+                            value={referralSource}
+                            label="How did you find us?"
+                            onChange={(e) => setReferralSource(e.target.value)}
+                            sx={{
+                              fontSize: 14,
+                              background: BRAND.inputBg,
+                              "& .MuiOutlinedInput-notchedOutline": { borderColor: BRAND.inputBorder },
+                              "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: BRAND.inputBorderHover },
+                              "& .MuiSelect-select": { color: BRAND.inputText },
+                            }}
+                          >
+                            <MenuItem value="word_of_mouth">Word of mouth</MenuItem>
+                            <MenuItem value="social_media">Instagram / Social media</MenuItem>
+                            <MenuItem value="northeastern_website">Northeastern website</MenuItem>
+                            <MenuItem value="professor_class">Professor or class</MenuItem>
+                            <MenuItem value="flyer_poster">Flyer or poster</MenuItem>
+                            <MenuItem value="oasis_event">Oasis event</MenuItem>
+                            <MenuItem value="other">Other</MenuItem>
+                          </Select>
+                        </FormControl>
+                        <Tooltip title="This is collected anonymously and is never linked to your account." placement="top">
+                          <InfoOutlinedIcon sx={{ fontSize: 15, mt: 1.1, color: "text.disabled", cursor: "help", flexShrink: 0 }} />
+                        </Tooltip>
+                      </Box>
                     </>
                   )}
 
@@ -1019,7 +1121,7 @@ export default function LoginPage({
                     <MuiLink
                       component="button"
                       variant="body2"
-                      onClick={handleForgotPassword}
+                      onClick={() => navigate("/forgot-password")}
                       sx={{
                         cursor: "pointer",
                         color: BRAND.accent,
@@ -1042,21 +1144,6 @@ export default function LoginPage({
                       Need Help?
                     </MuiLink>
                   </Box>
-                  <MuiLink
-                    component="button"
-                    variant="body2"
-                    onClick={() => navigate("/forgot-password")}
-                    sx={{
-                      cursor: "pointer",
-                      color: BRAND.accent,
-                      fontWeight: 600,
-                      display: "block",
-                      mt: 2,
-                      textAlign: "center",
-                    }}
-                  >
-                    Forgot password?
-                  </MuiLink>
                 )}
 
                 {error && (
@@ -1171,6 +1258,9 @@ export default function LoginPage({
       <LoginSupportModal
         open={supportOpen}
         onClose={() => setSupportOpen(false)}
+        effectiveTheme={effectiveTheme}
+      />
+
       {/* Demo preview modal */}
       <DemoModal
         open={demoOpen}
