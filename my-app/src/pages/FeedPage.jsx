@@ -13,6 +13,7 @@ import MapIcon from "@mui/icons-material/PinDrop";
 import FlagIcon from "@mui/icons-material/Flag";
 import ReportModal from "../components/ReportModal";
 import apiFetch from "../utils/apiFetch";
+import { containsProfanity } from "../utils/profanityFilter";
 import { useAuth } from "../AuthContext";
 import MapPinPicker from "../components/MapPinPicker";
 import { CAMPUSES } from "../constants/campuses";
@@ -376,8 +377,14 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
   const [flyTo, setFlyTo] = useState(null);
   // Controls whether the user is reporting something they found or something they lost.
   const [listingType, setListingType] = useState("found");
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const valid = form.title.trim() && form.found_at.trim() && form.description.trim() && form.location_id;
+  const [profaneFields, setProfaneFields] = useState({ title: false, found_at: false, description: false });
+  const hasProfanity = Object.values(profaneFields).some(Boolean);
+
+  const set = (k, v) => {
+    setForm(f => ({ ...f, [k]: v }));
+    if (k in profaneFields) setProfaneFields(f => ({ ...f, [k]: containsProfanity(v) }));
+  };
+  const valid = form.title.trim() && form.found_at.trim() && form.description.trim() && form.location_id && !hasProfanity;
 
   useEffect(() => {
     if (!open) return;
@@ -485,6 +492,7 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
       onAdd(data);
       onClose();
       setForm({ title: "", category: "Other", location_id: "", found_at: "", importance: 2, description: "", image: null, pin: null });
+      setProfaneFields({ title: false, found_at: false, description: false });
       setListingType("found");
       setShowMap(false);
       setFlyTo(null);
@@ -547,7 +555,8 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           fullWidth
           sx={{ mb: 2 }}
           inputProps={{ maxLength: LIMITS.title }}
-          helperText={`${form.title.length}/${LIMITS.title}`}
+          error={profaneFields.title}
+          helperText={profaneFields.title ? "Cannot use that word" : `${form.title.length}/${LIMITS.title}`}
         />
 
         {/* Campus chips */}
@@ -616,7 +625,8 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           fullWidth
           sx={{ mb: 2 }}
           inputProps={{ maxLength: LIMITS.found_at }}
-          helperText={`${form.found_at.length}/${LIMITS.found_at}`}
+          error={profaneFields.found_at}
+          helperText={profaneFields.found_at ? "Cannot use that word" : `${form.found_at.length}/${LIMITS.found_at}`}
         />
 
         <TextField
@@ -629,7 +639,8 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           fullWidth
           sx={{ mb: 2 }}
           inputProps={{ maxLength: LIMITS.description }}
-          helperText={`${form.description.length}/${LIMITS.description}`}
+          error={profaneFields.description}
+          helperText={profaneFields.description ? "Cannot use that word" : `${form.description.length}/${LIMITS.description}`}
         />
 
         {/* Map pin */}

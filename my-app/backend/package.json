@@ -20,6 +20,7 @@
     "express-rate-limit": "^8.3.1",
     "helmet": "^8.1.0",
     "node-cron": "^4.2.1",
+    "profane-words": "^2.1.0",
     "resend": "^6.11.0"
   }
 }

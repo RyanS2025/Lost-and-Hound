@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { supabase } from "../../backend/supabaseClient";
 import apiFetch from "../utils/apiFetch";
+import { containsProfanity } from "../utils/profanityFilter";
 import {
   Container,
   Paper,
@@ -64,6 +65,7 @@ export default function SettingsPage({
   const [firstName, setFirstName] = useState(profile?.first_name || "");
   const [lastName, setLastName] = useState(profile?.last_name || "");
   const [nameMessage, setNameMessage] = useState("");
+  const [nameProfane, setNameProfane] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState("");
   const [defaultCampus, setDefaultCampus] = useState(
@@ -101,6 +103,7 @@ export default function SettingsPage({
 
   const handleSaveName = async () => {
     if (!user?.id) return;
+    if (nameProfane) return;
     setNameMessage("");
 
     if (
@@ -346,19 +349,29 @@ export default function SettingsPage({
                         <TextField
                           label="First Name"
                           value={firstName}
-                          onChange={(e) => setFirstName(e.target.value.slice(0, NAME_MAX_LENGTH))}
+                          onChange={(e) => {
+                            const v = e.target.value.slice(0, NAME_MAX_LENGTH);
+                            setFirstName(v);
+                            setNameProfane(containsProfanity(v) || containsProfanity(lastName));
+                          }}
                           size="small"
                           inputProps={{ maxLength: NAME_MAX_LENGTH }}
-                          helperText={`${firstName.length}/${NAME_MAX_LENGTH}`}
+                          error={nameProfane && containsProfanity(firstName)}
+                          helperText={nameProfane && containsProfanity(firstName) ? "Cannot use that word" : `${firstName.length}/${NAME_MAX_LENGTH}`}
                           sx={{ flex: 1, borderRadius: 2, ...textFieldSx }}
                         />
                         <TextField
                           label="Last Name"
                           value={lastName}
-                          onChange={(e) => setLastName(e.target.value.slice(0, NAME_MAX_LENGTH))}
+                          onChange={(e) => {
+                            const v = e.target.value.slice(0, NAME_MAX_LENGTH);
+                            setLastName(v);
+                            setNameProfane(containsProfanity(firstName) || containsProfanity(v));
+                          }}
                           size="small"
                           inputProps={{ maxLength: NAME_MAX_LENGTH }}
-                          helperText={`${lastName.length}/${NAME_MAX_LENGTH}`}
+                          error={nameProfane && containsProfanity(lastName)}
+                          helperText={nameProfane && containsProfanity(lastName) ? "Cannot use that word" : `${lastName.length}/${NAME_MAX_LENGTH}`}
                           sx={{ flex: 1, borderRadius: 2, ...textFieldSx }}
                         />
                       </Box>

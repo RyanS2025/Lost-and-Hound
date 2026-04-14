@@ -8,6 +8,7 @@ import cookieParser from "cookie-parser";
 import crypto from "crypto";
 import { Resend } from "resend";
 import cron from "node-cron";
+import { containsProfanity } from "./utils/profanityFilter.js";
 
 dotenv.config();
 
@@ -212,6 +213,18 @@ app.post("/api/referral/user", requireAuth, require2FA, async (req, res) => {
 function sanitize(str, maxLength = 500) {
   if (typeof str !== "string") return "";
   return str.trim().slice(0, maxLength);
+}
+
+// Returns a 422 response and true if any field contains profanity; otherwise returns false.
+// Usage: if (profanityCheck(res, { 'item title': title, description })) return;
+function profanityCheck(res, fields) {
+  for (const [label, value] of Object.entries(fields)) {
+    if (value && containsProfanity(value)) {
+      res.status(422).json({ error: `Your ${label} contains inappropriate language.` });
+      return true;
+    }
+  }
+  return false;
 }
 
 function validateRequired(fields, body) {
@@ -555,6 +568,8 @@ app.patch("/api/profile", requireAuth, require2FA, async (req, res) => {
     return res.status(400).json({ error: "First name and last name are required" });
   }
 
+  if (profanityCheck(res, { "first name": first_name, "last name": last_name })) return;
+
   const { data, error } = await supabase
     .from("profiles")
     .update({ first_name, last_name })
@@ -761,6 +776,8 @@ app.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBanne
   if (lng != null && (typeof lng !== "number" || lng < -180 || lng > 180)) {
     return res.status(400).json({ error: "Invalid longitude" });
   }
+
+  if (profanityCheck(res, { "item title": title, "location": found_at, "description": description })) return;
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -1280,6 +1297,8 @@ app.post("/api/conversations/:id/messages", writeLimiter, requireAuth, require2F
   if (!content) {
     return res.status(400).json({ error: "Message cannot be empty" });
   }
+
+  if (profanityCheck(res, { "message": content })) return;
 
   const { data, error } = await supabase
     .from("messages")
