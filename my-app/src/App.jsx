@@ -17,6 +17,7 @@ import BugsPage from "./pages/dashboard/BugsPage";
 import SupportPage from "./pages/dashboard/SupportPage";
 import MyWorkPage from "./pages/dashboard/MyWorkPage";
 import StatsPage from "./pages/dashboard/StatsPage";
+import FinancesPage from "./pages/dashboard/FinancesPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import AppFooter from "./components/AppFooter";
 import ReferralPollModal from "./components/ReferralPollModal";
@@ -708,6 +709,7 @@ export default function App() {
               <Route path="support"  element={<SupportPage />} />
               <Route path="my-work"  element={<MyWorkPage />} />
               <Route path="stats"    element={<StatsPage />} />
+              {profile?.is_owner && <Route path="finances" element={<FinancesPage />} />}
             </Route>
             <Route path="*" element={<NotFoundPage effectiveTheme={effectiveTheme} />} />
           </Routes>

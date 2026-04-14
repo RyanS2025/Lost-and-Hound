@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useOutletContext } from "react-router-dom";
+import { useAuth } from "../../AuthContext";
 import {
   Box, Typography, Paper, Chip, Button,
 } from "@mui/material";
@@ -13,6 +14,7 @@ import BugReportIcon from "@mui/icons-material/BugReport";
 import SupportAgentIcon from "@mui/icons-material/SupportAgent";
 import AssignmentIcon from "@mui/icons-material/Assignment";
 import BarChartIcon from "@mui/icons-material/BarChart";
+import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
 import apiFetch from "../../utils/apiFetch";
 import { summaryCache } from "../../utils/dashboardPrefetch";
 import { supabase } from "../../../backend/supabaseClient";
@@ -109,6 +111,7 @@ const POLL_INTERVAL = 30_000;
 
 export default function DashboardOverviewPage() {
   const { isDark } = useOutletContext();
+  const { profile } = useAuth();
   const [summary, setSummary] = useState(summaryCache.data);
   const [refreshing, setRefreshing] = useState(false);
   const mountedRef = useRef(true);
@@ -232,6 +235,14 @@ export default function DashboardOverviewPage() {
       accentColor: "#0ea5e9",
       stats: [],
     },
+    ...(profile?.is_owner ? [{
+      to: "/moderation/finances",
+      icon: <AttachMoneyIcon sx={{ color: "#16a34a", fontSize: 20 }} />,
+      title: "Finances",
+      description: "Service billing, API usage, and infrastructure costs.",
+      accentColor: "#16a34a",
+      stats: [],
+    }] : []),
   ];
 
   return (
