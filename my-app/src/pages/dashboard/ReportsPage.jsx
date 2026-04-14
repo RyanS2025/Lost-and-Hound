@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useOutletContext, useLocation } from "react-router-dom";
 import {
   Box, Typography, Paper, Button, Chip, CircularProgress, Alert,
@@ -20,6 +20,7 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import GavelIcon from "@mui/icons-material/Gavel";
 import UndoIcon from "@mui/icons-material/Undo";
 import apiFetch from "../../utils/apiFetch";
+import { reportsCache } from "../../utils/dashboardPrefetch";
 import MapPinPicker from "../../components/MapPinPicker";
 import {
   DEFAULT_TIME_ZONE,
@@ -569,6 +570,7 @@ function ReportCard({ report, fullListing, groupedReports = null, onUpdateStatus
   );
 }
 
+
 // ── Reports Page ─────────────────────────────────────────────
 export default function ReportsPage({ isStolen: isStaticStolen }) {
   const { isDark, timeZone } = useOutletContext();
@@ -576,29 +578,31 @@ export default function ReportsPage({ isStolen: isStaticStolen }) {
   const isMobile = useMediaQuery("(max-width:600px)");
   // Support both prop-based and URL-based stolen detection
   const isStolen = isStaticStolen ?? pathname.endsWith("/stolen");
+  const cacheKey = isStolen ? "stolen" : "reports";
+  const cached = reportsCache[cacheKey];
 
-  const [reports, setReports] = useState([]);
-  const [fullListings, setFullListings] = useState({});
-  const [loading, setLoading] = useState(false);
+  const [reports, setReports] = useState(cached?.reports || []);
+  const [fullListings, setFullListings] = useState(cached?.listings || {});
+  const [loading, setLoading] = useState(!cached);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
+  const [hasMore, setHasMore] = useState(cached?.hasMore ?? false);
   const [currentPage, setCurrentPage] = useState(1);
   const [reportTab, setReportTab] = useState("pending");
   const [actionError, setActionError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [processing, setProcessing] = useState(false);
-  const cacheRef = useRef(null);
 
-  const fetchReports = async (page = 1, append = false) => {
-    if (page === 1 && cacheRef.current) {
-      setReports(cacheRef.current.reports);
-      setFullListings(cacheRef.current.listings);
-      setHasMore(cacheRef.current.hasMore);
+  const fetchReports = async (page = 1, append = false, silent = false) => {
+    const cur = reportsCache[cacheKey];
+    if (page === 1 && cur && !silent) {
+      setReports(cur.reports);
+      setFullListings(cur.listings);
+      setHasMore(cur.hasMore);
       setCurrentPage(1);
       setLoading(false);
-    } else if (page === 1) {
+    } else if (page === 1 && !silent) {
       setLoading(true);
-    } else {
+    } else if (page > 1) {
       setLoadingMore(true);
     }
     setActionError("");
@@ -610,17 +614,25 @@ export default function ReportsPage({ isStolen: isStaticStolen }) {
       setFullListings(prev => append ? { ...prev, ...loadedListings } : loadedListings);
       setHasMore(payload?.hasMore ?? false);
       setCurrentPage(page);
-      if (page === 1) cacheRef.current = { reports: loadedReports, listings: loadedListings, hasMore: payload?.hasMore ?? false };
+      if (page === 1) reportsCache[cacheKey] = { reports: loadedReports, listings: loadedListings, hasMore: payload?.hasMore ?? false };
     } catch {
       setActionError("Failed to load reports.");
-      if (!append && !cacheRef.current) { setReports([]); setFullListings({}); }
+      if (!append && !reportsCache[cacheKey]) { setReports([]); setFullListings({}); }
     } finally {
       setLoading(false);
       setLoadingMore(false);
     }
   };
 
-  useEffect(() => { fetchReports(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (reportsCache[cacheKey]) {
+      fetchReports(1, false, true); // silent revalidation
+    } else {
+      fetchReports();
+    }
+    const id = setInterval(() => fetchReports(1, false, true), 30_000);
+    return () => clearInterval(id);
+  }, [cacheKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateStatus = async (reportId, newStatus) => {
     setActionError("");
@@ -628,7 +640,7 @@ export default function ReportsPage({ isStolen: isStaticStolen }) {
       await apiFetch(`/api/reports/${reportId}/status`, { method: "PATCH", body: JSON.stringify({ status: newStatus }) });
       setReports((prev) => {
         const next = prev.map((r) => (r.id === reportId ? { ...r, status: newStatus } : r));
-        if (cacheRef.current) cacheRef.current = { ...cacheRef.current, reports: next };
+        if (reportsCache[cacheKey]) reportsCache[cacheKey] = { ...reportsCache[cacheKey], reports: next };
         return next;
       });
     } catch {
@@ -643,7 +655,7 @@ export default function ReportsPage({ isStolen: isStaticStolen }) {
       await apiFetch(`/api/reports/${deleteTarget}`, { method: "DELETE" });
       setReports((prev) => {
         const next = prev.filter((r) => r.id !== deleteTarget);
-        if (cacheRef.current) cacheRef.current = { ...cacheRef.current, reports: next };
+        if (reportsCache[cacheKey]) reportsCache[cacheKey] = { ...reportsCache[cacheKey], reports: next };
         return next;
       });
     } catch {

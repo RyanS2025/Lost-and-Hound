@@ -2270,15 +2270,20 @@ app.get("/api/moderators", requireAuth, require2FA, requireModerator, async (_re
 // My Work — tickets assigned to the requesting moderator
 app.get("/api/support-tickets/my-work", requireAuth, require2FA, requireModerator, async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const limit  = Math.min(parseInt(req.query.limit) || 50, 100);
+    const page   = Math.max(parseInt(req.query.page)  || 1, 1);
+    const offset = (page - 1) * limit;
+
+    const { data, error, count } = await supabase
       .from("support_tickets")
-      .select("id, ticket_code, user_id, ticket_type, category, ticket_title, ticket_desc, name, email, status, image_url, claimed_by, resolved_by, resolved_at, severity, assignee, assignee_id, environment, estimated_effort, repro_steps, fix_notes, fix_pr_url, deadline, created_at, support_replies(id, is_moderator, message, created_at)")
+      .select("id, ticket_code, user_id, ticket_type, category, ticket_title, ticket_desc, name, email, status, image_url, claimed_by, resolved_by, resolved_at, severity, assignee, assignee_id, environment, estimated_effort, repro_steps, fix_notes, fix_pr_url, deadline, created_at, support_replies(id, is_moderator, message, created_at)", { count: "exact" })
       .eq("assignee_id", req.user.id)
       .not("status", "eq", "closed")
       .order("deadline", { ascending: true, nullsFirst: false })
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
     if (error) return dbError(res, error, "GET /api/support-tickets/my-work");
-    res.json({ tickets: data });
+    res.json({ tickets: data, hasMore: offset + limit < (count ?? 0), total: count ?? 0 });
   } catch (err) {
     dbError(res, err, "GET /api/support-tickets/my-work");
   }

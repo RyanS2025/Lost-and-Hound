@@ -219,149 +219,167 @@ export default function TicketDetailModal({ ticket, onClose, onUpdateStatus, onD
               </Box>
             )}
 
-            {/* Engineering Details — Bug Reports only */}
-            {ticket.ticket_type === "Bug Report" && (
-              <Box sx={{ mb: 2.5 }}>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.25 }}>
-                  <Box sx={{ flex: 1, height: 1, background: isDark ? "rgba(255,255,255,0.08)" : "#f0e8e8" }} />
-                  <Typography variant="caption" sx={{ fontWeight: 800, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.6, whiteSpace: "nowrap", fontSize: 10 }}>Engineering Details</Typography>
-                  <IconButton size="small" onClick={() => { setEngEditing(e => !e); setEngError(""); }}
-                    title={engEditing ? "Cancel edit" : "Edit engineering details"}
-                    sx={{ color: engEditing ? accent : "text.disabled", p: 0.25 }}>
-                    <EditIcon sx={{ fontSize: 14 }} />
-                  </IconButton>
-                  <Box sx={{ flex: 1, height: 1, background: isDark ? "rgba(255,255,255,0.08)" : "#f0e8e8" }} />
-                </Box>
+            {/* Assignment — all ticket types */}
+            <Box sx={{ mb: 2.5 }}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.25 }}>
+                <Box sx={{ flex: 1, height: 1, background: isDark ? "rgba(255,255,255,0.08)" : "#f0e8e8" }} />
+                <Typography variant="caption" sx={{ fontWeight: 800, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.6, whiteSpace: "nowrap", fontSize: 10 }}>Assignment</Typography>
+                <IconButton size="small" onClick={() => { setEngEditing(e => !e); setEngError(""); }}
+                  title={engEditing ? "Cancel" : "Edit assignment"}
+                  sx={{ color: engEditing ? accent : "text.disabled", p: 0.25 }}>
+                  <EditIcon sx={{ fontSize: 14 }} />
+                </IconButton>
+                <Box sx={{ flex: 1, height: 1, background: isDark ? "rgba(255,255,255,0.08)" : "#f0e8e8" }} />
+              </Box>
 
-                {engEditing ? (
-                  <>
-                    <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1, mb: 1 }}>
-                      <Box>
-                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Severity</Typography>
-                        <Select size="small" fullWidth displayEmpty value={engEdit.severity || ""} onChange={(e) => setEngEdit(p => ({ ...p, severity: e.target.value }))} sx={{ fontSize: 13, borderRadius: 1.5 }}>
-                          <MenuItem value=""><em style={{ color: "#aaa" }}>None</em></MenuItem>
-                          {SEVERITY_OPTIONS.map(s => (
-                            <MenuItem key={s.value} value={s.value}>
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                                <Box sx={{ width: 8, height: 8, borderRadius: "50%", background: s.color, flexShrink: 0 }} />
-                                {s.label}
-                              </Box>
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Environment</Typography>
-                        <Select size="small" fullWidth displayEmpty value={engEdit.environment || ""} onChange={(e) => setEngEdit(p => ({ ...p, environment: e.target.value }))} sx={{ fontSize: 13, borderRadius: 1.5 }}>
-                          <MenuItem value=""><em style={{ color: "#aaa" }}>None</em></MenuItem>
-                          {ENVIRONMENT_OPTIONS.map(v => <MenuItem key={v} value={v}>{v === "ios" ? "iOS" : v.charAt(0).toUpperCase() + v.slice(1)}</MenuItem>)}
-                        </Select>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Assignee</Typography>
-                        <Autocomplete
-                          size="small"
-                          options={moderators}
-                          getOptionLabel={(o) => o.name || ""}
-                          value={moderators.find(m => m.id === engEdit.assignee_id) || null}
-                          onChange={(_, mod) => setEngEdit(p => ({ ...p, assignee: mod?.name || null, assignee_id: mod?.id || null }))}
-                          isOptionEqualToValue={(o, v) => o.id === v.id}
-                          renderInput={(params) => <TextField {...params} placeholder="Search moderators…" sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 13 } }} />}
-                        />
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Effort</Typography>
-                        <Select size="small" fullWidth displayEmpty value={engEdit.estimated_effort || ""} onChange={(e) => setEngEdit(p => ({ ...p, estimated_effort: e.target.value }))} sx={{ fontSize: 13, borderRadius: 1.5 }}>
-                          <MenuItem value=""><em style={{ color: "#aaa" }}>None</em></MenuItem>
-                          {EFFORT_OPTIONS.map(v => <MenuItem key={v} value={v}>{v.toUpperCase()}</MenuItem>)}
-                        </Select>
-                      </Box>
-                      <Box sx={{ gridColumn: "1 / -1" }}>
-                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Deadline</Typography>
-                        <TextField size="small" fullWidth type="datetime-local" value={engEdit.deadline || ""} onChange={(e) => setEngEdit(p => ({ ...p, deadline: e.target.value }))}
-                          InputLabelProps={{ shrink: true }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 13 } }} />
-                      </Box>
+              {engEditing ? (
+                <>
+                  <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1, mb: 1 }}>
+                    <Box>
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Assignee</Typography>
+                      <Autocomplete
+                        size="small"
+                        options={moderators}
+                        getOptionLabel={(o) => o.name || ""}
+                        value={moderators.find(m => m.id === engEdit.assignee_id) || null}
+                        onChange={(_, mod) => setEngEdit(p => ({ ...p, assignee: mod?.name || null, assignee_id: mod?.id || null }))}
+                        isOptionEqualToValue={(o, v) => o.id === v.id}
+                        renderInput={(params) => <TextField {...params} placeholder="Search moderators…" sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 13 } }} />}
+                      />
                     </Box>
+                    <Box>
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Deadline</Typography>
+                      <TextField size="small" fullWidth type="datetime-local" value={engEdit.deadline || ""} onChange={(e) => setEngEdit(p => ({ ...p, deadline: e.target.value }))}
+                        InputLabelProps={{ shrink: true }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 13 } }} />
+                    </Box>
+                  </Box>
 
-                    <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                      <Box>
-                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Reproduction Steps</Typography>
-                        <TextField size="small" fullWidth multiline minRows={2} maxRows={5} placeholder="How to reproduce this bug…" value={engEdit.repro_steps || ""} onChange={(e) => setEngEdit(p => ({ ...p, repro_steps: e.target.value }))}
-                          inputProps={{ maxLength: 1000 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 13 } }} />
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Fix Notes</Typography>
-                        <TextField size="small" fullWidth multiline minRows={2} maxRows={5} placeholder="What was changed to fix this…" value={engEdit.fix_notes || ""} onChange={(e) => setEngEdit(p => ({ ...p, fix_notes: e.target.value }))}
-                          inputProps={{ maxLength: 1000 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 13 } }} />
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>PR / Commit URL</Typography>
-                        <TextField size="small" fullWidth placeholder="https://github.com/…" value={engEdit.fix_pr_url || ""} onChange={(e) => setEngEdit(p => ({ ...p, fix_pr_url: e.target.value }))}
-                          inputProps={{ maxLength: 300 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 13 } }} />
-                      </Box>
-                    </Box>
-
-                    {engError && <Alert severity="error" sx={{ mt: 1, py: 0, fontSize: 12 }}>{engError}</Alert>}
-                    <Box sx={{ display: "flex", gap: 1, justifyContent: "flex-end", mt: 1 }}>
-                      <Button size="small" onClick={() => { setEngEditing(false); setEngError(""); }}
-                        sx={{ color: "text.secondary", fontWeight: 700, fontSize: 12 }}>Cancel</Button>
-                      <Button size="small" variant="contained" onClick={handleEngSave} disabled={engSaving}
-                        endIcon={engSaving ? <CircularProgress size={12} color="inherit" /> : null}
-                        sx={{ background: accent, "&:hover": { background: accentHover }, fontWeight: 700, borderRadius: 1.5, fontSize: 12 }}>
-                        Save
-                      </Button>
-                    </Box>
-                  </>
-                ) : (
-                  <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.25, p: 1.5, borderRadius: 2, background: isDark ? "#1e1e1f" : "#faf8f8", border: isDark ? "1px solid rgba(255,255,255,0.06)" : "1px solid #f0e8e8" }}>
-                    {[
-                      { label: "Severity", value: engEdit.severity ? (SEVERITY_OPTIONS.find(s => s.value === engEdit.severity)?.label || engEdit.severity) : null, color: SEVERITY_OPTIONS.find(s => s.value === engEdit.severity)?.color },
-                      { label: "Environment", value: engEdit.environment ? (engEdit.environment === "ios" ? "iOS" : engEdit.environment.charAt(0).toUpperCase() + engEdit.environment.slice(1)) : null },
-                      { label: "Assignee", value: engEdit.assignee || null },
-                      { label: "Effort", value: engEdit.estimated_effort ? engEdit.estimated_effort.toUpperCase() : null },
-                      { label: "Deadline", value: engEdit.deadline ? (() => { const d = new Date(engEdit.deadline); const overdue = d < new Date(); return { text: formatDateTime(engEdit.deadline, timeZone), overdue }; })() : null, isDeadline: true },
-                    ].map(({ label, value, color, isDeadline }) => (
-                      <Box key={label}>
-                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.25, fontSize: 10 }}>{label}</Typography>
-                        <Typography variant="body2" fontWeight={600} sx={{
-                          color: isDeadline && value ? (value.overdue ? "#dc2626" : "#16a34a") : color || (value ? "text.primary" : "text.disabled"),
-                          fontStyle: value ? "normal" : "italic",
-                        }}>
-                          {isDeadline ? (value ? value.text : "—") : (value || "—")}
-                        </Typography>
-                      </Box>
-                    ))}
-                    {engEdit.repro_steps && (
-                      <Box sx={{ gridColumn: "1 / -1" }}>
-                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Reproduction Steps</Typography>
-                        <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", color: isDark ? "#C8CACC" : "#5e5e5e", lineHeight: 1.6 }}>{engEdit.repro_steps}</Typography>
-                      </Box>
-                    )}
-                    {engEdit.fix_notes && (
-                      <Box sx={{ gridColumn: "1 / -1" }}>
-                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Fix Notes</Typography>
-                        <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", color: isDark ? "#C8CACC" : "#5e5e5e", lineHeight: 1.6 }}>{engEdit.fix_notes}</Typography>
-                      </Box>
-                    )}
-                    {engEdit.fix_pr_url && (
-                      <Box sx={{ gridColumn: "1 / -1" }}>
-                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>PR / Commit</Typography>
-                        <Box component="a" href={engEdit.fix_pr_url} target="_blank" rel="noopener noreferrer"
-                          sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, color: accent, fontSize: 13, fontWeight: 600, textDecoration: "none", overflowWrap: "anywhere", wordBreak: "break-all", "&:hover": { textDecoration: "underline" } }}>
-                          {engEdit.fix_pr_url}
-                          <OpenInNewIcon sx={{ fontSize: 13, flexShrink: 0 }} />
+                  {/* Bug-only fields */}
+                  {ticket.ticket_type === "Bug Report" && (
+                    <>
+                      <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1, mb: 1 }}>
+                        <Box>
+                          <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Severity</Typography>
+                          <Select size="small" fullWidth displayEmpty value={engEdit.severity || ""} onChange={(e) => setEngEdit(p => ({ ...p, severity: e.target.value }))} sx={{ fontSize: 13, borderRadius: 1.5 }}>
+                            <MenuItem value=""><em style={{ color: "#aaa" }}>None</em></MenuItem>
+                            {SEVERITY_OPTIONS.map(s => (
+                              <MenuItem key={s.value} value={s.value}>
+                                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                                  <Box sx={{ width: 8, height: 8, borderRadius: "50%", background: s.color, flexShrink: 0 }} />
+                                  {s.label}
+                                </Box>
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </Box>
+                        <Box>
+                          <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Environment</Typography>
+                          <Select size="small" fullWidth displayEmpty value={engEdit.environment || ""} onChange={(e) => setEngEdit(p => ({ ...p, environment: e.target.value }))} sx={{ fontSize: 13, borderRadius: 1.5 }}>
+                            <MenuItem value=""><em style={{ color: "#aaa" }}>None</em></MenuItem>
+                            {ENVIRONMENT_OPTIONS.map(v => <MenuItem key={v} value={v}>{v === "ios" ? "iOS" : v.charAt(0).toUpperCase() + v.slice(1)}</MenuItem>)}
+                          </Select>
+                        </Box>
+                        <Box>
+                          <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Effort</Typography>
+                          <Select size="small" fullWidth displayEmpty value={engEdit.estimated_effort || ""} onChange={(e) => setEngEdit(p => ({ ...p, estimated_effort: e.target.value }))} sx={{ fontSize: 13, borderRadius: 1.5 }}>
+                            <MenuItem value=""><em style={{ color: "#aaa" }}>None</em></MenuItem>
+                            {EFFORT_OPTIONS.map(v => <MenuItem key={v} value={v}>{v.toUpperCase()}</MenuItem>)}
+                          </Select>
                         </Box>
                       </Box>
-                    )}
-                    {!engEdit.severity && !engEdit.assignee && !engEdit.environment && !engEdit.estimated_effort && !engEdit.repro_steps && !engEdit.fix_notes && !engEdit.fix_pr_url && (
-                      <Box sx={{ gridColumn: "1 / -1" }}>
-                        <Typography variant="body2" sx={{ color: "text.disabled", fontStyle: "italic" }}>No engineering details recorded yet. Click the pencil to add.</Typography>
+                      <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                        <Box>
+                          <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Reproduction Steps</Typography>
+                          <TextField size="small" fullWidth multiline minRows={2} maxRows={5} placeholder="How to reproduce this bug…" value={engEdit.repro_steps || ""} onChange={(e) => setEngEdit(p => ({ ...p, repro_steps: e.target.value }))}
+                            inputProps={{ maxLength: 1000 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 13 } }} />
+                        </Box>
+                        <Box>
+                          <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Fix Notes</Typography>
+                          <TextField size="small" fullWidth multiline minRows={2} maxRows={5} placeholder="What was changed to fix this…" value={engEdit.fix_notes || ""} onChange={(e) => setEngEdit(p => ({ ...p, fix_notes: e.target.value }))}
+                            inputProps={{ maxLength: 1000 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 13 } }} />
+                        </Box>
+                        <Box>
+                          <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>PR / Commit URL</Typography>
+                          <TextField size="small" fullWidth placeholder="https://github.com/…" value={engEdit.fix_pr_url || ""} onChange={(e) => setEngEdit(p => ({ ...p, fix_pr_url: e.target.value }))}
+                            inputProps={{ maxLength: 300 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 13 } }} />
+                        </Box>
                       </Box>
+                    </>
+                  )}
+
+                  {engError && <Alert severity="error" sx={{ mt: 1, py: 0, fontSize: 12 }}>{engError}</Alert>}
+                  <Box sx={{ display: "flex", gap: 1, justifyContent: "flex-end", mt: 1 }}>
+                    <Button size="small" onClick={() => { setEngEditing(false); setEngError(""); }}
+                      sx={{ color: "text.secondary", fontWeight: 700, fontSize: 12 }}>Cancel</Button>
+                    <Button size="small" variant="contained" onClick={handleEngSave} disabled={engSaving}
+                      endIcon={engSaving ? <CircularProgress size={12} color="inherit" /> : null}
+                      sx={{ background: accent, "&:hover": { background: accentHover }, fontWeight: 700, borderRadius: 1.5, fontSize: 12 }}>
+                      Save
+                    </Button>
+                  </Box>
+                </>
+              ) : (
+                <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.25, p: 1.5, borderRadius: 2, background: isDark ? "#1e1e1f" : "#faf8f8", border: isDark ? "1px solid rgba(255,255,255,0.06)" : "1px solid #f0e8e8" }}>
+                  {/* Assignee + Deadline always shown */}
+                  <Box>
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.25, fontSize: 10 }}>Assignee</Typography>
+                    <Typography variant="body2" fontWeight={600} sx={{ color: engEdit.assignee ? "text.primary" : "text.disabled", fontStyle: engEdit.assignee ? "normal" : "italic" }}>
+                      {engEdit.assignee || "—"}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.25, fontSize: 10 }}>Deadline</Typography>
+                    {engEdit.deadline ? (() => { const overdue = new Date(engEdit.deadline) < new Date(); return (
+                      <Typography variant="body2" fontWeight={600} sx={{ color: overdue ? "#dc2626" : "#16a34a" }}>
+                        {formatDateTime(engEdit.deadline, timeZone)}
+                      </Typography>
+                    ); })() : (
+                      <Typography variant="body2" fontWeight={600} sx={{ color: "text.disabled", fontStyle: "italic" }}>—</Typography>
                     )}
                   </Box>
-                )}
-              </Box>
-            )}
+
+                  {/* Bug-only read view */}
+                  {ticket.ticket_type === "Bug Report" && (
+                    <>
+                      {[
+                        { label: "Severity", value: engEdit.severity ? (SEVERITY_OPTIONS.find(s => s.value === engEdit.severity)?.label || engEdit.severity) : null, color: SEVERITY_OPTIONS.find(s => s.value === engEdit.severity)?.color },
+                        { label: "Environment", value: engEdit.environment ? (engEdit.environment === "ios" ? "iOS" : engEdit.environment.charAt(0).toUpperCase() + engEdit.environment.slice(1)) : null },
+                        { label: "Effort", value: engEdit.estimated_effort ? engEdit.estimated_effort.toUpperCase() : null },
+                      ].map(({ label, value, color }) => (
+                        <Box key={label}>
+                          <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.25, fontSize: 10 }}>{label}</Typography>
+                          <Typography variant="body2" fontWeight={600} sx={{ color: color || (value ? "text.primary" : "text.disabled"), fontStyle: value ? "normal" : "italic" }}>
+                            {value || "—"}
+                          </Typography>
+                        </Box>
+                      ))}
+                      {engEdit.repro_steps && (
+                        <Box sx={{ gridColumn: "1 / -1" }}>
+                          <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Reproduction Steps</Typography>
+                          <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", color: isDark ? "#C8CACC" : "#5e5e5e", lineHeight: 1.6 }}>{engEdit.repro_steps}</Typography>
+                        </Box>
+                      )}
+                      {engEdit.fix_notes && (
+                        <Box sx={{ gridColumn: "1 / -1" }}>
+                          <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Fix Notes</Typography>
+                          <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", color: isDark ? "#C8CACC" : "#5e5e5e", lineHeight: 1.6 }}>{engEdit.fix_notes}</Typography>
+                        </Box>
+                      )}
+                      {engEdit.fix_pr_url && (
+                        <Box sx={{ gridColumn: "1 / -1" }}>
+                          <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>PR / Commit</Typography>
+                          <Box component="a" href={engEdit.fix_pr_url} target="_blank" rel="noopener noreferrer"
+                            sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, color: accent, fontSize: 13, fontWeight: 600, textDecoration: "none", overflowWrap: "anywhere", wordBreak: "break-all", "&:hover": { textDecoration: "underline" } }}>
+                            {engEdit.fix_pr_url}
+                            <OpenInNewIcon sx={{ fontSize: 13, flexShrink: 0 }} />
+                          </Box>
+                        </Box>
+                      )}
+                    </>
+                  )}
+                </Box>
+              )}
+            </Box>
 
             {/* Inline thread (small screens) */}
             {isSmall && (

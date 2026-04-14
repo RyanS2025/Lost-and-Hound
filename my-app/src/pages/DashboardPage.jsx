@@ -7,20 +7,21 @@ import { useAuth } from "../AuthContext";
 import apiFetch from "../utils/apiFetch";
 import { DEFAULT_TIME_ZONE } from "../utils/timezone";
 import NotFoundPage from "./NotFoundPage";
+import { moderatorsCache } from "../utils/dashboardPrefetch";
 
 export default function DashboardPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE }) {
   const isDark = effectiveTheme === "dark";
   const isMobile = useMediaQuery("(max-width:600px)");
   const { profile } = useAuth();
-  const [moderators, setModerators] = useState([]);
+  const [moderators, setModerators] = useState(moderatorsCache.data || []);
 
   useEffect(() => {
-    if (profile?.is_moderator) {
-      apiFetch("/api/moderators")
-        .then((d) => setModerators(d?.moderators || []))
-        .catch((err) => console.error("Failed to load moderators:", err));
-    }
-  }, [profile]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!profile?.is_moderator) return;
+    // Silently revalidate in background regardless of cache state
+    apiFetch("/api/moderators")
+      .then((d) => { moderatorsCache.data = d?.moderators || []; setModerators(moderatorsCache.data); })
+      .catch(() => {});
+  }, [profile?.is_moderator]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!profile) return null;
   if (!profile.is_moderator) return <NotFoundPage effectiveTheme={effectiveTheme} />;
