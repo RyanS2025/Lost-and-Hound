@@ -972,6 +972,27 @@ app.post("/api/verify-image", requireAuth, require2FA, requireNotBanned, async (
     return res.status(400).json({ error: "File is not a valid image. Upload rejected." });
   }
 
+  // SafeSearch — screen for adult/violent/racy content before accepting the upload
+  if (process.env.GOOGLE_CLOUD_VISION_API_KEY) {
+    const visionRes = await fetch(
+      `https://vision.googleapis.com/v1/images:annotate?key=${process.env.GOOGLE_CLOUD_VISION_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requests: [{ image: { content: buffer.toString("base64") }, features: [{ type: "SAFE_SEARCH_DETECTION" }] }],
+        }),
+      }
+    );
+    const visionData = await visionRes.json();
+    const safe = visionData.responses?.[0]?.safeSearchAnnotation;
+const REJECT = new Set(["LIKELY", "VERY_LIKELY"]);
+    if (safe && (REJECT.has(safe.adult) || REJECT.has(safe.violence) || safe.racy === "VERY_LIKELY")) {
+      await supabase.storage.from("listing-images").remove([filePath]);
+      return res.status(422).json({ error: "This image cannot be uploaded as it may contain inappropriate content." });
+    }
+  }
+
   res.json({ valid: true });
 });
 
@@ -1030,6 +1051,27 @@ app.post("/api/verify-image/guest", guestUploadLimiter, async (req, res) => {
   if (!isJpeg && !isPng && !isGif && !isWebp) {
     await supabase.storage.from("listing-images").remove([filePath]);
     return res.status(400).json({ error: "File is not a valid image. Upload rejected." });
+  }
+
+  // SafeSearch — screen for adult/violent/racy content before accepting the upload
+  if (process.env.GOOGLE_CLOUD_VISION_API_KEY) {
+    const visionRes = await fetch(
+      `https://vision.googleapis.com/v1/images:annotate?key=${process.env.GOOGLE_CLOUD_VISION_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requests: [{ image: { content: buffer.toString("base64") }, features: [{ type: "SAFE_SEARCH_DETECTION" }] }],
+        }),
+      }
+    );
+    const visionData = await visionRes.json();
+    const safe = visionData.responses?.[0]?.safeSearchAnnotation;
+    const REJECT = new Set(["LIKELY", "VERY_LIKELY"]);
+    if (safe && (REJECT.has(safe.adult) || REJECT.has(safe.violence) || safe.racy === "VERY_LIKELY")) {
+      await supabase.storage.from("listing-images").remove([filePath]);
+      return res.status(422).json({ error: "This image cannot be uploaded as it may contain inappropriate content." });
+    }
   }
 
   res.json({ valid: true });
