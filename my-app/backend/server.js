@@ -8,6 +8,7 @@ import cookieParser from "cookie-parser";
 import crypto from "crypto";
 import { Resend } from "resend";
 import cron from "node-cron";
+import { containsProfanity } from "./utils/profanityFilter.js";
 
 dotenv.config();
 
@@ -214,6 +215,18 @@ function sanitize(str, maxLength = 500) {
   return str.trim().slice(0, maxLength);
 }
 
+// Returns a 422 response and true if any field contains profanity; otherwise returns false.
+// Usage: if (profanityCheck(res, { 'item title': title, description })) return;
+function profanityCheck(res, fields) {
+  for (const [label, value] of Object.entries(fields)) {
+    if (value && containsProfanity(value)) {
+      res.status(422).json({ error: `Your ${label} contains inappropriate language.` });
+      return true;
+    }
+  }
+  return false;
+}
+
 function validateRequired(fields, body) {
   for (const f of fields) {
     if (!body[f] || (typeof body[f] === "string" && !body[f].trim())) {
@@ -342,6 +355,20 @@ async function requireModerator(req, res, next) {
     .single();
 
   if (!profile?.is_moderator) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  next();
+}
+
+async function requireOwner(req, res, next) {
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("is_owner")
+    .eq("id", req.user.id)
+    .single();
+
+  if (!profile?.is_owner) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
@@ -506,7 +533,7 @@ const CLEANUP_COOLDOWN = 60 * 60 * 1000; // 1 hour
 app.get("/api/profile", requireAuth, require2FA, async (req, res) => {
   const { data, error } = await supabase
     .from("profiles")
-    .select("first_name, last_name, default_campus, is_moderator, banned_until, ban_reason, referral_answered")
+    .select("first_name, last_name, default_campus, is_moderator, is_owner, banned_until, ban_reason, referral_answered")
     .eq("id", req.user.id)
     .single();
 
@@ -525,7 +552,7 @@ app.get("/api/profile", requireAuth, require2FA, async (req, res) => {
           },
           { onConflict: "id" }
         )
-        .select("first_name, last_name, default_campus, is_moderator, banned_until, ban_reason, referral_answered")
+        .select("first_name, last_name, default_campus, is_moderator, is_owner, banned_until, ban_reason, referral_answered")
         .single();
 
       if (upsertErr) return res.status(500).json({ error: "Failed to create profile" });
@@ -555,11 +582,13 @@ app.patch("/api/profile", requireAuth, require2FA, async (req, res) => {
     return res.status(400).json({ error: "First name and last name are required" });
   }
 
+  if (profanityCheck(res, { "first name": first_name, "last name": last_name })) return;
+
   const { data, error } = await supabase
     .from("profiles")
     .update({ first_name, last_name })
     .eq("id", req.user.id)
-    .select("first_name, last_name, default_campus, is_moderator")
+    .select("first_name, last_name, default_campus, is_moderator, is_owner")
     .single();
 
   if (error) return dbError(res, error, "PATCH /api/profile");
@@ -762,6 +791,8 @@ app.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBanne
     return res.status(400).json({ error: "Invalid longitude" });
   }
 
+  if (profanityCheck(res, { "item title": title, "location": found_at, "description": description })) return;
+
   const { data: profile } = await supabase
     .from("profiles")
     .select("first_name, last_name")
@@ -955,6 +986,31 @@ app.post("/api/verify-image", requireAuth, require2FA, requireNotBanned, async (
     return res.status(400).json({ error: "File is not a valid image. Upload rejected." });
   }
 
+  // Track Vision API usage (month granularity for free-tier monitoring)
+  const visionMonth = new Date().toISOString().slice(0, 7);
+  await supabase.rpc("increment_vision_usage", { p_month: visionMonth });
+
+  // SafeSearch — screen for adult/violent/racy content before accepting the upload
+  if (process.env.GOOGLE_CLOUD_VISION_API_KEY) {
+    const visionRes = await fetch(
+      `https://vision.googleapis.com/v1/images:annotate?key=${process.env.GOOGLE_CLOUD_VISION_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requests: [{ image: { content: buffer.toString("base64") }, features: [{ type: "SAFE_SEARCH_DETECTION" }] }],
+        }),
+      }
+    );
+    const visionData = await visionRes.json();
+    const safe = visionData.responses?.[0]?.safeSearchAnnotation;
+    const REJECT = new Set(["LIKELY", "VERY_LIKELY"]);
+    if (safe && (REJECT.has(safe.adult) || REJECT.has(safe.violence) || safe.racy === "VERY_LIKELY")) {
+      await supabase.storage.from("listing-images").remove([filePath]);
+      return res.status(422).json({ error: "This image cannot be uploaded as it may contain inappropriate content." });
+    }
+  }
+
   res.json({ valid: true });
 });
 
@@ -1013,6 +1069,31 @@ app.post("/api/verify-image/guest", guestUploadLimiter, async (req, res) => {
   if (!isJpeg && !isPng && !isGif && !isWebp) {
     await supabase.storage.from("listing-images").remove([filePath]);
     return res.status(400).json({ error: "File is not a valid image. Upload rejected." });
+  }
+
+  // Track Vision API usage (month granularity for free-tier monitoring)
+  const guestVisionMonth = new Date().toISOString().slice(0, 7);
+  await supabase.rpc("increment_vision_usage", { p_month: guestVisionMonth });
+
+  // SafeSearch — screen for adult/violent/racy content before accepting the upload
+  if (process.env.GOOGLE_CLOUD_VISION_API_KEY) {
+    const visionRes = await fetch(
+      `https://vision.googleapis.com/v1/images:annotate?key=${process.env.GOOGLE_CLOUD_VISION_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requests: [{ image: { content: buffer.toString("base64") }, features: [{ type: "SAFE_SEARCH_DETECTION" }] }],
+        }),
+      }
+    );
+    const visionData = await visionRes.json();
+    const safe = visionData.responses?.[0]?.safeSearchAnnotation;
+    const REJECT = new Set(["LIKELY", "VERY_LIKELY"]);
+    if (safe && (REJECT.has(safe.adult) || REJECT.has(safe.violence) || safe.racy === "VERY_LIKELY")) {
+      await supabase.storage.from("listing-images").remove([filePath]);
+      return res.status(422).json({ error: "This image cannot be uploaded as it may contain inappropriate content." });
+    }
   }
 
   res.json({ valid: true });
@@ -1280,6 +1361,8 @@ app.post("/api/conversations/:id/messages", writeLimiter, requireAuth, require2F
   if (!content) {
     return res.status(400).json({ error: "Message cannot be empty" });
   }
+
+  if (profanityCheck(res, { "message": content })) return;
 
   const { data, error } = await supabase
     .from("messages")
@@ -2590,6 +2673,140 @@ async function sendPushNotification(userId, title, body, data = {}) {
     console.error("Push notification error:", err);
   }
 }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// FINANCES (owner-only)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+app.get("/api/finances/summary", requireAuth, require2FA, requireOwner, async (_req, res) => {
+  const month = new Date().toISOString().slice(0, 7);
+  const { data: visionRow } = await supabase
+    .from("vision_usage")
+    .select("call_count")
+    .eq("month", month)
+    .single();
+  const vision = { month, callCount: visionRow?.call_count ?? 0, freeLimit: 1000 };
+
+  let railway = null;
+  if (process.env.RAILWAY_API_TOKEN) {
+    try {
+      const railwayFetch = async (query, variables = {}) => {
+        const r = await fetch("https://backboard.railway.app/graphql/v2", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${process.env.RAILWAY_API_TOKEN}` },
+          body: JSON.stringify({ query, variables }),
+        });
+        return r.json();
+      };
+
+      // Step 1: get workspaceId from projects
+      const projectsData = await railwayFetch(`{ projects { edges { node { name workspaceId } } } }`);
+      const projects = projectsData?.data?.projects?.edges ?? [];
+      const workspaceId = projects[0]?.node?.workspaceId;
+
+      // Step 2: get billing from workspace (parameterized — no string interpolation)
+      if (workspaceId) {
+        const billingData = await railwayFetch(
+          `query($wid: String!) {
+            workspace(workspaceId: $wid) {
+              name plan
+              customer { currentUsage remainingUsageCreditBalance state }
+            }
+          }`,
+          { wid: workspaceId }
+        );
+        const ws = billingData?.data?.workspace;
+        if (ws) {
+          const currentUsage = ws.customer?.currentUsage ?? 0;
+          const now = new Date();
+          const dayOfMonth = now.getDate();
+          const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+          const estimatedUsage = currentUsage * (daysInMonth / dayOfMonth);
+          railway = {
+            workspaceName: ws.name,
+            plan: ws.plan,
+            currentUsage,
+            estimatedUsage,
+            remainingCredit: ws.customer?.remainingUsageCreditBalance ?? null,
+            state: ws.customer?.state ?? null,
+          };
+        }
+      }
+    } catch (err) {
+      console.error("[Finances] Railway API error:", err.message);
+    }
+  }
+
+  res.json({ vision, railway });
+});
+
+app.get("/api/finances/config", requireAuth, require2FA, requireOwner, async (_req, res) => {
+  const { data, error } = await supabase
+    .from("finance_config")
+    .select("overrides, updated_by, updated_at")
+    .eq("id", "singleton")
+    .single();
+  if (error && error.code !== "PGRST116") return res.status(500).json({ error: error.message });
+  res.json(data ?? { overrides: {}, updated_by: null, updated_at: null });
+});
+
+app.patch("/api/finances/config", requireAuth, require2FA, requireOwner, async (req, res) => {
+  const { overrides } = req.body;
+  if (!overrides || typeof overrides !== "object") return res.status(400).json({ error: "overrides object required" });
+  const { data, error } = await supabase
+    .from("finance_config")
+    .upsert({ id: "singleton", overrides, updated_by: req.user.id, updated_at: new Date().toISOString() })
+    .select("overrides, updated_by, updated_at")
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+app.get("/api/finances/expenses", requireAuth, require2FA, requireOwner, async (_req, res) => {
+  const { data, error } = await supabase
+    .from("finance_expenses")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data ?? []);
+});
+
+app.post("/api/finances/expenses", requireAuth, require2FA, requireOwner, async (req, res) => {
+  const { name, amount, type, date, notes } = req.body;
+  if (!name || amount == null || !type) return res.status(400).json({ error: "name, amount, type required" });
+  const { data, error } = await supabase
+    .from("finance_expenses")
+    .insert({ name, amount: parseFloat(amount), type, date: date || null, notes: notes || null, created_by: req.user.id })
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+app.patch("/api/finances/expenses/:id", requireAuth, require2FA, requireOwner, async (req, res) => {
+  const { name, amount, type, date, notes } = req.body;
+  if (!name || amount == null || !type) return res.status(400).json({ error: "name, amount, type required" });
+  const { data, error } = await supabase
+    .from("finance_expenses")
+    .update({ name, amount: parseFloat(amount), type, date: date || null, notes: notes || null })
+    .eq("id", req.params.id)
+    .eq("created_by", req.user.id)
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  if (!data) return res.status(404).json({ error: "Expense not found" });
+  res.json(data);
+});
+
+app.delete("/api/finances/expenses/:id", requireAuth, require2FA, requireOwner, async (req, res) => {
+  const { error } = await supabase
+    .from("finance_expenses")
+    .delete()
+    .eq("id", req.params.id)
+    .eq("created_by", req.user.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
 
 // Catch-all: log any request that didn't match a route
 app.use((req, res) => {

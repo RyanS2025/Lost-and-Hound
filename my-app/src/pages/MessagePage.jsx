@@ -11,6 +11,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ReportModal from "../components/ReportModal";
 import { supabase } from "../../backend/supabaseClient";
 import apiFetch from "../utils/apiFetch";
+import { containsProfanity } from "../utils/profanityFilter";
 import { useAuth } from "../AuthContext";
 import { DEFAULT_TIME_ZONE, formatTime } from "../utils/timezone";
 
@@ -34,6 +35,7 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
+  const [msgProfane, setMsgProfane] = useState(false);
   const [reportTarget, setReportTarget] = useState(null);
   const [searchParams] = useSearchParams();
   const scrollContainerRef = useRef(null);
@@ -55,7 +57,7 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
 
   const sendMessage = async () => {
     const trimmedMessage = newMessage.trim();
-    if (!trimmedMessage || !selectedConversation || isClosed || sending || trimmedMessage.length > MESSAGE_MAX_LENGTH) return;
+    if (!trimmedMessage || !selectedConversation || isClosed || sending || trimmedMessage.length > MESSAGE_MAX_LENGTH || msgProfane) return;
 
     const tempId = `temp-${Date.now()}`;
     const optimisticMsg = {
@@ -70,6 +72,7 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
     scrollIntentRef.current = "bottom-instant";
     setMessages((prev) => [...prev, optimisticMsg]);
     setNewMessage("");
+    setMsgProfane(false);
     setSending(true);
 
     try {
@@ -554,9 +557,14 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
                       <TextField
                         fullWidth size="small" placeholder="Type a message..."
                         value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value.slice(0, MESSAGE_MAX_LENGTH))}
+                        onChange={(e) => {
+                          const v = e.target.value.slice(0, MESSAGE_MAX_LENGTH);
+                          setNewMessage(v);
+                          setMsgProfane(containsProfanity(v));
+                        }}
                         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !sending) { e.preventDefault(); sendMessage(); } }}
-                        helperText={`${newMessage.length}/${MESSAGE_MAX_LENGTH}`}
+                        error={msgProfane}
+                        helperText={msgProfane ? "Cannot use that word" : `${newMessage.length}/${MESSAGE_MAX_LENGTH}`}
                         inputProps={{ maxLength: MESSAGE_MAX_LENGTH }}
                         sx={{
                           "& .MuiOutlinedInput-root": {
@@ -570,7 +578,7 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
                           },
                         }}
                       />
-                      <IconButton onClick={sendMessage} disabled={sending || !newMessage.trim() || newMessage.trim().length > MESSAGE_MAX_LENGTH} sx={{ color: "#A84D48" }}>
+                      <IconButton onClick={sendMessage} disabled={sending || !newMessage.trim() || newMessage.trim().length > MESSAGE_MAX_LENGTH || msgProfane} sx={{ color: "#A84D48" }}>
                         {sending ? <CircularProgress size={20} sx={{ color: "#A84D48" }} /> : <SendIcon />}
                       </IconButton>
                     </Box>

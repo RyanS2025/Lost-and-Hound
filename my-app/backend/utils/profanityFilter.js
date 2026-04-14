@@ -1,0 +1,82 @@
+// Word list from github.com/zautumnz/profane-words (WTFPL) via npm
+import words from "profane-words";
+
+// Terms the npm package omits (clinical/anatomical) but are inappropriate
+// on a university lost-and-found platform.
+const CUSTOM_WORDS = [
+  // anatomy
+  "vagina", "vulva", "labia", "penis", "testicles", "scrotum", "clitoris", "clit",
+  "boobs", "boobies", "breast", "nipple", "nipples", "areola",
+  "balls", "genitals", "genitalia", "pubic",
+  // sexual
+  "sex",
+  // explicit content
+  "nude", "naked", "nudes",
+  "porn", "porno", "pornography",
+  "dildo", "vibrator", "butt plug",
+  "horny", "boner", "erection",
+  "masturbate", "masturbation", "masturbating",
+  "orgasm", "ejaculate", "ejaculation", "cumshot",
+  // harassment / grooming signals
+  "send pics", "send nudes", "show me",
+
+  // --- filter evasion attempts ---
+  // ass variants
+  "assh", "assho", "asshole", "a**", "a$$", "a55", "@ss", "@$$", "@55",
+  // fuck variants
+  "fuk", "fvck", "phuck", "f*ck", "f**k", "fu**", "f***", "f4ck",
+  // shit variants
+  "shi", "sht", "sh*t", "sh!t", "$hit", "$h!t", "5hit", "5h1t",
+  // bitch variants
+  "biatch", "b*tch", "b**ch", "b!tch", "b1tch",
+  // cunt variants
+  "cvnt", "c*nt", "c**t",
+  // dick variants
+  "d*ck", "d**k", "d!ck", "d1ck",
+  // cock variants
+  "c*ck", "c0ck",
+  // sex/penis variants
+  "s3x", "s*x", "p3n1s", "p*nis",
+];
+
+const allWords = [...words, ...CUSTOM_WORDS];
+
+const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const normalize = (t) => t.toLowerCase().replace(/\s+/g, " ").trim();
+
+let _alphaRe = null;
+let _others = null;
+
+function getMatcher() {
+  if (_alphaRe !== null) return { _alphaRe, _others };
+
+  const alpha = [];
+  const other = [];
+
+  for (const w of allWords) {
+    (/^[a-z]+$/.test(w) ? alpha : other).push(w);
+  }
+
+  alpha.sort((a, b) => b.length - a.length);
+  other.sort((a, b) => b.length - a.length);
+
+  _alphaRe = alpha.length
+    ? new RegExp(`\\b(${alpha.map(esc).join("|")})\\b`, "i")
+    : /(?!)/;
+
+  _others = other.map(normalize);
+
+  return { _alphaRe, _others };
+}
+
+/**
+ * Returns true if the text contains any entry from the profanity list.
+ * Pure-alpha single words use \b word-boundary matching to avoid false positives.
+ * Phrases, l33tspeak, and special-char variants use substring matching.
+ */
+export function containsProfanity(text) {
+  if (!text || typeof text !== "string") return false;
+  const n = normalize(text);
+  const { _alphaRe, _others } = getMatcher();
+  return _alphaRe.test(n) || _others.some((o) => n.includes(o));
+}
