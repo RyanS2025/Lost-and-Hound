@@ -1,5 +1,5 @@
 import './App.css';
-import { Routes, Route, Link, useLocation } from "react-router-dom";
+import { Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
 import { supabase } from "../backend/supabaseClient";
 import { useAuth } from "./AuthContext";
 import LoginPage from "./pages/LoginPage";
@@ -10,8 +10,16 @@ import MapPage from "./pages/MapPage";
 import MessagePage from "./pages/MessagePage";
 import SettingsPage from "./pages/SettingsPage";
 import DashboardPage from "./pages/DashboardPage";
+import DashboardOverviewPage from "./pages/dashboard/DashboardOverviewPage";
+import ReportsPage from "./pages/dashboard/ReportsPage";
+import FeedbackPage from "./pages/dashboard/FeedbackPage";
+import BugsPage from "./pages/dashboard/BugsPage";
+import SupportPage from "./pages/dashboard/SupportPage";
+import MyWorkPage from "./pages/dashboard/MyWorkPage";
+import StatsPage from "./pages/dashboard/StatsPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import AppFooter from "./components/AppFooter";
+import ReferralPollModal from "./components/ReferralPollModal";
 import { AppBar, Toolbar, Button, Typography, Container, Box, Paper, CircularProgress, Badge } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -31,7 +39,7 @@ import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/
 import apiFetch from './utils/apiFetch';
 
 export default function App() {
-  const { user, profile, sessionToken, logout, isPasswordRecovery, setIsPasswordRecovery } = useAuth();
+  const { user, profile, sessionToken, logout, updateProfile, isPasswordRecovery, setIsPasswordRecovery } = useAuth();
   const location = useLocation();
   const darkBg = "#101214";
   const isCompactNav = useMediaQuery("(max-width:1100px)");
@@ -678,13 +686,28 @@ export default function App() {
                 />
               }
             />
-            <Route path="/moderation" element={<DashboardPage effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
+            <Route path="/moderation" element={<DashboardPage effectiveTheme={effectiveTheme} timeZone={timeZone} />}>
+              <Route index element={<DashboardOverviewPage />} />
+              <Route path="reports"  element={<ReportsPage />} />
+              <Route path="stolen"   element={<ReportsPage isStolen />} />
+              <Route path="feedback" element={<FeedbackPage />} />
+              <Route path="bugs"     element={<BugsPage />} />
+              <Route path="support"  element={<SupportPage />} />
+              <Route path="my-work"  element={<MyWorkPage />} />
+              <Route path="stats"    element={<StatsPage />} />
+            </Route>
             <Route path="*" element={<NotFoundPage effectiveTheme={effectiveTheme} />} />
           </Routes>
         </Box>
       </Box>
 
       <AppFooter effectiveTheme={effectiveTheme} />
+
+      <ReferralPollModal
+        open={!!profile && !profile.referral_answered}
+        isDark={effectiveTheme === "dark"}
+        onDone={() => updateProfile({ referral_answered: true })}
+      />
     </>
     </ThemeProvider>
   );
