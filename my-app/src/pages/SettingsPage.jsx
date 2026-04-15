@@ -2,6 +2,8 @@
 import { useState } from "react";
 import { supabase } from "../../backend/supabaseClient";
 import apiFetch from "../utils/apiFetch";
+import { useDemo } from "../contexts/DemoContext";
+import { DEMO_PROFILE } from "../demo/mockData";
 import { containsProfanity } from "../utils/profanityFilter";
 import {
   Container,
@@ -59,24 +61,35 @@ export default function SettingsPage({
   };
 
   const { user, profile, updateProfile, logout, forgotPassword } = useAuth();
+  const { isDemoMode, exitDemo } = useDemo();
+  const effectiveUser = isDemoMode ? { id: 'demo-user-id', email: 'demo@northeastern.edu' } : user;
+  const effectiveProfile = isDemoMode ? DEMO_PROFILE : profile;
   const [message, setMessage] = useState("");
 
   const [editMode, setEditMode] = useState(false);
-  const [firstName, setFirstName] = useState(profile?.first_name || "");
-  const [lastName, setLastName] = useState(profile?.last_name || "");
+  const [firstName, setFirstName] = useState(effectiveProfile?.first_name || "");
+  const [lastName, setLastName] = useState(effectiveProfile?.last_name || "");
   const [nameMessage, setNameMessage] = useState("");
   const [nameProfane, setNameProfane] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState("");
   const [defaultCampus, setDefaultCampus] = useState(
-    profile?.default_campus || "boston"
+    isDemoMode
+      ? (localStorage.getItem('demo_campus') || 'boston')
+      : (effectiveProfile?.default_campus || "boston")
   );
   const [campusMessage, setCampusMessage] = useState("");
 
   const handleSaveCampus = async (campusId) => {
-    if (!user?.id) return;
     setDefaultCampus(campusId);
     setCampusMessage("");
+    if (isDemoMode) {
+      localStorage.setItem('demo_campus', campusId);
+      setCampusMessage("Default campus updated!");
+      setTimeout(() => setCampusMessage(""), 2000);
+      return;
+    }
+    if (!user?.id) return;
     try {
       await apiFetch("/api/profile/campus", {
         method: "PATCH",
@@ -91,6 +104,7 @@ export default function SettingsPage({
   };
 
   const handleChangePassword = async () => {
+    if (isDemoMode) { setMessage("Not available in demo mode."); return; }
     if (!user?.email) return;
     setMessage("");
     const { error } = await forgotPassword(user.email);
@@ -102,9 +116,10 @@ export default function SettingsPage({
   };
 
   const handleSaveName = async () => {
-    if (!user?.id) return;
     if (nameProfane) return;
     setNameMessage("");
+    if (isDemoMode) { setNameMessage("Not available in demo mode."); return; }
+    if (!user?.id) return;
 
     if (
       firstName.trim().length > NAME_MAX_LENGTH ||
@@ -128,6 +143,7 @@ export default function SettingsPage({
   };
 
   const handleDeleteAccount = async () => {
+    if (isDemoMode) { setDeleteOpen(false); return; }
     if (!user?.id) return;
     setDeleteMessage("");
     try {
@@ -323,7 +339,7 @@ export default function SettingsPage({
                     variant="body2"
                     sx={{ fontWeight: 600, color: BRAND.maroon }}
                   >
-                    {user?.email}
+                    {effectiveUser?.email}
                   </Typography>
                 </Box>
 
@@ -406,7 +422,7 @@ export default function SettingsPage({
                         variant="body2"
                         sx={{ fontWeight: 600, color: BRAND.maroon }}
                       >
-                        {profile?.first_name} {profile?.last_name}
+                        {effectiveProfile?.first_name} {effectiveProfile?.last_name}
                       </Typography>
                       <Button
                         size="small"
@@ -420,8 +436,8 @@ export default function SettingsPage({
                           "&:hover": { bgcolor: BRAND.maroonFaintHover },
                         }}
                         onClick={() => {
-                          setFirstName(profile?.first_name || "");
-                          setLastName(profile?.last_name || "");
+                          setFirstName(effectiveProfile?.first_name || "");
+                          setLastName(effectiveProfile?.last_name || "");
                           setNameMessage("");
                           setEditMode(true);
                         }}
@@ -462,15 +478,15 @@ export default function SettingsPage({
 
                 <Divider sx={{ my: 2.5, borderColor: BRAND.cardBorder }} />
 
-                {/* -- Log Out -- */}
-                <SectionLabel icon={LogoutOutlinedIcon}>Log Out</SectionLabel>
+                {/* -- Log Out / Exit Demo -- */}
+                <SectionLabel icon={LogoutOutlinedIcon}>{isDemoMode ? "Exit Demo" : "Log Out"}</SectionLabel>
                 <Button
                   variant="outlined"
                   sx={{ ...btnOutline, width: "100%" }}
-                  onClick={logout}
+                  onClick={isDemoMode ? exitDemo : logout}
                   startIcon={<LogoutOutlinedIcon />}
                 >
-                  Log Out
+                  {isDemoMode ? "Exit Demo" : "Log Out"}
                 </Button>
               </Box>
 

@@ -15,6 +15,7 @@ import ReportModal from "../components/ReportModal";
 import apiFetch from "../utils/apiFetch";
 import { containsProfanity } from "../utils/profanityFilter";
 import { useAuth } from "../AuthContext";
+import { useDemo } from "../contexts/DemoContext";
 import MapPinPicker from "../components/MapPinPicker";
 import { CAMPUSES } from "../constants/campuses";
 import { DEFAULT_TIME_ZONE, formatRelativeDate } from "../utils/timezone";
@@ -366,6 +367,8 @@ function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAUL
 // --- NewItemModal ---
 function NewItemModal({ open, onClose, onAdd, isDark = false }) {
   const { user, profile } = useAuth();
+  const { isDemoMode } = useDemo();
+  const [modNoteDismissed, setModNoteDismissed] = useState(false);
   const [locations, setLocations] = useState([]);
   const [selectedCampus, setSelectedCampus] = useState(profile?.default_campus || "boston");
   const [form, setForm] = useState({
@@ -508,9 +511,11 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
     <Modal open={open} onClose={onClose}>
       <Box sx={{
         position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-        background: isDark ? "#1A1A1B" : "#fff", borderRadius: 4, p: "26px", width: "100%", maxWidth: 520,
-        maxHeight: "92vh", overflowY: "auto", outline: "none",
+        background: isDark ? "#1A1A1B" : "#fff", borderRadius: 4, p: "26px",
+        width: { xs: "calc(100% - 32px)", sm: "100%" }, maxWidth: 520,
+        maxHeight: { xs: "88vh", sm: "92vh" }, overflowY: "auto", outline: "none",
         border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
+        boxSizing: "border-box",
       }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
           {/* Title updates based on which mode the user has selected */}
@@ -519,6 +524,30 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           </Typography>
           <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
         </Box>
+
+        {isDemoMode && !modNoteDismissed && (
+          <Box
+            sx={{
+              display: "flex", alignItems: "flex-start", gap: 1,
+              mb: 2.5, px: 1.5, py: 1.25, borderRadius: 2,
+              background: isDark ? "rgba(255,69,0,0.08)" : "rgba(168,77,72,0.07)",
+              border: isDark ? "1px solid rgba(255,69,0,0.25)" : "1px solid rgba(168,77,72,0.2)",
+            }}
+          >
+            <Box component="span" sx={{ fontSize: 16, lineHeight: 1, mt: 0.15, flexShrink: 0 }}>🛡️</Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography fontWeight={800} fontSize={12.5} sx={{ color: isDark ? "#FF6A33" : "#A84D48", mb: 0.25 }}>
+                Auto-Moderation
+              </Typography>
+              <Typography variant="caption" sx={{ color: isDark ? "#B8BABD" : "#666", lineHeight: 1.5, display: "block" }}>
+                Every post is automatically scanned for inappropriate content before going live. Violations are flagged in real time.
+              </Typography>
+            </Box>
+            <IconButton size="small" onClick={() => setModNoteDismissed(true)} sx={{ color: isDark ? "#818384" : "#aaa", p: 0, mt: 0.1, flexShrink: 0 }}>
+              <CloseIcon sx={{ fontSize: 14 }} />
+            </IconButton>
+          </Box>
+        )}
 
         {/* Toggle between "I found something" and "I lost something".
             Both flows use identical fields — only labels and the stored type differ. */}
@@ -708,6 +737,7 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
   const pageBg = isDark ? "#101214" : "#f9f5f4";
   const pageDot = isDark ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
   const { user, profile } = useAuth();
+  const { isDemoMode } = useDemo();
   const items = sharedItems;
   const setItems = setSharedItems;
   const loading = !sharedItemsLoaded;
@@ -718,7 +748,9 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
   const [showNew, setShowNew] = useState(false);
   const [showResolved, setShowResolved] = useState(false);
   const [showMyPosts, setShowMyPosts] = useState(false);
-  const [selectedCampus, setSelectedCampus] = useState(profile?.default_campus || "boston");
+  const [selectedCampus, setSelectedCampus] = useState(
+    isDemoMode ? (localStorage.getItem('demo_campus') || 'boston') : (profile?.default_campus || "boston")
+  );
   // "all" shows both found and lost listings. "found" / "lost" narrows to one type.
   const [listingTypeFilter, setListingTypeFilter] = useState("all");
   const [refreshing, setRefreshing] = useState(false);

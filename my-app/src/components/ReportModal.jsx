@@ -117,10 +117,13 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
         border: `1px solid ${BRAND.border}`,
         borderRadius: 3,
         p: 3,
-        width: "100%",
+        width: { xs: "calc(100% - 32px)", sm: "100%" },
         maxWidth: 420,
+        maxHeight: "90vh",
+        overflowY: "auto",
         outline: "none",
         color: "text.primary",
+        boxSizing: "border-box",
       }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
           <Typography variant="h6" fontWeight={800}>

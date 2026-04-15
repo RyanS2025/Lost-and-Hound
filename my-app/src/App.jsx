@@ -1,5 +1,5 @@
 import './App.css';
-import { Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../backend/supabaseClient";
 import { useAuth } from "./AuthContext";
 import LoginPage from "./pages/LoginPage";
@@ -19,9 +19,17 @@ import MyWorkPage from "./pages/dashboard/MyWorkPage";
 import StatsPage from "./pages/dashboard/StatsPage";
 import FinancesPage from "./pages/dashboard/FinancesPage";
 import NotFoundPage from "./pages/NotFoundPage";
+import NoteCard from "./components/NoteCard";
+import DemoDisclaimerModal from "./components/DemoDisclaimerModal";
+import { useDemo } from "./contexts/DemoContext";
+import {
+  DEMO_PROFILE, DEMO_LISTINGS, DEMO_CONVERSATIONS,
+  DEMO_PROFILES, DEMO_LISTINGS_MAP, DEMO_UNREAD_COUNTS,
+} from "./demo/mockData";
 import AppFooter from "./components/AppFooter";
 import ReferralPollModal from "./components/ReferralPollModal";
-import { AppBar, Toolbar, Button, Typography, Container, Box, Paper, CircularProgress, Badge } from '@mui/material';
+import { Capacitor } from "@capacitor/core";
+import { AppBar, Toolbar, Button, Typography, Container, Box, Paper, CircularProgress, Badge, Chip } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import HomeIcon from '@mui/icons-material/Home';
@@ -42,6 +50,14 @@ import { prefetchDashboard, clearDashboardCache } from './utils/dashboardPrefetc
 
 export default function App() {
   const { user, profile, sessionToken, logout, updateProfile, isPasswordRecovery, setIsPasswordRecovery } = useAuth();
+  const { isDemoMode, exitDemo } = useDemo();
+  const navigate = useNavigate();
+  const [demoDismissed, setDemoDismissed] = useState(false);
+  const demoDisclaimerOpen = isDemoMode && !demoDismissed;
+
+  useEffect(() => {
+    if (!isDemoMode) setDemoDismissed(false);
+  }, [isDemoMode]);
   const location = useLocation();
   const darkBg = "#101214";
   const isCompactNav = useMediaQuery("(max-width:1100px)");
@@ -63,6 +79,11 @@ export default function App() {
     logout();
   }, [logout]);
 
+  const handleExitDemo = useCallback(() => {
+    exitDemo();
+    navigate("/");
+  }, [exitDemo, navigate]);
+
   const [themeMode, setThemeMode] = useState(() => {
     const saved = localStorage.getItem("themeMode");
     return saved === "light" || saved === "dark" || saved === "auto" ? saved : "auto";
@@ -82,6 +103,14 @@ export default function App() {
   const [msgConversationsLoaded, setMsgConversationsLoaded] = useState(false);
 
   useEffect(() => {
+    if (isDemoMode) {
+      setMsgConversations(DEMO_CONVERSATIONS);
+      setMsgProfiles(DEMO_PROFILES);
+      setMsgListings(DEMO_LISTINGS_MAP);
+      setMsgUnreadCounts(DEMO_UNREAD_COUNTS);
+      setMsgConversationsLoaded(true);
+      return;
+    }
     if (!user || !sessionToken) {
       setMsgConversations([]);
       setMsgProfiles({});
@@ -113,13 +142,14 @@ export default function App() {
       .subscribe();
 
     return () => { supabase.removeChannel(convoChannel); };
-  }, [user?.id, sessionToken]);
+  }, [user?.id, sessionToken, isDemoMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Shared listings state — fetched once, used by Feed and Map pages
   const [sharedItems, setSharedItems] = useState([]);
   const [sharedItemsLoaded, setSharedItemsLoaded] = useState(false);
 
   const fetchAllItems = useCallback(async () => {
+    if (isDemoMode) return;
     try {
       await apiFetch("/api/listings/cleanup", { method: "POST" }).catch(() => {});
       let allItems = [];
@@ -136,20 +166,26 @@ export default function App() {
       console.error("Fetch listings error:", err);
     }
     setSharedItemsLoaded(true);
-  }, []);
+  }, [isDemoMode]);
 
   useEffect(() => {
+    if (isDemoMode) {
+      setSharedItems(DEMO_LISTINGS);
+      setSharedItemsLoaded(true);
+      return;
+    }
     if (!user || !sessionToken) {
       setSharedItems([]);
       setSharedItemsLoaded(false);
       return;
     }
     fetchAllItems();
-  }, [user?.id, sessionToken, fetchAllItems]);
+  }, [user?.id, sessionToken, fetchAllItems, isDemoMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Unread message count — shown as a badge on the Messages nav button
   const [unreadCount, setUnreadCount] = useState(0);
   useEffect(() => {
+    if (isDemoMode) { setUnreadCount(0); return; }
     if (!user || !sessionToken) { setUnreadCount(0); return; }
 
     // Fetch the current unread count from the backend
@@ -212,6 +248,7 @@ export default function App() {
   }, [timeZone]);
 
   const effectiveTheme = themeMode === "auto" ? (systemPrefersDark ? "dark" : "light") : themeMode;
+  const effectiveProfile = isDemoMode ? DEMO_PROFILE : profile;
   const darkAccent = "#FF4500";
   const darkAccentHover = "#E03D00";
   const pageDot = effectiveTheme === "dark" ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
@@ -403,7 +440,7 @@ export default function App() {
 
   // Keep showing LoginPage while auth/MFA is in progress.
   // This avoids a blank screen if /api/profile is blocked by require2FA.
-  if (!user || loginTransition || !profile) {
+  if (!isDemoMode && (!user || loginTransition || !profile)) {
     return (
       <ThemeProvider theme={appTheme}>
         <CssBaseline />
@@ -468,7 +505,7 @@ export default function App() {
   }
 
   // Ban check
-  if (profile?.banned_until) {
+  if (!isDemoMode && profile?.banned_until) {
     const bannedUntil = new Date(profile.banned_until);
     if (bannedUntil > new Date()) {
       const isPermanent = bannedUntil.getFullYear() === 9999;
@@ -476,7 +513,7 @@ export default function App() {
         <ThemeProvider theme={appTheme}>
           <CssBaseline />
         <>
-          <AppBar position="fixed" sx={{ background: navBg, borderBottom: navBorder }}>
+          <AppBar position="fixed" sx={{ background: navBg, borderBottom: navBorder, pt: "env(safe-area-inset-top)" }}>
             <Toolbar
               sx={{
                 gap: { xs: 0.5, sm: 1 },
@@ -507,7 +544,7 @@ export default function App() {
               </Button>
             </Toolbar>
           </AppBar>
-          <Toolbar />
+          <Box sx={{ height: "calc(64px + env(safe-area-inset-top))" }} />
           <Box
             sx={{
               position: "fixed",
@@ -570,7 +607,7 @@ export default function App() {
     <ThemeProvider theme={appTheme}>
       <CssBaseline />
     <>
-    <AppBar position="fixed" sx={{ background: navBg, borderBottom: navBorder }}>
+    <AppBar position="fixed" sx={{ background: navBg, borderBottom: navBorder, pt: "env(safe-area-inset-top)" }}>
         <Toolbar
           sx={{
             gap: { xs: 0.5, sm: 1 },
@@ -593,6 +630,21 @@ export default function App() {
             <Typography variant="h6" fontWeight={900} sx={{ letterSpacing: 0.5, display: { xs: "none", sm: "block" } }}>
               Lost &amp; Hound
             </Typography>
+            {isDemoMode && (
+              <Chip
+                label="DEMO"
+                size="small"
+                sx={{
+                  background: "rgba(255,255,255,0.22)",
+                  color: "#fff",
+                  fontWeight: 800,
+                  fontSize: 10,
+                  letterSpacing: 1,
+                  height: 20,
+                  border: "1px solid rgba(255,255,255,0.4)",
+                }}
+              />
+            )}
           </Box>
           <Button
             color="inherit"
@@ -626,7 +678,7 @@ export default function App() {
             {!isCompactNav ? "Messages" : null}
           </Button>
           <Box sx={{ flexGrow: 1 }} />
-          {profile?.is_moderator && (
+          {!isDemoMode && !Capacitor.isNativePlatform() && effectiveProfile?.is_moderator && (
             <Button
               color="inherit"
               component={Link}
@@ -637,9 +689,9 @@ export default function App() {
             </Button>
           )}
           <Typography variant="body1" sx={{ mr: 1, display: { xs: "none", md: "block" } }}>
-            {profile?.first_name && profile?.last_name
-              ? profile.first_name + " " + profile.last_name
-              : user.email}
+            {effectiveProfile?.first_name && effectiveProfile?.last_name
+              ? effectiveProfile.first_name + " " + effectiveProfile.last_name
+              : user?.email ?? "Demo User"}
           </Typography>
           <Button
             color="inherit"
@@ -659,17 +711,29 @@ export default function App() {
           >
             {!isCompactNav ? "Settings" : null}
           </Button>
-          <Button
-            color="inherit"
-            onClick={handleLogout}
-            endIcon={<LogoutIcon />}
-            sx={{ minWidth: 0 }}
-          >
-            {!isCompactNav ? "Log Out" : null}
-          </Button>
+          {isDemoMode ? (
+            <Button
+              color="inherit"
+              onClick={handleExitDemo}
+              endIcon={<LogoutIcon />}
+              sx={{ minWidth: 0 }}
+            >
+              {!isCompactNav ? "Exit Demo" : null}
+            </Button>
+          ) : (
+            <Button
+              color="inherit"
+              onClick={handleLogout}
+              endIcon={<LogoutIcon />}
+              sx={{ minWidth: 0 }}
+            >
+              {!isCompactNav ? "Log Out" : null}
+            </Button>
+          )}
         </Toolbar>
       </AppBar>
-      <Toolbar />
+      {/* Spacer matches AppBar height including safe-area-inset-top */}
+      <Box sx={{ height: "calc(64px + env(safe-area-inset-top))" }} />
       <Box
         sx={{
           ...(shouldFadeIn
@@ -683,7 +747,7 @@ export default function App() {
             : {}),
         }}
       >
-        <Box sx={{ mt: 0, pb: { xs: "78px", sm: "64px" } }}>
+        <Box sx={{ mt: 0, pb: { xs: "calc(78px + env(safe-area-inset-bottom))", sm: "calc(64px + env(safe-area-inset-bottom))" } }}>
           <Routes>
             <Route path="/" element={<FeedPage effectiveTheme={effectiveTheme} timeZone={timeZone} sharedItems={sharedItems} setSharedItems={setSharedItems} sharedItemsLoaded={sharedItemsLoaded} refreshItems={fetchAllItems} />} />
             <Route path="/map" element={<MapPage effectiveTheme={effectiveTheme} timeZone={timeZone} sharedItems={sharedItems} setSharedItems={setSharedItems} sharedItemsLoaded={sharedItemsLoaded} refreshItems={fetchAllItems} />} />
@@ -700,17 +764,19 @@ export default function App() {
                 />
               }
             />
-            <Route path="/moderation" element={<DashboardPage effectiveTheme={effectiveTheme} timeZone={timeZone} />}>
-              <Route index element={<DashboardOverviewPage />} />
-              <Route path="reports"  element={<ReportsPage />} />
-              <Route path="stolen"   element={<ReportsPage isStolen />} />
-              <Route path="feedback" element={<FeedbackPage />} />
-              <Route path="bugs"     element={<BugsPage />} />
-              <Route path="support"  element={<SupportPage />} />
-              <Route path="my-work"  element={<MyWorkPage />} />
-              <Route path="stats"    element={<StatsPage />} />
-              {profile?.is_owner && <Route path="finances" element={<FinancesPage />} />}
-            </Route>
+            {!isDemoMode && !Capacitor.isNativePlatform() && (
+              <Route path="/moderation" element={<DashboardPage effectiveTheme={effectiveTheme} timeZone={timeZone} />}>
+                <Route index element={<DashboardOverviewPage />} />
+                <Route path="reports"  element={<ReportsPage />} />
+                <Route path="stolen"   element={<ReportsPage isStolen />} />
+                <Route path="feedback" element={<FeedbackPage />} />
+                <Route path="bugs"     element={<BugsPage />} />
+                <Route path="support"  element={<SupportPage />} />
+                <Route path="my-work"  element={<MyWorkPage />} />
+                <Route path="stats"    element={<StatsPage />} />
+                {effectiveProfile?.is_owner && <Route path="finances" element={<FinancesPage />} />}
+              </Route>
+            )}
             <Route path="*" element={<NotFoundPage effectiveTheme={effectiveTheme} />} />
           </Routes>
         </Box>
@@ -719,10 +785,38 @@ export default function App() {
       <AppFooter effectiveTheme={effectiveTheme} />
 
       <ReferralPollModal
-        open={!!profile && !profile.referral_answered}
+        open={!isDemoMode && !!profile && !profile.referral_answered}
         isDark={effectiveTheme === "dark"}
         onDone={() => updateProfile({ referral_answered: true })}
       />
+
+      <DemoDisclaimerModal
+        open={demoDisclaimerOpen}
+        onClose={() => setDemoDismissed(true)}
+        isDark={effectiveTheme === "dark"}
+      />
+
+      {isDemoMode && location.pathname === "/" && (
+        <NoteCard
+          storageKey="demo-feed"
+          title="Browse the Feed"
+          description="Scroll through lost and found listings from the Northeastern community. Click any card to see details and contact the poster."
+        />
+      )}
+      {isDemoMode && location.pathname === "/map" && (
+        <NoteCard
+          storageKey="demo-map"
+          title="Campus Map"
+          description="See lost and found items plotted on the Northeastern campus map. Click any map pin to view listing details."
+        />
+      )}
+      {isDemoMode && location.pathname === "/messages" && (
+        <NoteCard
+          storageKey="demo-messages"
+          title="Direct Messages"
+          description="Message other students directly to coordinate item pickups. Built-in safety reminders keep everyone safe."
+        />
+      )}
     </>
     </ThemeProvider>
   );

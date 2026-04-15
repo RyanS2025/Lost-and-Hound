@@ -67,6 +67,7 @@ export default function AppFooter({ effectiveTheme = "light" }) {
           left: 0,
           right: 0,
           minHeight: 46,
+          pb: "env(safe-area-inset-bottom)",
           px: { xs: 1.25, sm: 2 },
           borderTop: styles.border,
           background: styles.bg,

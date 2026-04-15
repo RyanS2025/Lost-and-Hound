@@ -272,12 +272,12 @@ export default function SupportModal({ open, onClose }) {
         transform: "translate(-50%, -50%)",
         display: "flex", flexDirection: "row",
         outline: "none",
-        mx: isSmall ? 1 : 0,
       }}>
         {/* ── Main modal panel ── */}
         <Box sx={{
-          width: isSmall ? "min(480px, calc(100vw - 16px))" : 480,
-          ...MODAL_H,
+          width: isSmall ? "min(480px, calc(100vw - 32px))" : 480,
+          height: isSmall ? "85vh" : MODAL_H.height,
+          maxHeight: MODAL_H.maxHeight,
           display: "flex", flexDirection: "column",
           background: BRAND.surface,
           border: `1px solid ${BRAND.border}`,

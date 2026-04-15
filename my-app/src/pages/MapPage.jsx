@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { setOptions, importLibrary } from "@googlemaps/js-api-loader";
+import { Capacitor } from "@capacitor/core";
 import { useAuth } from "../AuthContext";
+import { useDemo } from "../contexts/DemoContext";
 import {
   Box, Typography, Paper, Slider, Chip, IconButton, CircularProgress,
   Collapse, Button, Modal, Autocomplete, TextField,
@@ -19,7 +21,9 @@ import apiFetch from "../utils/apiFetch";
 import { DEFAULT_TIME_ZONE, formatRelativeDate } from "../utils/timezone";
 
 setOptions({
-  key: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
+  key: Capacitor.isNativePlatform()
+    ? import.meta.env.VITE_GOOGLE_MAPS_API_KEY_MOBILE
+    : import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
   v: "weekly",
 });
 
@@ -323,6 +327,7 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
   const pageBg = isDark ? "#101214" : "#f9f5f4";
   const pageDot = isDark ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
   const { profile } = useAuth();
+  const { isDemoMode } = useDemo();
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const searchPinRef = useRef(null);
@@ -331,7 +336,9 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
   const infoWindowRef = useRef(null);
   const campusCenterMarkerRef = useRef(null);
 
-  const initialCampus = profile?.default_campus || "boston";
+  const initialCampus = isDemoMode
+    ? (localStorage.getItem('demo_campus') || 'boston')
+    : (profile?.default_campus || "boston");
 
   const [selectedCampus, setSelectedCampus] = useState(initialCampus);
   const [campusBuildings, setCampusBuildings] = useState([]);

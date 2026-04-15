@@ -13,6 +13,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import KeyboardArrowLeft from "@mui/icons-material/KeyboardArrowLeft";
 import KeyboardArrowRight from "@mui/icons-material/KeyboardArrowRight";
 import GitHubIcon from "@mui/icons-material/GitHub";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 
 const DEMO_SLIDES = [
   {
@@ -83,7 +84,7 @@ const DEMO_SLIDES = [
   },
 ];
 
-export default function DemoModal({ open, onClose, effectiveTheme = "light" }) {
+export default function DemoModal({ open, onClose, onViewDemo, effectiveTheme = "light" }) {
   const isDark = effectiveTheme === "dark";
   const [activeStep, setActiveStep] = useState(0);
   const maxSteps = DEMO_SLIDES.length;
@@ -213,6 +214,26 @@ export default function DemoModal({ open, onClose, effectiveTheme = "light" }) {
             </Button>
           }
         />
+
+        {onViewDemo && (
+          <Button
+            onClick={onViewDemo}
+            startIcon={<PlayArrowIcon />}
+            fullWidth
+            variant="contained"
+            sx={{
+              mt: 1.5,
+              background: styles.accent,
+              color: "#fff",
+              fontWeight: 700,
+              borderRadius: 2,
+              textTransform: "none",
+              "&:hover": { background: isDark ? "#E03D00" : "#8f3e3a" },
+            }}
+          >
+            View Interactive Demo
+          </Button>
+        )}
 
         <Button
           component="a"
