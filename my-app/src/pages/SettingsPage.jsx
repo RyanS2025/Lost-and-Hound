@@ -4,7 +4,7 @@ import { supabase } from "../../backend/supabaseClient";
 import apiFetch from "../utils/apiFetch";
 import { useDemo } from "../contexts/DemoContext";
 import { DEMO_PROFILE } from "../demo/mockData";
-import { containsProfanity } from "../utils/profanityFilter";
+import { containsProfanity, stripInvisible } from "../utils/profanityFilter";
 import {
   Container,
   Paper,
@@ -373,7 +373,7 @@ export default function SettingsPage({
                           size="small"
                           inputProps={{ maxLength: NAME_MAX_LENGTH }}
                           error={nameProfane && containsProfanity(firstName)}
-                          helperText={nameProfane && containsProfanity(firstName) ? "Cannot use that word" : `${firstName.length}/${NAME_MAX_LENGTH}`}
+                          helperText={nameProfane && containsProfanity(firstName) ? "Cannot use that word" : `${stripInvisible(firstName).length}/${NAME_MAX_LENGTH}`}
                           sx={{ flex: 1, borderRadius: 2, ...textFieldSx }}
                         />
                         <TextField
@@ -387,7 +387,7 @@ export default function SettingsPage({
                           size="small"
                           inputProps={{ maxLength: NAME_MAX_LENGTH }}
                           error={nameProfane && containsProfanity(lastName)}
-                          helperText={nameProfane && containsProfanity(lastName) ? "Cannot use that word" : `${lastName.length}/${NAME_MAX_LENGTH}`}
+                          helperText={nameProfane && containsProfanity(lastName) ? "Cannot use that word" : `${stripInvisible(lastName).length}/${NAME_MAX_LENGTH}`}
                           sx={{ flex: 1, borderRadius: 2, ...textFieldSx }}
                         />
                       </Box>

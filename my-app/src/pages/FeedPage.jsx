@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   Box, Typography, Paper, TextField, Button, Select, MenuItem,
   FormControl, InputLabel, Chip, CircularProgress, Modal, Slider,
-  IconButton, InputAdornment, Collapse,
+  IconButton, InputAdornment, Collapse, Snackbar, Alert,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import AddIcon from "@mui/icons-material/Add";
@@ -13,7 +13,7 @@ import MapIcon from "@mui/icons-material/PinDrop";
 import FlagIcon from "@mui/icons-material/Flag";
 import ReportModal from "../components/ReportModal";
 import apiFetch from "../utils/apiFetch";
-import { containsProfanity } from "../utils/profanityFilter";
+import { containsProfanity, stripInvisible } from "../utils/profanityFilter";
 import { useAuth } from "../AuthContext";
 import { useDemo } from "../contexts/DemoContext";
 import MapPinPicker from "../components/MapPinPicker";
@@ -376,6 +376,7 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
     importance: 2, description: "", image: null, pin: null,
   });
   const [submitting, setSubmitting] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const [showMap, setShowMap] = useState(false);
   const [flyTo, setFlyTo] = useState(null);
   // Controls whether the user is reporting something they found or something they lost.
@@ -387,7 +388,7 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
     setForm(f => ({ ...f, [k]: v }));
     if (k in profaneFields) setProfaneFields(f => ({ ...f, [k]: containsProfanity(v) }));
   };
-  const valid = form.title.trim() && form.found_at.trim() && form.description.trim() && form.location_id && !hasProfanity;
+  const valid = stripInvisible(form.title) && stripInvisible(form.found_at) && stripInvisible(form.description) && form.location_id && !hasProfanity;
 
   useEffect(() => {
     if (!open) return;
@@ -470,7 +471,16 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           }
         }
       } catch (err) {
-        console.error("Image upload error:", err);
+        const msg = err?.message || "";
+        if (msg.includes("inappropriate content")) {
+          setUploadError("Inappropriate image detected — your image was removed.");
+        } else if (msg.includes("not a valid image")) {
+          setUploadError("File upload is not a valid image.");
+        } else {
+          setUploadError("Image upload failed. Please try again.");
+        }
+        setSubmitting(false);
+        return;
       }
     }
 
@@ -508,6 +518,7 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
   };
 
   return (
+    <>
     <Modal open={open} onClose={onClose}>
       <Box sx={{
         position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
@@ -585,7 +596,7 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           sx={{ mb: 2 }}
           inputProps={{ maxLength: LIMITS.title }}
           error={profaneFields.title}
-          helperText={profaneFields.title ? "Cannot use that word" : `${form.title.length}/${LIMITS.title}`}
+          helperText={profaneFields.title ? "Cannot use that word" : `${stripInvisible(form.title).length}/${LIMITS.title}`}
         />
 
         {/* Campus chips */}
@@ -655,7 +666,7 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           sx={{ mb: 2 }}
           inputProps={{ maxLength: LIMITS.found_at }}
           error={profaneFields.found_at}
-          helperText={profaneFields.found_at ? "Cannot use that word" : `${form.found_at.length}/${LIMITS.found_at}`}
+          helperText={profaneFields.found_at ? "Cannot use that word" : `${stripInvisible(form.found_at).length}/${LIMITS.found_at}`}
         />
 
         <TextField
@@ -669,7 +680,7 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           sx={{ mb: 2 }}
           inputProps={{ maxLength: LIMITS.description }}
           error={profaneFields.description}
-          helperText={profaneFields.description ? "Cannot use that word" : `${form.description.length}/${LIMITS.description}`}
+          helperText={profaneFields.description ? "Cannot use that word" : `${stripInvisible(form.description).length}/${LIMITS.description}`}
         />
 
         {/* Map pin */}
@@ -728,6 +739,17 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
         </Button>
       </Box>
     </Modal>
+    <Snackbar
+      open={!!uploadError}
+      autoHideDuration={6000}
+      onClose={() => setUploadError("")}
+      anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+    >
+      <Alert severity="error" onClose={() => setUploadError("")} sx={{ width: "100%" }}>
+        {uploadError}
+      </Alert>
+    </Snackbar>
+    </>
   );
 }
 

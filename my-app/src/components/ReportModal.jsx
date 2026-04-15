@@ -6,6 +6,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import apiFetch from "../utils/apiFetch";
+import { stripInvisible } from "../utils/profanityFilter";
 
 const REPORT_REASON_MAX_LENGTH = 50;
 const REPORT_DETAILS_MAX_LENGTH = 250;
@@ -212,7 +213,7 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
                 fullWidth
                 size="small"
                 inputProps={{ maxLength: REPORT_REASON_MAX_LENGTH }}
-                helperText={`${customReason.length}/${REPORT_REASON_MAX_LENGTH}`}
+                helperText={`${stripInvisible(customReason).length}/${REPORT_REASON_MAX_LENGTH}`}
                 sx={{
                   mt: 1.25,
                   mb: 1,
@@ -236,7 +237,7 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
               fullWidth
               size="small"
               inputProps={{ maxLength: REPORT_DETAILS_MAX_LENGTH }}
-              helperText={`${details.length}/${REPORT_DETAILS_MAX_LENGTH}`}
+              helperText={`${stripInvisible(details).length}/${REPORT_DETAILS_MAX_LENGTH}`}
               sx={{
                 mt: 2,
                 mb: 2,

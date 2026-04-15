@@ -210,9 +210,11 @@ app.post("/api/referral/user", requireAuth, require2FA, async (req, res) => {
 // INPUT VALIDATION HELPERS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+const INVISIBLE_CHARS_RE = /[\u00AD\u034F\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
+
 function sanitize(str, maxLength = 500) {
   if (typeof str !== "string") return "";
-  return str.trim().slice(0, maxLength);
+  return str.replace(INVISIBLE_CHARS_RE, "").trim().slice(0, maxLength);
 }
 
 // Returns a 422 response and true if any field contains profanity; otherwise returns false.
@@ -856,12 +858,29 @@ app.patch("/api/listings/:item_id/resolve", requireAuth, require2FA, requireNotB
 });
 
 app.delete("/api/listings/:item_id", requireAuth, require2FA, requireModerator, async (req, res) => {
+  // Fetch image_url before deleting so we can clean up storage afterward
+  const { data: listing } = await supabase
+    .from("listings")
+    .select("image_url")
+    .eq("item_id", req.params.item_id)
+    .maybeSingle();
+
   const { error } = await supabase
     .from("listings")
     .delete()
     .eq("item_id", req.params.item_id);
 
   if (error) return dbError(res, error, "DELETE /api/listings");
+
+  // Delete the image from storage — fire-and-forget, don't block the response
+  if (listing?.image_url) {
+    const storagePrefix = `${process.env.SUPABASE_URL}/storage/v1/object/public/listing-images/`;
+    if (listing.image_url.startsWith(storagePrefix)) {
+      const imagePath = listing.image_url.slice(storagePrefix.length);
+      supabase.storage.from("listing-images").remove([imagePath]).catch(() => {});
+    }
+  }
+
   logModAction(req.user.id, "delete_listing", req.params.item_id, { deleted_listing_id: req.params.item_id });
   res.json({ success: true });
 });

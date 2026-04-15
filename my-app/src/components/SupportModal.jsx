@@ -14,6 +14,7 @@ import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import apiFetch from "../utils/apiFetch";
 import SupportFAQ from "./SupportFAQ";
 import { useAuth } from "../AuthContext";
+import { stripInvisible } from "../utils/profanityFilter";
 
 const TICKET_TYPES = ["Support", "Bug Report", "Feedback"];
 
@@ -219,7 +220,7 @@ export default function SupportModal({ open, onClose }) {
   };
 
   const handleSubmit = async () => {
-    if (!ticketType || !category || !subject.trim() || !description.trim() || submitting || imageConverting) return;
+    if (!ticketType || !category || !stripInvisible(subject) || !stripInvisible(description) || submitting || imageConverting) return;
     setSubmitting(true);
     setError("");
     let imageUrl = undefined;
@@ -347,8 +348,8 @@ export default function SupportModal({ open, onClose }) {
                     {(CATEGORIES_BY_TYPE[ticketType] || []).map((c) => <MenuItem key={c} value={c}>{c}</MenuItem>)}
                   </Select>
                 </FormControl>
-                <TextField label="Subject" placeholder="Brief summary of your issue" value={subject} onChange={(e) => setSubject(e.target.value.slice(0, SUBJECT_MAX))} fullWidth size="small" inputProps={{ maxLength: SUBJECT_MAX }} helperText={`${subject.length}/${SUBJECT_MAX}`} sx={{ mb: 2, "& .MuiOutlinedInput-root": { bgcolor: BRAND.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }} />
-                <TextField label="Description" placeholder="Describe your issue in detail" value={description} onChange={(e) => setDescription(e.target.value.slice(0, DESC_MAX))} multiline rows={4} fullWidth size="small" inputProps={{ maxLength: DESC_MAX }} helperText={`${description.length}/${DESC_MAX}`} sx={{ mb: 2, "& .MuiOutlinedInput-root": { bgcolor: BRAND.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }} />
+                <TextField label="Subject" placeholder="Brief summary of your issue" value={subject} onChange={(e) => setSubject(e.target.value.slice(0, SUBJECT_MAX))} fullWidth size="small" inputProps={{ maxLength: SUBJECT_MAX }} helperText={`${stripInvisible(subject).length}/${SUBJECT_MAX}`} sx={{ mb: 2, "& .MuiOutlinedInput-root": { bgcolor: BRAND.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }} />
+                <TextField label="Description" placeholder="Describe your issue in detail" value={description} onChange={(e) => setDescription(e.target.value.slice(0, DESC_MAX))} multiline rows={4} fullWidth size="small" inputProps={{ maxLength: DESC_MAX }} helperText={`${stripInvisible(description).length}/${DESC_MAX}`} sx={{ mb: 2, "& .MuiOutlinedInput-root": { bgcolor: BRAND.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }} />
                 {ticketType === "Bug Report" && (
                   <Box sx={{ mb: 2 }}>
                     <Typography variant="caption" sx={{ fontWeight: 700, color: BRAND.secondary, display: "block", mb: 0.75 }}>Screenshot / Attachment (optional)</Typography>
@@ -432,7 +433,9 @@ export default function SupportModal({ open, onClose }) {
                           {(chatReplies.length ? chatReplies : (selectedTicket.support_replies || [])).map((r) => (
                             <Box key={r.id} sx={{ display: "flex", justifyContent: r.is_moderator ? "flex-start" : "flex-end" }}>
                               <Box sx={{ maxWidth: "80%", p: 1.25, borderRadius: 2, background: r.is_moderator ? BRAND.modBubble : BRAND.accent, border: r.is_moderator ? `1px solid ${BRAND.border}` : "none" }}>
-                                {r.is_moderator && <Typography sx={{ fontSize: 10, fontWeight: 700, color: BRAND.accent, mb: 0.25 }}>Support Team</Typography>}
+                                <Typography sx={{ fontSize: 10, fontWeight: 700, mb: 0.25, letterSpacing: 0.3, color: r.is_moderator ? BRAND.accent : "rgba(255,255,255,0.75)", textAlign: r.is_moderator ? "left" : "right" }}>
+                                  {r.is_moderator ? "Support Team" : (userName || "You")}
+                                </Typography>
                                 <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", color: r.is_moderator ? "text.primary" : "#fff", lineHeight: 1.5 }}>{r.message}</Typography>
                                 <Typography sx={{ fontSize: 10, color: r.is_moderator ? BRAND.secondary : "rgba(255,255,255,0.7)", mt: 0.25 }}>{new Date(r.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</Typography>
                               </Box>
@@ -442,7 +445,7 @@ export default function SupportModal({ open, onClose }) {
                       )}
                       {selectedTicket.status !== "closed" && (
                         <Box sx={{ display: "flex", gap: 1, mt: 1.5 }}>
-                          <TextField size="small" fullWidth placeholder="Reply…" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendChatMessage())} inputProps={{ maxLength: 1000 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13, bgcolor: BRAND.inputBg } }} />
+                          <TextField size="small" fullWidth placeholder="Reply…" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendChatMessage())} inputProps={{ maxLength: 1000 }} helperText={`${stripInvisible(chatInput).length}/1000`} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13, bgcolor: BRAND.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }} />
                           <IconButton onClick={sendChatMessage} disabled={!chatInput.trim() || chatSending} sx={{ bgcolor: BRAND.accent, color: "#fff", borderRadius: 2, width: 40, height: 40, flexShrink: 0, "&:hover": { bgcolor: BRAND.accentHover }, "&.Mui-disabled": { bgcolor: BRAND.buttonDisabledBg } }}>
                             {chatSending ? <CircularProgress size={16} color="inherit" /> : <SendIcon sx={{ fontSize: 18 }} />}
                           </IconButton>
@@ -500,7 +503,7 @@ export default function SupportModal({ open, onClose }) {
             {submitted ? (
               <Button variant="contained" fullWidth onClick={handleClose} sx={{ background: BRAND.accent, "&:hover": { background: BRAND.accentHover }, fontWeight: 800, borderRadius: 2, py: 1.25, fontSize: 15, textTransform: "none" }}>Done</Button>
             ) : tab === "form" ? (
-              <Button variant="contained" fullWidth disabled={!ticketType || !category || !subject.trim() || !description.trim() || submitting || imageConverting} onClick={handleSubmit}
+              <Button variant="contained" fullWidth disabled={!ticketType || !category || !stripInvisible(subject) || !stripInvisible(description) || submitting || imageConverting} onClick={handleSubmit}
                 sx={{ background: BRAND.accent, "&:hover": { background: BRAND.accentHover }, "&.Mui-disabled": { background: BRAND.buttonDisabledBg, color: BRAND.buttonDisabledText }, fontWeight: 800, borderRadius: 2, py: 1.25, fontSize: 15, textTransform: "none" }}>
                 {submitting ? <CircularProgress size={20} color="inherit" /> : "Submit Ticket"}
               </Button>
@@ -548,7 +551,9 @@ export default function SupportModal({ open, onClose }) {
                 ) : chatReplies.map((r) => (
                   <Box key={r.id} sx={{ display: "flex", justifyContent: r.is_moderator ? "flex-start" : "flex-end" }}>
                     <Box sx={{ maxWidth: "85%", px: 1.25, py: 1, borderRadius: r.is_moderator ? "4px 12px 12px 12px" : "12px 4px 12px 12px", background: r.is_moderator ? BRAND.modBubble : BRAND.accent, border: r.is_moderator ? `1px solid ${BRAND.border}` : "none", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
-                      {r.is_moderator && <Typography sx={{ fontSize: 10, fontWeight: 700, color: BRAND.accent, mb: 0.25, letterSpacing: 0.3 }}>Support Team</Typography>}
+                      <Typography sx={{ fontSize: 10, fontWeight: 700, mb: 0.25, letterSpacing: 0.3, color: r.is_moderator ? BRAND.accent : "rgba(255,255,255,0.75)", textAlign: r.is_moderator ? "left" : "right" }}>
+                        {r.is_moderator ? "Support Team" : (userName || "You")}
+                      </Typography>
                       <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", color: r.is_moderator ? "text.primary" : "#fff", lineHeight: 1.5, fontSize: 13 }}>{r.message}</Typography>
                       <Typography sx={{ fontSize: 10, color: r.is_moderator ? BRAND.secondary : "rgba(255,255,255,0.65)", mt: 0.25, textAlign: r.is_moderator ? "left" : "right" }}>
                         {new Date(r.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -571,7 +576,8 @@ export default function SupportModal({ open, onClose }) {
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
                       inputProps={{ maxLength: 1000 }}
-                      sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13, bgcolor: BRAND.inputBg } }}
+                      helperText={`${stripInvisible(chatInput).length}/1000`}
+                      sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13, bgcolor: BRAND.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }}
                     />
                     <IconButton onClick={sendChatMessage} disabled={!chatInput.trim() || chatSending}
                       sx={{ bgcolor: BRAND.accent, color: "#fff", borderRadius: 2, width: 38, height: 38, flexShrink: 0, "&:hover": { bgcolor: BRAND.accentHover }, "&.Mui-disabled": { bgcolor: BRAND.buttonDisabledBg } }}>

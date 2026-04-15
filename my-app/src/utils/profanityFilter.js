@@ -42,7 +42,11 @@ const CUSTOM_WORDS = [
 const allWords = [...words, ...CUSTOM_WORDS];
 
 const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const normalize = (t) => t.toLowerCase().replace(/\s+/g, " ").trim();
+const INVISIBLE_RE = /[\u00AD\u034F\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
+const normalize = (t) => t.replace(INVISIBLE_RE, "").toLowerCase().replace(/\s+/g, " ").trim();
+
+/** Strip invisible/zero-width characters and trim. Use instead of .trim() for required-field checks. */
+export const stripInvisible = (s) => (s || "").replace(INVISIBLE_RE, "").trim();
 
 // Built once and cached — sorting longer entries first prevents partial shadowing
 let _alphaRe = null;  // \bword\b regex for pure-alpha single words
