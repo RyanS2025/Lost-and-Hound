@@ -11,6 +11,8 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ReportModal from "../components/ReportModal";
 import { supabase } from "../../backend/supabaseClient";
 import apiFetch from "../utils/apiFetch";
+import { useDemo } from "../contexts/DemoContext";
+import { DEMO_MESSAGES } from "../demo/mockData";
 import { containsProfanity, stripInvisible } from "../utils/profanityFilter";
 import { useAuth } from "../AuthContext";
 import { DEFAULT_TIME_ZONE, formatTime } from "../utils/timezone";
@@ -25,6 +27,8 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
   const secondaryTextColor = isDark ? "#B8BABD" : "text.secondary";
   const mutedTextColor = isDark ? "#818384" : "text.disabled";
   const { user, profile } = useAuth();
+  const { isDemoMode } = useDemo();
+  const currentUserId = isDemoMode ? 'demo-user-id' : user?.id;
 
   const [messages, setMessages] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -46,6 +50,11 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
 
   const hideConversation = async (convo, e) => {
     e.stopPropagation();
+    if (isDemoMode) {
+      setConversations((prev) => prev.filter((c) => c.id !== convo.id));
+      if (selectedConversation?.id === convo.id) setSelectedConversation(null);
+      return;
+    }
     try {
       await apiFetch(`/api/conversations/${convo.id}`, { method: "DELETE" });
       setConversations((prev) => prev.filter((c) => c.id !== convo.id));
@@ -58,6 +67,22 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
   const sendMessage = async () => {
     const trimmedMessage = newMessage.trim();
     if (!trimmedMessage || !selectedConversation || isClosed || sending || trimmedMessage.length > MESSAGE_MAX_LENGTH || msgProfane) return;
+
+    if (isDemoMode) {
+      const demoMsg = {
+        id: `demo-sent-${Date.now()}`,
+        conversation_id: selectedConversation.id,
+        sender_id: 'demo-user-id',
+        content: trimmedMessage,
+        created_at: new Date().toISOString(),
+        is_system: false,
+      };
+      scrollIntentRef.current = "bottom-instant";
+      setMessages((prev) => [...prev, demoMsg]);
+      setNewMessage("");
+      setMsgProfane(false);
+      return;
+    }
 
     const tempId = `temp-${Date.now()}`;
     const optimisticMsg = {
@@ -104,6 +129,7 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
   // turns the messages page into a "tap → instant" experience for ~70% of
   // typical clicks (power-law distribution of conversation popularity).
   useEffect(() => {
+    if (isDemoMode) return;
     if (!conversationsLoaded || !conversations?.length) return;
     const top3 = conversations.slice(0, 3);
     const toFetch = top3.filter((c) => !messageCacheRef.current[c.id]);
@@ -132,7 +158,7 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
   // conversation (not just the selected one), drop its cache entry so the
   // next click re-fetches. Prevents stale threads in the prefetch cache.
   useEffect(() => {
-    if (!user) return;
+    if (isDemoMode || !user) return;
     const channel = supabase
       .channel("msg-cache-invalidation-web")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
@@ -172,6 +198,18 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
     }
 
     const setup = async () => {
+      if (isDemoMode) {
+        const demoMsgs = DEMO_MESSAGES[selectedConversation.id] || [];
+        if (active) {
+          scrollIntentRef.current = "bottom-instant";
+          setMessages(demoMsgs);
+          setIsClosed(false);
+          setMsgHasMore(false);
+          setMsgPage(1);
+          setLoadingMessages(false);
+        }
+        return;
+      }
       try {
         const result = await apiFetch(
           `/api/conversations/${selectedConversation.id}/messages`
@@ -247,6 +285,8 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
       return;
     }
 
+    if (isDemoMode) return;
+
     const fetchAndSelect = async () => {
       try {
         const { conversation, profile: otherProfile, listing } = await apiFetch(`/api/conversations/${convoId}`);
@@ -270,7 +310,7 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
 
   const getOtherParticipant = () => {
     if (!selectedConversation) return null;
-    const otherId = selectedConversation.participant_1 === user.id
+    const otherId = selectedConversation.participant_1 === currentUserId
       ? selectedConversation.participant_2
       : selectedConversation.participant_1;
     const other = profiles[otherId];
@@ -301,7 +341,7 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
           px: { xs: 1.25, sm: 2, md: 3 },
           py: { xs: 1.25, sm: 2, md: 3 },
           boxSizing: "border-box",
-          height: "calc(100dvh - 64px - 36px)",
+          height: "calc(100dvh - 64px - 46px - env(safe-area-inset-top) - env(safe-area-inset-bottom))",
           overflow: "hidden",
           color: isDark ? "#D7DADC" : "inherit",
         }}
@@ -358,7 +398,7 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
                     }}
                   >
                     {(() => {
-                      const otherId = convo.participant_1 === user.id ? convo.participant_2 : convo.participant_1;
+                      const otherId = convo.participant_1 === currentUserId ? convo.participant_2 : convo.participant_1;
                       const other = profiles[otherId];
                       const listing = listings[convo.listing_id];
                       return (
@@ -519,7 +559,7 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
                         );
                       }
 
-                      const isOwn = msg.sender_id === user.id;
+                      const isOwn = msg.sender_id === currentUserId;
                       return (
                         <Box key={msg.id} sx={{ alignSelf: isOwn ? "flex-end" : "flex-start", maxWidth: { xs: "85%", md: "70%" }, minWidth: 0 }}>
                           <Box sx={{

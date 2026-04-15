@@ -1122,7 +1122,7 @@ app.post("/api/verify-image/guest", guestUploadLimiter, async (req, res) => {
 // LOCATIONS ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-app.get("/api/locations", requireAuth, require2FA, async (req, res) => {
+app.get("/api/locations", async (req, res) => {
   const { campus } = req.query;
 
   let query = supabase

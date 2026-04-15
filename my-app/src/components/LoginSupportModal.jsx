@@ -357,8 +357,8 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
         },
       }}
     >
-      <Box sx={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", display: "flex", flexDirection: "row", outline: "none", mx: isSmall ? 1 : 0 }}>
-        <Box sx={{ width: isSmall ? "min(480px, calc(100vw - 16px))" : 480, height: "90vh", maxHeight: 680, display: "flex", flexDirection: "column", background: styles.panelBg, border: `1px solid ${styles.border}`, borderRadius: chatOpen && !isSmall ? "16px 0 0 16px" : 4, overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.2)", boxSizing: "border-box", flexShrink: 0 }}>
+      <Box sx={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", display: "flex", flexDirection: "row", outline: "none" }}>
+        <Box sx={{ width: isSmall ? "min(480px, calc(100vw - 32px))" : 480, height: isSmall ? "85vh" : "90vh", maxHeight: 680, display: "flex", flexDirection: "column", background: styles.panelBg, border: `1px solid ${styles.border}`, borderRadius: chatOpen && !isSmall ? "16px 0 0 16px" : 4, overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.2)", boxSizing: "border-box", flexShrink: 0 }}>
         {/* Header */}
         <Box
           sx={{

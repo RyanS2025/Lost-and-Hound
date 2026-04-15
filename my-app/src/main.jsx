@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { AuthProvider } from "./AuthContext.jsx";
+import { DemoProvider } from "./contexts/DemoContext.jsx";
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import "./index.css";
@@ -32,9 +33,11 @@ createRoot(document.getElementById("root")).render(
   <ThemeProvider theme={theme}>
     <CssBaseline />
     <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
+      <DemoProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </DemoProvider>
     </BrowserRouter>
   </ThemeProvider>
 );
