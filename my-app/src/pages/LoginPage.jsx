@@ -22,6 +22,7 @@ import TermsModal from "../components/TermsModal";
 import LoginSupportModal from "../components/LoginSupportModal";
 import DemoModal from "../components/DemoModal";
 import apiFetch, { API_BASE } from "../utils/apiFetch";
+import { stripInvisible } from "../utils/profanityFilter";
 import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
 import InputLabel from "@mui/material/InputLabel";
@@ -1019,7 +1020,7 @@ export default function LoginPage({
                           value={firstName}
                           onChange={(e) => setFirstName(e.target.value.slice(0, NAME_MAX_LENGTH))}
                           inputProps={{ maxLength: NAME_MAX_LENGTH }}
-                          helperText={`${firstName.length}/${NAME_MAX_LENGTH}`}
+                          helperText={`${stripInvisible(firstName).length}/${NAME_MAX_LENGTH}`}
                           sx={autofillTextFieldSx}
                         />
                         <TextField
@@ -1030,7 +1031,7 @@ export default function LoginPage({
                           value={lastName}
                           onChange={(e) => setLastName(e.target.value.slice(0, NAME_MAX_LENGTH))}
                           inputProps={{ maxLength: NAME_MAX_LENGTH }}
-                          helperText={`${lastName.length}/${NAME_MAX_LENGTH}`}
+                          helperText={`${stripInvisible(lastName).length}/${NAME_MAX_LENGTH}`}
                           sx={autofillTextFieldSx}
                         />
                       </Box>
