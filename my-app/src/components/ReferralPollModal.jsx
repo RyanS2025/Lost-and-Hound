@@ -9,6 +9,7 @@ import apiFetch from "../utils/apiFetch";
 const REFERRAL_OPTIONS = [
   { value: "word_of_mouth",        label: "Word of mouth" },
   { value: "social_media",         label: "Instagram / Social media" },
+  { value: "reddit",               label: "Reddit" },
   { value: "northeastern_website", label: "Northeastern website" },
   { value: "professor_class",      label: "Professor or class" },
   { value: "flyer_poster",         label: "Flyer or poster" },

@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useDemo } from "../contexts/DemoContext";
+import ConfettiCanvas from "../components/ConfettiCanvas";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../backend/supabaseClient";
 import {
@@ -33,89 +35,7 @@ const PASSWORD_MAX_LENGTH = 32;
 // Module-level cache — survives component unmount so counter is instant on return visits
 let userCountCache = null;
 
-/* ───────────────────────────────────────────
-   Confetti canvas — lightweight, no deps
-   ─────────────────────────────────────────── */
-function ConfettiCanvas({ active }) {
-  const canvasRef = useRef(null);
-  const particles = useRef([]);
-  const animFrame = useRef(null);
-
-  const COLORS = [
-    "#A84D48", "#e07a6e", "#f5c6c2", "#ffd700",
-    "#ff6b6b", "#fff", "#7a2929", "#ffb347",
-  ];
-
-  const spawn = useCallback(() => {
-    const arr = [];
-    for (let i = 0; i < 150; i++) {
-      arr.push({
-        x: Math.random() * window.innerWidth,
-        y: -20 - Math.random() * 200,
-        w: 4 + Math.random() * 6,
-        h: 8 + Math.random() * 10,
-        color: COLORS[Math.floor(Math.random() * COLORS.length)],
-        vx: (Math.random() - 0.5) * 6,
-        vy: 2 + Math.random() * 5,
-        rotation: Math.random() * 360,
-        rotSpeed: (Math.random() - 0.5) * 12,
-        opacity: 1,
-        decay: 0.003 + Math.random() * 0.004,
-      });
-    }
-    particles.current = arr;
-  }, []);
-
-  useEffect(() => {
-    if (!active) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-
-    spawn();
-
-    const loop = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      let alive = false;
-      for (const p of particles.current) {
-        if (p.opacity <= 0) continue;
-        alive = true;
-        p.x += p.vx;
-        p.vy += 0.12;
-        p.y += p.vy;
-        p.rotation += p.rotSpeed;
-        p.opacity -= p.decay;
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate((p.rotation * Math.PI) / 180);
-        ctx.globalAlpha = Math.max(0, p.opacity);
-        ctx.fillStyle = p.color;
-        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
-        ctx.restore();
-      }
-      if (alive) animFrame.current = requestAnimationFrame(loop);
-    };
-    animFrame.current = requestAnimationFrame(loop);
-
-    return () => cancelAnimationFrame(animFrame.current);
-  }, [active, spawn]);
-
-  if (!active) return null;
-
-  return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 9999,
-        pointerEvents: "none",
-      }}
-    />
-  );
-}
+// ConfettiCanvas is imported from src/components/ConfettiCanvas.jsx
 
 /* ───────────────────────────────────────────
    Login page
@@ -128,6 +48,7 @@ export default function LoginPage({
 }) {
   const isDark = effectiveTheme === "dark";
   const navigate = useNavigate();
+  const { enterDemo } = useDemo();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -157,6 +78,16 @@ export default function LoginPage({
   const [supportOpen, setSupportOpen] = useState(false);
   // Demo modal state
   const [demoOpen, setDemoOpen] = useState(false);
+  const [demoLaunching, setDemoLaunching] = useState(false);
+
+  const handleViewDemo = useCallback(() => {
+    setDemoOpen(false);
+    setDemoLaunching(true);
+    setTimeout(() => {
+      enterDemo();
+      navigate("/");
+    }, 900);
+  }, [navigate, enterDemo]);
 
   // Referral source (sign-up only)
   const [referralSource, setReferralSource] = useState("");
@@ -268,11 +199,11 @@ export default function LoginPage({
   };
 
   useEffect(() => {
-    if (loginTransition) {
-      const timer = setTimeout(() => setFadeOut(true), 400);
+    if (loginTransition || demoLaunching) {
+      const timer = setTimeout(() => setFadeOut(true), 200);
       return () => clearTimeout(timer);
     }
-  }, [loginTransition]);
+  }, [loginTransition, demoLaunching]);
 
   // Reset terms accepted when switching between sign-up and sign-in
   useEffect(() => {
@@ -576,7 +507,7 @@ export default function LoginPage({
 
   return (
     <>
-      <ConfettiCanvas active={loginTransition} />
+      <ConfettiCanvas active={loginTransition || demoLaunching} />
 
       <Box
         sx={{
@@ -804,18 +735,10 @@ export default function LoginPage({
                   },
                 }}
               >
-                <Typography
-                  sx={{ fontSize: 48, mb: 1, lineHeight: 1 }}
-                  role="img"
-                  aria-label="party"
-                >
+                <Typography sx={{ fontSize: 48, mb: 1, lineHeight: 1 }} role="img" aria-label="party">
                   🎉
                 </Typography>
-                <Typography
-                  variant="h5"
-                  fontWeight={800}
-                  sx={{ color: BRAND.title, mb: 0.5 }}
-                >
+                <Typography variant="h5" fontWeight={800} sx={{ color: BRAND.title, mb: 0.5 }}>
                   Welcome back!
                 </Typography>
                 <Typography variant="body2" sx={{ color: "text.secondary" }}>
@@ -1055,6 +978,7 @@ export default function LoginPage({
                           >
                             <MenuItem value="word_of_mouth">Word of mouth</MenuItem>
                             <MenuItem value="social_media">Instagram / Social media</MenuItem>
+                            <MenuItem value="reddit">Reddit</MenuItem>
                             <MenuItem value="northeastern_website">Northeastern website</MenuItem>
                             <MenuItem value="professor_class">Professor or class</MenuItem>
                             <MenuItem value="flyer_poster">Flyer or poster</MenuItem>
@@ -1265,6 +1189,7 @@ export default function LoginPage({
       <DemoModal
         open={demoOpen}
         onClose={() => setDemoOpen(false)}
+        onViewDemo={handleViewDemo}
         effectiveTheme={effectiveTheme}
       />
     </>

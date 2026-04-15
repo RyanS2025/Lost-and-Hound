@@ -15,6 +15,7 @@ import SectionPageHeader from "../../components/dashboard/SectionPageHeader";
 const REFERRAL_LABELS = {
   word_of_mouth:        "Word of mouth",
   social_media:         "Instagram / Social media",
+  reddit:               "Reddit",
   northeastern_website: "Northeastern website",
   professor_class:      "Professor or class",
   flyer_poster:         "Flyer or poster",
