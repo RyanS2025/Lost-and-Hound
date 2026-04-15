@@ -452,12 +452,13 @@ export default function TicketDetailModal({ ticket, onClose, onUpdateStatus, onD
                     </Typography>
                   </Box>
                 ) : allReplies.map((reply) => (
-                  <Box key={reply.id} sx={{ display: "flex", justifyContent: reply.is_moderator ? "flex-start" : "flex-end" }}>
-                    <Box sx={{ maxWidth: "85%", px: 1.25, py: 1, borderRadius: reply.is_moderator ? "4px 12px 12px 12px" : "12px 4px 12px 12px", background: reply.is_moderator ? (isDark ? "rgba(255,69,0,0.12)" : "#fff4f3") : accent, border: reply.is_moderator ? (isDark ? "1px solid rgba(255,69,0,0.3)" : "1px solid rgba(168,77,72,0.18)") : "none", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
-                      {reply.is_moderator && <Typography sx={{ fontSize: 10, fontWeight: 700, color: accent, mb: 0.25, letterSpacing: 0.3 }}>Support Team</Typography>}
-                      {!reply.is_moderator && <Typography sx={{ fontSize: 10, fontWeight: 700, color: isDark ? "#D7DADC" : "#5e5e5e", mb: 0.25, letterSpacing: 0.3 }}>User</Typography>}
-                      <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", color: reply.is_moderator ? "text.primary" : "#fff", lineHeight: 1.5, fontSize: 13 }}>{reply.message}</Typography>
-                      <Typography sx={{ fontSize: 10, color: reply.is_moderator ? "text.disabled" : "rgba(255,255,255,0.65)", mt: 0.25, textAlign: reply.is_moderator ? "left" : "right" }}>
+                  <Box key={reply.id} sx={{ display: "flex", justifyContent: reply.is_moderator ? "flex-end" : "flex-start" }}>
+                    <Box sx={{ maxWidth: "85%", px: 1.25, py: 1, borderRadius: reply.is_moderator ? "12px 4px 12px 12px" : "4px 12px 12px 12px", background: reply.is_moderator ? accent : (isDark ? "rgba(255,255,255,0.07)" : "#eee"), border: reply.is_moderator ? "none" : (isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid #ddd"), boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
+                      <Typography sx={{ fontSize: 10, fontWeight: 700, mb: 0.25, letterSpacing: 0.3, textAlign: reply.is_moderator ? "right" : "left", color: reply.is_moderator ? "rgba(255,255,255,0.75)" : (isDark ? "#A9AAAB" : "#888") }}>
+                        {reply.is_moderator ? "You" : (ticket?.name || "User")}
+                      </Typography>
+                      <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", color: reply.is_moderator ? "#fff" : "text.primary", lineHeight: 1.5, fontSize: 13 }}>{reply.message}</Typography>
+                      <Typography sx={{ fontSize: 10, color: reply.is_moderator ? "rgba(255,255,255,0.65)" : "text.disabled", mt: 0.25, textAlign: reply.is_moderator ? "right" : "left" }}>
                         {new Date(reply.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </Typography>
                     </Box>

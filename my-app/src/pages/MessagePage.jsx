@@ -11,7 +11,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ReportModal from "../components/ReportModal";
 import { supabase } from "../../backend/supabaseClient";
 import apiFetch from "../utils/apiFetch";
-import { containsProfanity } from "../utils/profanityFilter";
+import { containsProfanity, stripInvisible } from "../utils/profanityFilter";
 import { useAuth } from "../AuthContext";
 import { DEFAULT_TIME_ZONE, formatTime } from "../utils/timezone";
 
@@ -564,7 +564,7 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
                         }}
                         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !sending) { e.preventDefault(); sendMessage(); } }}
                         error={msgProfane}
-                        helperText={msgProfane ? "Cannot use that word" : `${newMessage.length}/${MESSAGE_MAX_LENGTH}`}
+                        helperText={msgProfane ? "Cannot use that word" : `${stripInvisible(newMessage).length}/${MESSAGE_MAX_LENGTH}`}
                         inputProps={{ maxLength: MESSAGE_MAX_LENGTH }}
                         sx={{
                           "& .MuiOutlinedInput-root": {

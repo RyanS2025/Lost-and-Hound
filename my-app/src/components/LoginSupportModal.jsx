@@ -11,6 +11,7 @@ import SendIcon from "@mui/icons-material/Send";
 import SupportAgentIcon from "@mui/icons-material/SupportAgent";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import SupportFAQ from "./SupportFAQ";
+import { stripInvisible } from "../utils/profanityFilter";
 
 const STATUS_LABEL = { open: "Open", in_progress: "In Progress", resolved: "Resolved", closed: "Closed" };
 const STATUS_SX = {
@@ -163,7 +164,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
   }, [chatReplies.length]);
 
   const canSubmit =
-    ticketType && name.trim() && email.trim() && category && subject.trim() && description.trim() && !submitting && !imageConverting;
+    ticketType && stripInvisible(name) && email.trim() && category && stripInvisible(subject) && stripInvisible(description) && !submitting && !imageConverting;
 
   const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
@@ -483,16 +484,11 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                   >
                     Back to lookup
                   </Button>
-                  {!isSmall && (
+                  {statusResult.status !== "closed" && (
                     <Button
                       startIcon={<ChatBubbleOutlineIcon sx={{ fontSize: 16 }} />}
                       size="small"
-                      onClick={() => {
-                        if (!chatOpen) {
-                          setChatReplies(statusResult?.support_replies || []);
-                        }
-                        setChatOpen(!chatOpen);
-                      }}
+                      onClick={() => setChatOpen(!chatOpen)}
                       sx={{ color: chatOpen ? styles.secondary : styles.accent, fontWeight: 700, fontSize: 12, textTransform: "none", border: `1px solid ${chatOpen ? styles.border : styles.accent}`, borderRadius: 2, px: 1.5 }}
                     >
                       {chatOpen ? "Close Chat" : "Open Chat"}
@@ -548,41 +544,58 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                   />
                 )}
 
-                {/* Chat thread (inline, all screens — desktop also uses this for full context) */}
-                <Typography sx={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: styles.secondary, display: "block", mb: 1 }}>
-                  Messages
-                </Typography>
-                {chatReplies.length === 0 ? (
-                  <Box sx={{ textAlign: "center", py: 2.5, border: `1px dashed ${styles.border}`, borderRadius: 1.5 }}>
-                    <Typography variant="body2" sx={{ color: styles.secondary, fontStyle: "italic" }}>
-                      No messages yet — a moderator will respond soon.
+                {/* Mobile only: inline chat (desktop uses the sliding panel) */}
+                {isSmall && (
+                  <>
+                    <Typography sx={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: styles.secondary, display: "block", mb: 1 }}>
+                      Messages
                     </Typography>
-                  </Box>
-                ) : (
-                  <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                    {chatReplies.map((r) => (
-                      <Box key={r.id} sx={{ display: "flex", justifyContent: r.is_moderator ? "flex-start" : "flex-end" }}>
-                        <Box sx={{ maxWidth: "80%", px: 1.25, py: 1, borderRadius: r.is_moderator ? "4px 12px 12px 12px" : "12px 4px 12px 12px", background: r.is_moderator ? styles.modBubble : styles.accent, border: r.is_moderator ? `1px solid ${styles.border}` : "none" }}>
-                          {r.is_moderator && <Typography sx={{ fontSize: 10, fontWeight: 700, color: styles.accent, mb: 0.25 }}>Support Team</Typography>}
-                          <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", color: r.is_moderator ? "text.primary" : "#fff", lineHeight: 1.5 }}>{r.message}</Typography>
-                          <Typography sx={{ fontSize: 10, color: r.is_moderator ? styles.secondary : "rgba(255,255,255,0.7)", mt: 0.25, textAlign: r.is_moderator ? "left" : "right" }}>
-                            {new Date(r.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                          </Typography>
+                    {(chatReplies.length ? chatReplies : (statusResult.support_replies || [])).length === 0 ? (
+                      <Box sx={{ textAlign: "center", py: 2.5, border: `1px dashed ${styles.border}`, borderRadius: 1.5, mb: 1.5 }}>
+                        <Typography variant="body2" sx={{ color: styles.secondary, fontStyle: "italic" }}>
+                          No messages yet — a moderator will respond soon.
+                        </Typography>
+                      </Box>
+                    ) : (
+                      <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mb: 1.5 }}>
+                        {(chatReplies.length ? chatReplies : (statusResult.support_replies || [])).map((r) => (
+                          <Box key={r.id} sx={{ display: "flex", justifyContent: r.is_moderator ? "flex-start" : "flex-end" }}>
+                            <Box sx={{ maxWidth: "80%", px: 1.25, py: 1, borderRadius: r.is_moderator ? "4px 12px 12px 12px" : "12px 4px 12px 12px", background: r.is_moderator ? styles.modBubble : styles.accent, border: r.is_moderator ? `1px solid ${styles.border}` : "none" }}>
+                              <Typography sx={{ fontSize: 10, fontWeight: 700, mb: 0.25, letterSpacing: 0.3, color: r.is_moderator ? styles.accent : "rgba(255,255,255,0.75)", textAlign: r.is_moderator ? "left" : "right" }}>
+                                {r.is_moderator ? "Support Team" : (statusResult?.name || "You")}
+                              </Typography>
+                              <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", color: r.is_moderator ? "text.primary" : "#fff", lineHeight: 1.5 }}>{r.message}</Typography>
+                              <Typography sx={{ fontSize: 10, color: r.is_moderator ? styles.secondary : "rgba(255,255,255,0.7)", mt: 0.25, textAlign: r.is_moderator ? "left" : "right" }}>
+                                {new Date(r.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        ))}
+                        <div ref={chatBottomRef} />
+                      </Box>
+                    )}
+                    {statusResult.status !== "closed" && (
+                      <Box sx={{ mt: 0.5 }}>
+                        {chatError && <Alert severity="error" sx={{ mb: 0.75, py: 0, fontSize: 12 }}>{chatError}</Alert>}
+                        <Box sx={{ display: "flex", gap: 1, alignItems: "flex-end" }}>
+                          <TextField
+                            size="small" fullWidth multiline maxRows={4}
+                            placeholder="Type a message…"
+                            value={chatInput}
+                            onChange={(e) => setChatInput(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendGuestMessage())}
+                            inputProps={{ maxLength: 1000 }}
+                            helperText={`${stripInvisible(chatInput).length}/1000`}
+                            sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13, bgcolor: styles.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }}
+                          />
+                          <IconButton onClick={sendGuestMessage} disabled={!chatInput.trim() || chatSending}
+                            sx={{ bgcolor: styles.accent, color: "#fff", borderRadius: 2, width: 40, height: 40, flexShrink: 0, "&:hover": { bgcolor: styles.accentHover }, "&.Mui-disabled": { bgcolor: styles.buttonDisabledBg } }}>
+                            {chatSending ? <CircularProgress size={16} color="inherit" /> : <SendIcon sx={{ fontSize: 18 }} />}
+                          </IconButton>
                         </Box>
                       </Box>
-                    ))}
-                  </Box>
-                )}
-                {statusResult.status !== "closed" && (
-                  <Box sx={{ mt: 1.5 }}>
-                    {chatError && <Alert severity="error" sx={{ mb: 0.75, py: 0, fontSize: 12 }}>{chatError}</Alert>}
-                    <Box sx={{ display: "flex", gap: 1 }}>
-                      <TextField size="small" fullWidth placeholder="Reply…" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendGuestMessage())} inputProps={{ maxLength: 1000 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13, bgcolor: styles.inputBg } }} />
-                      <IconButton onClick={sendGuestMessage} disabled={!chatInput.trim() || chatSending} sx={{ bgcolor: styles.accent, color: "#fff", borderRadius: 2, width: 40, height: 40, flexShrink: 0, "&:hover": { bgcolor: styles.accentHover }, "&.Mui-disabled": { bgcolor: styles.buttonDisabledBg } }}>
-                        {chatSending ? <CircularProgress size={16} color="inherit" /> : <SendIcon sx={{ fontSize: 18 }} />}
-                      </IconButton>
-                    </Box>
-                  </Box>
+                    )}
+                  </>
                 )}
               </Box>
             ) : (
@@ -637,7 +650,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                   fullWidth
                   size="small"
                   inputProps={{ maxLength: NAME_MAX }}
-                  helperText={`${name.length}/${NAME_MAX}`}
+                  helperText={`${stripInvisible(name).length}/${NAME_MAX}`}
                   sx={{ "& .MuiOutlinedInput-root": { bgcolor: styles.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }}
                 />
                 <TextField
@@ -691,7 +704,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                 fullWidth
                 size="small"
                 inputProps={{ maxLength: SUBJECT_MAX }}
-                helperText={`${subject.length}/${SUBJECT_MAX}`}
+                helperText={`${stripInvisible(subject).length}/${SUBJECT_MAX}`}
                 sx={{
                   mb: 2,
                   "& .MuiOutlinedInput-root": { bgcolor: styles.inputBg },
@@ -709,7 +722,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                 fullWidth
                 size="small"
                 inputProps={{ maxLength: DESC_MAX }}
-                helperText={`${description.length}/${DESC_MAX}`}
+                helperText={`${stripInvisible(description).length}/${DESC_MAX}`}
                 sx={{
                   mb: 2,
                   "& .MuiOutlinedInput-root": { bgcolor: styles.inputBg },
@@ -852,7 +865,9 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                 ) : chatReplies.map((r) => (
                   <Box key={r.id} sx={{ display: "flex", justifyContent: r.is_moderator ? "flex-start" : "flex-end" }}>
                     <Box sx={{ maxWidth: "85%", px: 1.25, py: 1, borderRadius: r.is_moderator ? "4px 12px 12px 12px" : "12px 4px 12px 12px", background: r.is_moderator ? styles.modBubble : styles.accent, border: r.is_moderator ? `1px solid ${styles.border}` : "none", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
-                      {r.is_moderator && <Typography sx={{ fontSize: 10, fontWeight: 700, color: styles.accent, mb: 0.25, letterSpacing: 0.3 }}>Support Team</Typography>}
+                      <Typography sx={{ fontSize: 10, fontWeight: 700, mb: 0.25, letterSpacing: 0.3, color: r.is_moderator ? styles.accent : "rgba(255,255,255,0.75)", textAlign: r.is_moderator ? "left" : "right" }}>
+                        {r.is_moderator ? "Support Team" : (statusResult?.name || "You")}
+                      </Typography>
                       <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", color: r.is_moderator ? "text.primary" : "#fff", lineHeight: 1.5, fontSize: 13 }}>{r.message}</Typography>
                       <Typography sx={{ fontSize: 10, color: r.is_moderator ? styles.secondary : "rgba(255,255,255,0.65)", mt: 0.25, textAlign: r.is_moderator ? "left" : "right" }}>
                         {new Date(r.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -873,7 +888,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendGuestMessage(); } }}
                       inputProps={{ maxLength: 1000 }}
-                      helperText={`${chatInput.length}/1000`}
+                      helperText={`${stripInvisible(chatInput).length}/1000`}
                       sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13, bgcolor: styles.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }}
                     />
                     <IconButton onClick={sendGuestMessage} disabled={!chatInput.trim() || chatSending}
