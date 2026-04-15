@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   Box, Typography, Paper, TextField, Button, Select, MenuItem,
   FormControl, InputLabel, Chip, CircularProgress, Modal, Slider,
-  IconButton, InputAdornment, Collapse,
+  IconButton, InputAdornment, Collapse, Snackbar, Alert,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import AddIcon from "@mui/icons-material/Add";
@@ -373,6 +373,7 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
     importance: 2, description: "", image: null, pin: null,
   });
   const [submitting, setSubmitting] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const [showMap, setShowMap] = useState(false);
   const [flyTo, setFlyTo] = useState(null);
   // Controls whether the user is reporting something they found or something they lost.
@@ -467,7 +468,16 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           }
         }
       } catch (err) {
-        console.error("Image upload error:", err);
+        const msg = err?.message || "";
+        if (msg.includes("inappropriate content")) {
+          setUploadError("Inappropriate image detected — your image was removed.");
+        } else if (msg.includes("not a valid image")) {
+          setUploadError("File upload is not a valid image.");
+        } else {
+          setUploadError("Image upload failed. Please try again.");
+        }
+        setSubmitting(false);
+        return;
       }
     }
 
@@ -698,6 +708,16 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           {submitting ? <CircularProgress size={20} color="inherit" /> : "Post Listing"}
         </Button>
       </Box>
+      <Snackbar
+        open={!!uploadError}
+        autoHideDuration={6000}
+        onClose={() => setUploadError("")}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert severity="error" onClose={() => setUploadError("")} sx={{ width: "100%" }}>
+          {uploadError}
+        </Alert>
+      </Snackbar>
     </Modal>
   );
 }

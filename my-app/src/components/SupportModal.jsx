@@ -442,7 +442,7 @@ export default function SupportModal({ open, onClose }) {
                       )}
                       {selectedTicket.status !== "closed" && (
                         <Box sx={{ display: "flex", gap: 1, mt: 1.5 }}>
-                          <TextField size="small" fullWidth placeholder="Reply…" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendChatMessage())} inputProps={{ maxLength: 1000 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13, bgcolor: BRAND.inputBg } }} />
+                          <TextField size="small" fullWidth placeholder="Reply…" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendChatMessage())} inputProps={{ maxLength: 1000 }} helperText={`${chatInput.length}/1000`} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13, bgcolor: BRAND.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }} />
                           <IconButton onClick={sendChatMessage} disabled={!chatInput.trim() || chatSending} sx={{ bgcolor: BRAND.accent, color: "#fff", borderRadius: 2, width: 40, height: 40, flexShrink: 0, "&:hover": { bgcolor: BRAND.accentHover }, "&.Mui-disabled": { bgcolor: BRAND.buttonDisabledBg } }}>
                             {chatSending ? <CircularProgress size={16} color="inherit" /> : <SendIcon sx={{ fontSize: 18 }} />}
                           </IconButton>
@@ -571,7 +571,8 @@ export default function SupportModal({ open, onClose }) {
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
                       inputProps={{ maxLength: 1000 }}
-                      sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13, bgcolor: BRAND.inputBg } }}
+                      helperText={`${chatInput.length}/1000`}
+                      sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13, bgcolor: BRAND.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }}
                     />
                     <IconButton onClick={sendChatMessage} disabled={!chatInput.trim() || chatSending}
                       sx={{ bgcolor: BRAND.accent, color: "#fff", borderRadius: 2, width: 38, height: 38, flexShrink: 0, "&:hover": { bgcolor: BRAND.accentHover }, "&.Mui-disabled": { bgcolor: BRAND.buttonDisabledBg } }}>

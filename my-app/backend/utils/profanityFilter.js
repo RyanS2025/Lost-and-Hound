@@ -42,7 +42,15 @@ const CUSTOM_WORDS = [
 const allWords = [...words, ...CUSTOM_WORDS];
 
 const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const normalize = (t) => t.toLowerCase().replace(/\s+/g, " ").trim();
+// Invisible / zero-width Unicode characters commonly used to evade filters:
+// U+00AD soft hyphen, U+034F combining grapheme joiner, U+115F/U+1160 hangul fillers,
+// U+17B4/U+17B5 Khmer vowel inherents, U+180E Mongolian vowel separator,
+// U+200B-U+200F zero-width space / non-joiner / joiner / LRM / RLM,
+// U+202A-U+202E bidi embedding controls, U+2060-U+2064 invisible math operators,
+// U+2066-U+2069 bidi isolate controls, U+FEFF BOM / zero-width no-break space.
+const INVISIBLE_RE = /[\u00AD\u034F\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
+
+const normalize = (t) => t.replace(INVISIBLE_RE, "").toLowerCase().replace(/\s+/g, " ").trim();
 
 let _alphaRe = null;
 let _others = null;

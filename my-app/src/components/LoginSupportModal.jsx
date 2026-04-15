@@ -637,7 +637,8 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                   fullWidth
                   size="small"
                   inputProps={{ maxLength: NAME_MAX }}
-                  sx={{ "& .MuiOutlinedInput-root": { bgcolor: styles.inputBg } }}
+                  helperText={`${name.length}/${NAME_MAX}`}
+                  sx={{ "& .MuiOutlinedInput-root": { bgcolor: styles.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }}
                 />
                 <TextField
                   label="Email Address"
@@ -872,7 +873,8 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendGuestMessage(); } }}
                       inputProps={{ maxLength: 1000 }}
-                      sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13, bgcolor: styles.inputBg } }}
+                      helperText={`${chatInput.length}/1000`}
+                      sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13, bgcolor: styles.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }}
                     />
                     <IconButton onClick={sendGuestMessage} disabled={!chatInput.trim() || chatSending}
                       sx={{ bgcolor: styles.accent, color: "#fff", borderRadius: 2, width: 38, height: 38, flexShrink: 0, "&:hover": { bgcolor: styles.accentHover }, "&.Mui-disabled": { bgcolor: styles.buttonDisabledBg } }}>
