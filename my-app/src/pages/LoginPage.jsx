@@ -980,6 +980,7 @@ export default function LoginPage({
                             <MenuItem value="word_of_mouth">Word of mouth</MenuItem>
                             <MenuItem value="social_media">Instagram / Social media</MenuItem>
                             <MenuItem value="reddit">Reddit</MenuItem>
+                            <MenuItem value="yikyak">YikYak</MenuItem>
                             <MenuItem value="northeastern_website">Northeastern website</MenuItem>
                             <MenuItem value="professor_class">Professor or class</MenuItem>
                             <MenuItem value="flyer_poster">Flyer or poster</MenuItem>
