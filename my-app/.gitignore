@@ -24,3 +24,7 @@ dist-ssr
 *.sw?
 .env
 tests/test-results/
+
+# Capacitor native projects (auto-generated, each dev runs npx cap add ios)
+ios/
+android/

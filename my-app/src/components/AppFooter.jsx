@@ -73,7 +73,7 @@ export default function AppFooter({ effectiveTheme = "light" }) {
           background: styles.bg,
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
+          justifyContent: { xs: "center", md: "space-between" },
           gap: 1,
           zIndex: 1200,
         }}
@@ -123,7 +123,7 @@ export default function AppFooter({ effectiveTheme = "light" }) {
             href="https://www.northeastern.edu/"
             target="_blank"
             rel="noopener noreferrer"
-            sx={{ color: styles.accent, fontWeight: 700 }}
+            sx={{ color: styles.accent, fontWeight: 700, display: { xs: "none", sm: "inline-flex" } }}
           >
             Northeastern
           </Button>

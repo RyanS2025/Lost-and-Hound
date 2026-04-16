@@ -133,7 +133,10 @@ export default function ResetPasswordPage({ effectiveTheme = "light", onComplete
         background: `radial-gradient(circle, ${BRAND.dot} 1px, transparent 1px)`,
         backgroundColor: BRAND.bg,
         backgroundSize: "24px 24px",
-        p: { xs: 2, md: 4 },
+        pt: { xs: "calc(16px + env(safe-area-inset-top))", md: 4 },
+        pb: { xs: "calc(16px + env(safe-area-inset-bottom))", md: 4 },
+        px: { xs: 2, md: 4 },
+        overflowX: "hidden",
       }}
     >
       <Paper
