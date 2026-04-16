@@ -66,18 +66,22 @@ export default function AppFooter({ effectiveTheme = "light" }) {
           bottom: 0,
           left: 0,
           right: 0,
-          minHeight: 46,
-          pb: "env(safe-area-inset-bottom)",
-          px: { xs: 1.25, sm: 2 },
           borderTop: styles.border,
           background: styles.bg,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: { xs: "center", md: "space-between" },
-          gap: 1,
           zIndex: 1200,
+          pb: "env(safe-area-inset-bottom)",
         }}
       >
+        <Box
+          sx={{
+            height: 56,
+            px: { xs: 2, sm: 2 },
+            display: "flex",
+            alignItems: "center",
+            justifyContent: { xs: "center", md: "space-between" },
+            gap: { xs: 0, sm: 1 },
+          }}
+        >
         <Typography
           variant="caption"
           sx={{
@@ -94,29 +98,38 @@ export default function AppFooter({ effectiveTheme = "light" }) {
           sx={{
             display: "flex",
             alignItems: "center",
-            gap: 0.25,
-            overflowX: "auto",
-            "&::-webkit-scrollbar": { display: "none" },
-            msOverflowStyle: "none",
-            scrollbarWidth: "none",
+            gap: 0,
           }}
         >
-          <Button size="small" sx={{ color: styles.accent, fontWeight: 700 }} onClick={() => setOpenModal("credits")}>
-            Credits
-          </Button>
-          <Button size="small" sx={{ color: styles.accent, fontWeight: 700 }} onClick={() => setOpenModal("disclaimer")}>
-            Disclaimer
-          </Button>
-          <Button size="small" sx={{ color: styles.accent, fontWeight: 700 }} onClick={() => setTermsOpen(true)}>
-            Terms
-          </Button>
-          <Button size="small" sx={{ color: styles.accent, fontWeight: 700 }} onClick={() => setOpenModal("privacy")}>
-            Privacy
-          </Button>
-          {/* TODO: wire support channel once contact workflow is finalized. */}
-          <Button size="small" sx={{ color: styles.accent, fontWeight: 700 }} onClick={() => setSupportOpen(true)}>
-            Support
-          </Button>
+          {[
+            { label: "Credits", action: () => setOpenModal("credits") },
+            { label: "Disclaimer", action: () => setOpenModal("disclaimer") },
+            { label: "Terms", action: () => setTermsOpen(true) },
+            { label: "Privacy", action: () => setOpenModal("privacy") },
+            { label: "Support", action: () => setSupportOpen(true) },
+          ].map((item, i, arr) => (
+            <Box key={item.label} sx={{ display: "flex", alignItems: "center" }}>
+              <Button
+                size="small"
+                sx={{
+                  color: styles.accent,
+                  fontWeight: 700,
+                  fontSize: 15,
+                  px: { xs: 1, sm: 1.25 },
+                  py: 0,
+                  minWidth: 0,
+                  lineHeight: 1,
+                }}
+                onClick={item.action}
+              >
+                {item.label}
+              </Button>
+              {i < arr.length - 1 && (
+                <Typography sx={{ color: styles.text, fontSize: 15, userSelect: "none", opacity: 0.6, lineHeight: 1 }}>·</Typography>
+              )}
+            </Box>
+          ))}
+        </Box>
           <Button
             size="small"
             component="a"

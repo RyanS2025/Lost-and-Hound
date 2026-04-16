@@ -29,8 +29,8 @@ export default function NoteCard({ storageKey, title, description }) {
       elevation={4}
       sx={{
         position: "fixed",
-        // Sit above the footer (46px) with 8px gap, plus safe area inset
-        bottom: { xs: "calc(54px + env(safe-area-inset-bottom))", sm: "calc(60px + env(safe-area-inset-bottom))" },
+        // Sit above the footer (56px) with 8px gap, plus safe area inset
+        bottom: { xs: "calc(64px + env(safe-area-inset-bottom))", sm: "calc(70px + env(safe-area-inset-bottom))" },
         right: { xs: 12, sm: 20 },
         zIndex: 1300,
         maxWidth: { xs: "calc(100vw - 24px)", sm: 300 },
