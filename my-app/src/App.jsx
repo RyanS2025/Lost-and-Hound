@@ -29,7 +29,7 @@ import {
 import AppFooter from "./components/AppFooter";
 import ReferralPollModal from "./components/ReferralPollModal";
 import { Capacitor } from "@capacitor/core";
-import { AppBar, Toolbar, Button, Typography, Container, Box, Paper, CircularProgress, Badge, Chip } from '@mui/material';
+import { AppBar, Toolbar, Button, IconButton, Typography, Container, Box, Paper, CircularProgress, Badge, Chip } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import HomeIcon from '@mui/icons-material/Home';
@@ -255,8 +255,13 @@ export default function App() {
   const pageBg = effectiveTheme === "dark" ? darkBg : "#f9f5f4";
 
   useEffect(() => {
+    const bg = effectiveTheme === "dark" ? darkBg : "#f5f0f0";
+    const dot = effectiveTheme === "dark" ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
     document.documentElement.style.colorScheme = effectiveTheme;
-    document.body.style.backgroundColor = effectiveTheme === "dark" ? darkBg : "#f5f0f0";
+    document.documentElement.style.backgroundColor = bg;
+    document.body.style.backgroundColor = bg;
+    document.body.style.backgroundImage = `radial-gradient(circle, ${dot} 1px, transparent 1px)`;
+    document.body.style.backgroundSize = "24px 24px";
   }, [effectiveTheme]);
 
   const navBg = effectiveTheme === "dark" ? "#1A1A1B" : "#A84D48";
@@ -523,25 +528,23 @@ export default function App() {
               }}
             >
               <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <Box component="img" src="/TabLogo.PNG" alt="Lost & Hound logo"
-                  sx={{ height: 32, width: 32, objectFit: "contain", filter: "brightness(0) invert(1)" }} />
+                <Box component="img" src="/TabLogo.png" alt="Lost & Hound logo"
+                  sx={{ height: 48, width: 48, objectFit: "contain" }} />
                 <Typography variant="h6" fontWeight={900} sx={{ letterSpacing: 0.5, display: { xs: "none", sm: "block" } }}>
                   Lost &amp; Hound
                 </Typography>
               </Box>
               <Box sx={{ flexGrow: 1 }} />
-              <Button
-                color="inherit"
-                onClick={toggleThemeFromNav}
-                startIcon={navThemeToggle.icon}
-                disabled={navThemeToggle.disabled}
-                sx={{ mr: 0.5, minWidth: 0 }}
-              >
-                {!isCompactNav ? navThemeToggle.label : null}
-              </Button>
-              <Button color="inherit" onClick={handleLogout} endIcon={<LogoutIcon />} sx={{ minWidth: 0 }}>
-                {!isCompactNav ? "Log Out" : null}
-              </Button>
+              {isCompactNav ? (
+                <IconButton color="inherit" onClick={toggleThemeFromNav} disabled={navThemeToggle.disabled} sx={{ mr: 0.5 }}>{navThemeToggle.icon}</IconButton>
+              ) : (
+                <Button color="inherit" onClick={toggleThemeFromNav} startIcon={navThemeToggle.icon} disabled={navThemeToggle.disabled} sx={{ mr: 1, minWidth: 0 }}>{navThemeToggle.label}</Button>
+              )}
+              {isCompactNav ? (
+                <IconButton color="inherit" onClick={handleLogout}><LogoutIcon /></IconButton>
+              ) : (
+                <Button color="inherit" onClick={handleLogout} endIcon={<LogoutIcon />} sx={{ minWidth: 0 }}>Log Out</Button>
+              )}
             </Toolbar>
           </AppBar>
           <Box sx={{ height: "calc(64px + env(safe-area-inset-top))" }} />
@@ -557,7 +560,8 @@ export default function App() {
           />
           <Box sx={{
             display: "flex", justifyContent: "center", alignItems: "center",
-            minHeight: "calc(100vh - 120px)", p: 3,
+            height: "calc(100dvh - 64px - env(safe-area-inset-top) - 56px - env(safe-area-inset-bottom))",
+            p: 3,
             boxSizing: "border-box",
           }}>
               <Paper elevation={0} sx={{
@@ -646,37 +650,23 @@ export default function App() {
               />
             )}
           </Box>
-          <Button
-            color="inherit"
-            component={Link}
-            to="/"
-            startIcon={<FeedIcon />}
-            sx={{ mr: { xs: 0.5, sm: 1 }, minWidth: 0 }}
-          >
-            {!isCompactNav ? "Feed" : null}
-          </Button>
-          <Button
-            color="inherit"
-            component={Link}
-            to="/map"
-            startIcon={<MapIcon />}
-            sx={{ mr: { xs: 0.5, sm: 1 }, minWidth: 0 }}
-          >
-            {!isCompactNav ? "Map" : null}
-          </Button>
-          <Button
-            color="inherit"
-            component={Link}
-            to="/messages"
-            startIcon={
-              <Badge badgeContent={unreadCount} color="error" max={99}>
-                <MessageIcon />
-              </Badge>
-            }
-            sx={{ minWidth: 0 }}
-          >
-            {!isCompactNav ? "Messages" : null}
-          </Button>
+          {isCompactNav ? (
+            <IconButton color="inherit" component={Link} to="/" sx={{ mr: 0.5 }}><FeedIcon /></IconButton>
+          ) : (
+            <Button color="inherit" component={Link} to="/" startIcon={<FeedIcon />} sx={{ mr: 1, minWidth: 0 }}>Feed</Button>
+          )}
+          {isCompactNav ? (
+            <IconButton color="inherit" component={Link} to="/map" sx={{ mr: 0.5 }}><MapIcon /></IconButton>
+          ) : (
+            <Button color="inherit" component={Link} to="/map" startIcon={<MapIcon />} sx={{ mr: 1, minWidth: 0 }}>Map</Button>
+          )}
+          {isCompactNav ? (
+            <IconButton color="inherit" component={Link} to="/messages">
+              <Badge badgeContent={unreadCount} color="error" max={99}><MessageIcon /></Badge>
+            </IconButton>
+          ) : (
+            <Button color="inherit" component={Link} to="/messages" startIcon={<Badge badgeContent={unreadCount} color="error" max={99}><MessageIcon /></Badge>} sx={{ minWidth: 0 }}>Messages</Button>
+          )}
           <Box sx={{ flexGrow: 1 }} />
           {!isDemoMode && !Capacitor.isNativePlatform() && effectiveProfile?.is_moderator && (
             <Button
@@ -693,42 +683,28 @@ export default function App() {
               ? effectiveProfile.first_name + " " + effectiveProfile.last_name
               : user?.email ?? "Demo User"}
           </Typography>
-          <Button
-            color="inherit"
-            onClick={toggleThemeFromNav}
-            startIcon={navThemeToggle.icon}
-            disabled={navThemeToggle.disabled}
-            sx={{ mr: { xs: 0.5, sm: 1 }, minWidth: 0 }}
-          >
-            {!isCompactNav ? navThemeToggle.label : null}
-          </Button>
-          <Button
-            color="inherit"
-            component={Link}
-            to="/settings"
-            endIcon={<SettingsIcon />}
-            sx={{ mr: { xs: 0.5, sm: 1 }, minWidth: 0 }}
-          >
-            {!isCompactNav ? "Settings" : null}
-          </Button>
-          {isDemoMode ? (
-            <Button
-              color="inherit"
-              onClick={handleExitDemo}
-              endIcon={<LogoutIcon />}
-              sx={{ minWidth: 0 }}
-            >
-              {!isCompactNav ? "Exit Demo" : null}
-            </Button>
+          {isCompactNav ? (
+            <IconButton color="inherit" onClick={toggleThemeFromNav} disabled={navThemeToggle.disabled} sx={{ mr: 0.5 }}>{navThemeToggle.icon}</IconButton>
           ) : (
-            <Button
-              color="inherit"
-              onClick={handleLogout}
-              endIcon={<LogoutIcon />}
-              sx={{ minWidth: 0 }}
-            >
-              {!isCompactNav ? "Log Out" : null}
-            </Button>
+            <Button color="inherit" onClick={toggleThemeFromNav} startIcon={navThemeToggle.icon} disabled={navThemeToggle.disabled} sx={{ mr: 1, minWidth: 0 }}>{navThemeToggle.label}</Button>
+          )}
+          {isCompactNav ? (
+            <IconButton color="inherit" component={Link} to="/settings" sx={{ mr: 0.5 }}><SettingsIcon /></IconButton>
+          ) : (
+            <Button color="inherit" component={Link} to="/settings" endIcon={<SettingsIcon />} sx={{ mr: 1, minWidth: 0 }}>Settings</Button>
+          )}
+          {isDemoMode ? (
+            isCompactNav ? (
+              <IconButton color="inherit" onClick={handleExitDemo}><LogoutIcon /></IconButton>
+            ) : (
+              <Button color="inherit" onClick={handleExitDemo} endIcon={<LogoutIcon />} sx={{ minWidth: 0 }}>Exit Demo</Button>
+            )
+          ) : (
+            isCompactNav ? (
+              <IconButton color="inherit" onClick={handleLogout}><LogoutIcon /></IconButton>
+            ) : (
+              <Button color="inherit" onClick={handleLogout} endIcon={<LogoutIcon />} sx={{ minWidth: 0 }}>Log Out</Button>
+            )
           )}
         </Toolbar>
       </AppBar>

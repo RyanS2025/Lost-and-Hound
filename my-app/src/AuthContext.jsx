@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "../backend/supabaseClient";
 import apiFetch from "./utils/apiFetch";
+import LoadingScreen from "./components/LoadingScreen";
 
 const AuthContext = createContext();
 
@@ -58,10 +59,27 @@ export function AuthProvider({ children }) {
         console.error("Profile fetch error:", err);
         setProfile(null);
       }
-      };
+    };
 
     fetchProfile();
   }, [user?.id, sessionToken, isPasswordRecovery]);
+
+  // Real-time ban enforcement: subscribe to the user's own profile row so any
+  // ban applied by a moderator activates immediately without a page refresh.
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`profile-ban-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${user.id}` },
+        (payload) => {
+          setProfile((prev) => prev ? { ...prev, ...payload.new } : payload.new);
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id]);
 
   const logout = async () => {
     setSessionToken(null);
@@ -80,7 +98,7 @@ export function AuthProvider({ children }) {
     setProfile((prev) => ({ ...prev, ...fields }));
   };
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) return <LoadingScreen />;
 
   return (
     <AuthContext.Provider value={{ user, profile, sessionToken, updateProfile, logout, forgotPassword, isPasswordRecovery, setIsPasswordRecovery }}>
