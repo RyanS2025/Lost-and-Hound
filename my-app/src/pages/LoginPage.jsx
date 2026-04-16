@@ -258,7 +258,7 @@ export default function LoginPage({
         fetch(`${API_BASE}/api/referral`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source: referralSource }),
+          body: JSON.stringify({ source: referralSource, userId: data.user.id }),
         }).catch(() => {});
       }
     } catch (err) {
@@ -1171,7 +1171,7 @@ export default function LoginPage({
               </>
             )}
 
-            <Typography
+            {!loginTransition && !demoLaunching && <Typography
               variant="caption"
               onClick={() => setDemoOpen(true)}
               sx={{
@@ -1187,7 +1187,7 @@ export default function LoginPage({
               }}
             >
               Want to preview our project?
-            </Typography>
+            </Typography>}
           </Box>
         </Paper>
       </Box>
