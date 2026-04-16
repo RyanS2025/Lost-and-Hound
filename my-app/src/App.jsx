@@ -29,7 +29,7 @@ import {
 import AppFooter from "./components/AppFooter";
 import ReferralPollModal from "./components/ReferralPollModal";
 import { Capacitor } from "@capacitor/core";
-import { AppBar, Toolbar, Button, IconButton, Typography, Container, Box, Paper, CircularProgress, Badge, Chip } from '@mui/material';
+import { AppBar, Toolbar, Button, IconButton, Typography, Container, Box, Paper, Badge, Chip } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import HomeIcon from '@mui/icons-material/Home';
@@ -47,6 +47,52 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/timezone';
 import apiFetch from './utils/apiFetch';
 import { prefetchDashboard, clearDashboardCache } from './utils/dashboardPrefetch';
+
+const LOADER_MESSAGES = [
+  "Sniffing for lost items...",
+  "Chasing squirrels...",
+  "Fetching your data...",
+  "Wagging tail...",
+  "Digging up listings...",
+  "Following the scent...",
+  "Nose to the ground...",
+  "Running in circles...",
+  "Almost home!",
+];
+
+function LogoSpinner({ accent }) {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setIdx((i) => (i + 1) % LOADER_MESSAGES.length), 2000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+      <Box sx={{ position: "relative", width: 340, height: 340, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Box component="svg" width="340" height="340" viewBox="0 0 340 340"
+          sx={{ position: "absolute", top: 0, left: 0, animation: "spinLogo 1.4s linear infinite", transformOrigin: "170px 170px",
+            "@keyframes spinLogo": { to: { transform: "rotate(360deg)" } } }}>
+          <circle cx="170" cy="170" r="168" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="2" />
+          <circle cx="170" cy="170" r="168" fill="none" stroke={accent} strokeWidth="2" strokeLinecap="round" strokeDasharray="791 264" />
+        </Box>
+        <Box component="img" src="/TabLogo.png" alt="Lost & Hound" sx={{ width: 230, height: 230, objectFit: "contain", position: "relative", zIndex: 1 }} />
+      </Box>
+      <Typography
+        key={idx}
+        sx={{
+          fontSize: 18, fontWeight: 800, color: accent, opacity: 0.9,
+          animation: "fadeInMsg 0.3s ease",
+          "@keyframes fadeInMsg": {
+            from: { opacity: 0, transform: "translateY(4px)" },
+            to: { opacity: 0.9, transform: "translateY(0)" },
+          },
+        }}
+      >
+        {LOADER_MESSAGES[idx]}
+      </Typography>
+    </Box>
+  );
+}
 
 export default function App() {
   const { user, profile, sessionToken, logout, updateProfile, isPasswordRecovery, setIsPasswordRecovery } = useAuth();
@@ -415,19 +461,7 @@ export default function App() {
               backgroundSize: "24px 24px",
             }}
           >
-            <Box sx={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <CircularProgress
-                size={340}
-                thickness={1}
-                sx={{ color: effectiveTheme === "dark" ? darkAccent : "#A84D48", position: "absolute" }}
-              />
-              <Box
-                component="img"
-                src="/TabLogo.png"
-                alt="Lost & Hound"
-                sx={{ width: 230, height: 230, objectFit: "contain" }}
-              />
-            </Box>
+            <LogoSpinner accent={effectiveTheme === "dark" ? darkAccent : "#A84D48"} />
           </Box>
         ) : (
           <ResetPasswordPage
@@ -461,26 +495,7 @@ export default function App() {
               backgroundSize: "24px 24px",
             }}
           >
-            <Box sx={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <CircularProgress
-                size={340}
-                thickness={1}
-                sx={{
-                  color: effectiveTheme === "dark" ? darkAccent : "#A84D48",
-                  position: "absolute",
-                }}
-              />
-              <Box
-                component="img"
-                src="/TabLogo.png"
-                alt="Lost & Hound"
-                sx={{
-                  width: 230,
-                  height: 230,
-                  objectFit: "contain",
-                }}
-              />
-            </Box>
+            <LogoSpinner accent={effectiveTheme === "dark" ? darkAccent : "#A84D48"} />
           </Box>
         ) : (
           <Routes>

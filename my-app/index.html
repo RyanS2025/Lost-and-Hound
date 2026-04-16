@@ -9,9 +9,69 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
   </head>
-  <style>html, body { background-color: #101214; }</style>
+  <style>
+    html, body { background-color: #101214; margin: 0; }
+    #pre-loader {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background-color: #101214;
+      background-image: radial-gradient(circle, rgba(255,255,255,0.07) 1px, transparent 1px);
+      background-size: 24px 24px;
+      gap: 24px;
+    }
+    #pre-loader .spinner-wrap {
+      position: relative; width: 340px; height: 340px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #pre-loader svg {
+      position: absolute; top: 0; left: 0;
+      animation: spin 1.4s linear infinite;
+      transform-origin: 170px 170px;
+    }
+    #pre-loader img {
+      width: 230px; height: 230px; object-fit: contain; position: relative; z-index: 1;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #pre-loader p {
+      font-family: Nunito, sans-serif; font-size: 18px; font-weight: 800;
+      color: rgba(255,69,0,0.9); margin: 0;
+      animation: fadeInMsg 0.3s ease;
+    }
+    @keyframes fadeInMsg {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="pre-loader">
+        <div class="spinner-wrap">
+          <svg width="340" height="340" viewBox="0 0 340 340" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="170" cy="170" r="168" stroke="rgba(255,255,255,0.08)" stroke-width="2" />
+            <circle cx="170" cy="170" r="168" stroke="#FF4500" stroke-width="2" stroke-linecap="round"
+              stroke-dasharray="791 264" />
+          </svg>
+          <img src="/TabLogo.png" alt="Lost &amp; Hound" />
+        </div>
+        <p>Sniffing for lost items...</p>
+      </div>
+    </div>
+    <script>
+      var msgs = [
+        "Sniffing for lost items...", "Chasing squirrels...", "Fetching your data...",
+        "Wagging tail...", "Digging up listings...", "Following the scent...",
+        "Nose to the ground...", "Running in circles...", "Almost home!",
+      ];
+      var i = 0;
+      var el = document.querySelector("#pre-loader p");
+      if (el) setInterval(function() {
+        i = (i + 1) % msgs.length;
+        el.style.animation = "none";
+        el.offsetHeight; // reflow to restart animation
+        el.style.animation = "";
+        el.textContent = msgs[i];
+      }, 2000);
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
