@@ -182,12 +182,15 @@ app.get("/api/stats/overview", requireAuth, require2FA, requireModerator, async 
 
 // POST /api/referral — no auth; fire-and-forget from sign-up flow
 app.post("/api/referral", strictLimiter, async (req, res) => {
-  const { source } = req.body || {};
+  const { source, userId } = req.body || {};
   if (!source || !REFERRAL_SOURCES.has(source)) {
     return res.status(400).json({ error: "Invalid source" });
   }
   const { error } = await supabase.from("referral_sources").insert({ source });
   if (error) return res.status(500).json({ error: "Failed to save referral" });
+  if (userId && typeof userId === "string") {
+    await supabase.from("profiles").update({ referral_answered: true }).eq("id", userId);
+  }
   res.json({ success: true });
 });
 
