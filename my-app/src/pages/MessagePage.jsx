@@ -42,6 +42,21 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
   const [msgProfane, setMsgProfane] = useState(false);
   const [reportTarget, setReportTarget] = useState(null);
   const [searchParams] = useSearchParams();
+
+  // Track visual viewport height so keyboard open/close resizes the chat container
+  const [viewportH, setViewportH] = useState(
+    () => window.visualViewport?.height ?? window.innerHeight
+  );
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setViewportH(vv.height);
+    vv.addEventListener("resize", update);
+    return () => vv.removeEventListener("resize", update);
+  }, []);
+  // Heuristic: keyboard is open when visible viewport is <80% of screen height
+  const keyboardOpen = viewportH < window.screen.height * 0.8;
+
   const scrollContainerRef = useRef(null);
   const scrollIntentRef = useRef("none");
   const prevScrollHeightRef = useRef(0);
@@ -341,7 +356,9 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
           px: { xs: 1.25, sm: 2, md: 3 },
           py: { xs: 1.25, sm: 2, md: 3 },
           boxSizing: "border-box",
-          height: "calc(100dvh - 64px - 46px - env(safe-area-inset-top) - env(safe-area-inset-bottom))",
+          height: keyboardOpen
+            ? `calc(${viewportH}px - 64px - env(safe-area-inset-top))`
+            : "calc(100dvh - 64px - 56px - env(safe-area-inset-top) - env(safe-area-inset-bottom))",
           overflow: "hidden",
           color: isDark ? "#D7DADC" : "inherit",
         }}
