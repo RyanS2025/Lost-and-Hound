@@ -7,6 +7,7 @@ import { useDemo } from "../contexts/DemoContext";
 import {
   Box, Typography, Paper, Slider, Chip, IconButton, CircularProgress,
   Collapse, Button, Modal, Autocomplete, TextField,
+  Select, MenuItem, FormControl, InputLabel,
 } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import MyLocationIcon from "@mui/icons-material/MyLocation";
@@ -21,9 +22,7 @@ import apiFetch from "../utils/apiFetch";
 import { DEFAULT_TIME_ZONE, formatRelativeDate } from "../utils/timezone";
 
 setOptions({
-  key: Capacitor.isNativePlatform()
-    ? import.meta.env.VITE_GOOGLE_MAPS_API_KEY_MOBILE
-    : import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
+  key: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
   v: "weekly",
 });
 
@@ -369,6 +368,7 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
   const [showResolved, setShowResolved] = useState(false);
   // "all" shows both types. "found" / "lost" narrows markers and the side panel list.
   const [listingTypeFilter, setListingTypeFilter] = useState("all");
+  const [mobileBuilding, setMobileBuilding] = useState("");
 
   const activeCampus = CAMPUSES.find((c) => c.id === selectedCampus) ?? CAMPUSES[0];
 
@@ -422,6 +422,7 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
   const handleCampusChange = (campusId) => {
     setSelectedCampus(campusId);
     setCampusBuildings([]);
+    setMobileBuilding("");
     clearSearch();
     const campus = CAMPUSES.find((c) => c.id === campusId) ?? CAMPUSES[0];
     if (mapInstanceRef.current) {
@@ -715,48 +716,77 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
       }}>
       <Box sx={{ width: "100%", maxWidth: 1200 }}>
         {/* Campus selector */}
-        <Box
-          sx={{
-            display: "flex", gap: 0.6, flexWrap: "nowrap", mb: 1,
-            pb: 1, borderBottom: isDark ? "1px solid rgba(255,255,255,0.12)" : "1.5px solid #f0e8e8",
-            justifyContent: { xs: "flex-start", md: "center" },
-            overflowX: "auto",
-            flexShrink: 0,
-            WebkitOverflowScrolling: "touch",
-            "&::-webkit-scrollbar": { height: 4 },
-          }}
-        >
-          {CAMPUSES.map((campus) => (
-            <Chip
-              key={campus.id}
-              label={`${campus.name}, ${campus.state}`}
-              onClick={() => handleCampusChange(campus.id)}
-              variant={selectedCampus === campus.id ? "filled" : "outlined"}
+        <Box sx={{ mb: 1, pb: 1, borderBottom: isDark ? "1px solid rgba(255,255,255,0.12)" : "1.5px solid #f0e8e8" }}>
+          {/* Desktop: scrollable chip row */}
+          <Box
+            sx={{
+              display: { xs: "none", md: "flex" }, gap: 0.6, flexWrap: "nowrap",
+              justifyContent: "center", overflowX: "auto", flexShrink: 0,
+              WebkitOverflowScrolling: "touch", "&::-webkit-scrollbar": { height: 4 },
+            }}
+          >
+            {CAMPUSES.map((campus) => (
+              <Chip
+                key={campus.id}
+                label={`${campus.name}, ${campus.state}`}
+                onClick={() => handleCampusChange(campus.id)}
+                variant={selectedCampus === campus.id ? "filled" : "outlined"}
+                sx={{
+                  fontWeight: 700, fontSize: 11, height: 26, cursor: "pointer", flexShrink: 0,
+                  "& .MuiChip-label": { px: 1 },
+                  borderColor: selectedCampus === campus.id ? "#A84D48" : isDark ? "rgba(255,255,255,0.2)" : "#e0d0d0",
+                  background: selectedCampus === campus.id ? "#A84D48" : isDark ? "#1A1A1B" : "#fff",
+                  color: selectedCampus === campus.id ? "#fff" : isDark ? "#B8BABD" : "#7a5050",
+                  "&:hover": {
+                    background: selectedCampus === campus.id ? "#8f3e3a" : isDark ? "#2D2D2E" : "#fdf0f0",
+                    borderColor: "#A84D48",
+                  },
+                  transition: "all 0.15s",
+                }}
+              />
+            ))}
+          </Box>
+          {/* Mobile: dropdown */}
+          <FormControl
+            size="small"
+            fullWidth
+            sx={{ display: { xs: "flex", md: "none" } }}
+          >
+            <InputLabel sx={{ fontWeight: 700, color: isDark ? "#B8BABD" : undefined }}>Campus</InputLabel>
+            <Select
+              value={selectedCampus}
+              label="Campus"
+              onChange={(e) => handleCampusChange(e.target.value)}
+              MenuProps={{ PaperProps: { sx: { maxHeight: 300, maxWidth: 280 } } }}
               sx={{
-                fontWeight: 700, fontSize: 11, height: 26, cursor: "pointer", flexShrink: 0,
-                "& .MuiChip-label": { px: 1 },
-                borderColor: selectedCampus === campus.id ? "#A84D48" : isDark ? "rgba(255,255,255,0.2)" : "#e0d0d0",
-                background: selectedCampus === campus.id ? "#A84D48" : isDark ? "#1A1A1B" : "#fff",
-                color: selectedCampus === campus.id ? "#fff" : isDark ? "#B8BABD" : "#7a5050",
-                "&:hover": {
-                  background: selectedCampus === campus.id ? "#8f3e3a" : isDark ? "#2D2D2E" : "#fdf0f0",
-                  borderColor: "#A84D48",
-                },
-                transition: "all 0.15s",
+                fontWeight: 700,
+                background: isDark ? "#1A1A1B" : "#fff",
+                color: isDark ? "#D7DADC" : "inherit",
+                "& .MuiOutlinedInput-notchedOutline": { borderColor: isDark ? "rgba(255,255,255,0.2)" : "#e0d0d0" },
+                "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#A84D48" },
+                "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: "#A84D48" },
+                "& .MuiSvgIcon-root": { color: isDark ? "#B8BABD" : undefined },
               }}
-            />
-          ))}
+            >
+              {CAMPUSES.map((campus) => (
+                <MenuItem key={campus.id} value={campus.id} sx={{ fontWeight: 700 }}>
+                  {campus.name}, {campus.state}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </Box>
 
         {/* Header */}
         <Box sx={{
-          display: "flex", justifyContent: "space-between",
-          alignItems: { xs: "center", sm: "center" },
-          flexDirection: "row",
-          gap: 1, mb: 1.5, flexShrink: 0,
+          display: "flex",
+          justifyContent: { xs: "flex-start", sm: "space-between" },
+          alignItems: { xs: "flex-start", sm: "center" },
+          flexDirection: { xs: "column", sm: "row" },
+          gap: { xs: 0.75, sm: 1 }, mb: 1.5, flexShrink: 0,
         }}>
           <Typography variant={isMobile ? "h5" : "h4"} fontWeight={900}>Campus Map</Typography>
-          <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <Box sx={{ display: "flex", gap: { xs: 0.75, sm: 1 }, alignItems: "center", flexWrap: "nowrap" }}>
             {/* Listing type toggle — cycles All → Lost → Found → All */}
             {(() => {
               const cycle = ["all", "lost", "found"];
@@ -768,7 +798,7 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
                   clickable
                   onClick={() => setListingTypeFilter(cycle[(cycle.indexOf(listingTypeFilter) + 1) % cycle.length])}
                   sx={{
-                    fontWeight: 800, fontSize: 12,
+                    fontWeight: 800, fontSize: { xs: 11, sm: 12 },
                     background: typeColor,
                     color: "#fff",
                     border: `1.5px solid ${typeColor}`,
@@ -782,7 +812,7 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
               clickable
               onClick={() => setShowResolved(v => !v)}
               sx={{
-                fontWeight: 800, fontSize: 12,
+                fontWeight: 800, fontSize: { xs: 11, sm: 12 },
                 background: showResolved ? (isDark ? "#1f3527" : "#dcfce7") : isDark ? "#2D2D2E" : "#f5f5f5",
                 color: showResolved ? (isDark ? "#6ee7b7" : "#16a34a") : isDark ? "#818384" : "#999",
                 border: `1.5px solid ${showResolved ? (isDark ? "rgba(110,231,183,0.42)" : "#86efac") : isDark ? "rgba(255,255,255,0.18)" : "#e0e0e0"}`,
@@ -790,9 +820,15 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
               }}
             />
             {searchPin && (
-              <Button size="small" onClick={clearSearch} startIcon={<CloseIcon />} sx={{ color: "#A84D48", fontWeight: 700, background: isDark ? "#1A1A1B" : "#fff", borderRadius: 2, px: 1.25 }}>
-                Clear
-              </Button>
+              isMobile ? (
+                <IconButton size="small" onClick={clearSearch} sx={{ color: "#A84D48", background: isDark ? "#1A1A1B" : "#fff", border: isDark ? "1px solid rgba(255,255,255,0.18)" : "1px solid #ecdcdc", borderRadius: 2 }}>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              ) : (
+                <Button size="small" onClick={clearSearch} startIcon={<CloseIcon />} sx={{ color: "#A84D48", fontWeight: 700, background: isDark ? "#1A1A1B" : "#fff", borderRadius: 2, px: 1.25 }}>
+                  Clear
+                </Button>
+              )
             )}
             <Button
               variant="outlined" onClick={handleRefresh} disabled={refreshing}
@@ -845,6 +881,7 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
               }}
             />
 
+            {/* Desktop: type-to-search Autocomplete */}
             <Autocomplete
               key={selectedCampus}
               options={campusBuildings}
@@ -878,8 +915,48 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
                   }}
                 />
               )}
-              sx={{ position: "absolute", top: 12, left: 12, width: { xs: "calc(100% - 24px)", sm: 270 }, zIndex: 10 }}
+              sx={{ position: "absolute", top: 12, left: 12, width: 270, zIndex: 10, display: { xs: "none", md: "block" } }}
             />
+
+            {/* Mobile: tap-to-select dropdown (no keyboard) */}
+            <FormControl
+              size="small"
+              sx={{ position: "absolute", top: 12, left: 12, width: "calc(100% - 24px)", zIndex: 10, display: { xs: "flex", md: "none" } }}
+            >
+              <InputLabel sx={{ fontWeight: 700, color: isDark ? "#B8BABD" : undefined, bgcolor: "transparent" }}>
+                {campusBuildings.length ? "Select building…" : `No buildings for ${activeCampus.name} yet`}
+              </InputLabel>
+              <Select
+                value={mobileBuilding}
+                label={campusBuildings.length ? "Select building…" : `No buildings for ${activeCampus.name} yet`}
+                onChange={(e) => {
+                  const building = campusBuildings.find((b) => b.name === e.target.value);
+                  if (building && mapInstanceRef.current) {
+                    mapInstanceRef.current.panTo({ lat: building.lat, lng: building.lng });
+                    mapInstanceRef.current.setZoom(18);
+                  }
+                  setMobileBuilding(e.target.value);
+                }}
+                disabled={campusBuildings.length === 0}
+                MenuProps={{ PaperProps: { sx: { maxHeight: 300, maxWidth: "calc(100vw - 32px)" } } }}
+                sx={{
+                  fontWeight: 700, borderRadius: 2,
+                  background: isDark ? "rgba(35,35,36,0.95)" : "rgba(255,255,255,0.95)",
+                  backdropFilter: "blur(8px)",
+                  color: isDark ? "#D7DADC" : "inherit",
+                  "& .MuiOutlinedInput-notchedOutline": { borderColor: isDark ? "rgba(255,255,255,0.16)" : "#ecdcdc" },
+                  "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#A84D48" },
+                  "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: "#A84D48" },
+                  "& .MuiSvgIcon-root": { color: isDark ? "#B8BABD" : undefined },
+                }}
+              >
+                {campusBuildings.map((b) => (
+                  <MenuItem key={b.name} value={b.name} sx={{ fontWeight: 700 }}>
+                    {b.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
 
             {!searchPin && !loading && (
               <Paper
@@ -940,7 +1017,7 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
               <Paper
                 elevation={2}
                 sx={{
-                  p: 2.5, borderRadius: 3,
+                  p: 2.5, borderRadius: 3, mb: 2,
                   border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc",
                   background: isDark ? "#1A1A1B" : "#fff",
                 }}

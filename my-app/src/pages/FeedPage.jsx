@@ -219,12 +219,11 @@ function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAUL
     <Modal open={!!item} onClose={onClose}>
       <Box sx={{
         position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-        background: isDark ? "#1A1A1B" : "#fff", borderRadius: 4, p: "26px", width: "100%", maxWidth: 520,
+        background: isDark ? "#1A1A1B" : "#fff", borderRadius: 4, p: "26px", maxWidth: 520,
         maxHeight: "90vh", overflowY: "auto", outline: "none",
         border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
-        mx: 1.5,
         boxSizing: "border-box",
-        width: { xs: "calc(100% - 24px)", sm: "100%" },
+        width: { xs: "calc(100% - 32px)", sm: "100%" },
       }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 2 }}>
           <Box sx={{ flex: 1, minWidth: 0, pr: 1 }}>
@@ -904,6 +903,7 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
               onChange={(e) => setSelectedCampus(e.target.value)}
               displayEmpty
               sx={{ background: isDark ? "#2D2D2E" : "#fff" }}
+              MenuProps={{ PaperProps: { sx: { maxHeight: 300, maxWidth: 260 } } }}
             >
               <MenuItem value="all">All Campuses</MenuItem>
               {CAMPUSES.map((c) => (
@@ -913,8 +913,8 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
           </FormControl>
         </Box>
 
-        {/* Category filter chips */}
-        <Box sx={{ display: "flex", gap: 1, overflowX: "auto", pb: 1, mb: 1.5 }}>
+        {/* Category chips — desktop only */}
+        <Box sx={{ display: { xs: "none", sm: "flex" }, gap: 1, overflowX: "auto", pb: 1, mb: 1.5 }}>
           {CATEGORIES.map(c => (
             <Chip key={c} label={c} clickable onClick={() => setCategory(c)} sx={{
               flexShrink: 0, fontWeight: 800,
@@ -926,12 +926,53 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
           ))}
         </Box>
 
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: { xs: "flex-start", sm: "center" }, flexDirection: { xs: "column", sm: "row" }, gap: 1, mb: 2 }}>
+        {/* Mobile: Category + Sort by side by side */}
+        <Box sx={{ display: { xs: "flex", sm: "none" }, gap: 1, mb: 1.5 }}>
+          <FormControl size="small" sx={{ flex: 1 }}>
+            <InputLabel>Category</InputLabel>
+            <Select value={category} label="Category" onChange={e => setCategory(e.target.value)}
+              sx={{ background: isDark ? "#2D2D2E" : "#fff" }}
+              MenuProps={{ PaperProps: { sx: { maxHeight: 300, maxWidth: 200 } } }}>
+              {CATEGORIES.map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ flex: 1 }}>
+            <InputLabel>Sort by</InputLabel>
+            <Select value={sort} label="Sort by" onChange={e => setSort(e.target.value)}
+              sx={{ background: isDark ? "#2D2D2E" : "#fff" }}
+              MenuProps={{ PaperProps: { sx: { maxHeight: 300, maxWidth: 200 } } }}>
+              {SORT_OPTIONS.map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}
+            </Select>
+          </FormControl>
+        </Box>
+
+        {/* Mobile: filter chips row */}
+        <Box sx={{ display: { xs: "flex", sm: "none" }, gap: 1, mb: 2, alignItems: "center", justifyContent: "center" }}>
+          {(() => {
+            const cycle = ["all", "lost", "found"];
+            const typeColor = listingTypeFilter === "all" ? "#A84D48" : LISTING_TYPE_COLORS[listingTypeFilter];
+            const typeLabel = listingTypeFilter === "all" ? "All" : LISTING_TYPE_LABELS[listingTypeFilter];
+            return (
+              <Chip label={`Type: ${typeLabel}`} clickable
+                onClick={() => setListingTypeFilter(cycle[(cycle.indexOf(listingTypeFilter) + 1) % cycle.length])}
+                sx={{ fontWeight: 800, fontSize: 12, background: typeColor, color: "#fff", border: `1.5px solid ${typeColor}`, "&:hover": { background: typeColor, opacity: 0.85 } }}
+              />
+            );
+          })()}
+          <Chip label={showMyPosts ? "My Posts: On" : "My Posts"} clickable onClick={() => setShowMyPosts(v => !v)}
+            sx={{ fontWeight: 800, fontSize: 12, background: showMyPosts ? (isDark ? "#2a2520" : "#fff3cd") : isDark ? "#2D2D2E" : "#f5f5f5", color: showMyPosts ? (isDark ? "#f6c66a" : "#7d4e00") : isDark ? "#818384" : "#999", border: `1.5px solid ${showMyPosts ? (isDark ? "rgba(245,158,11,0.5)" : "#ffc107") : isDark ? "rgba(255,255,255,0.18)" : "#e0e0e0"}`, "&:hover": { background: showMyPosts ? (isDark ? "#3a2f22" : "#ffe8a3") : isDark ? "#343536" : "#ececec" } }}
+          />
+          <Chip label={showResolved ? "Hide Resolved" : "Show Resolved"} clickable onClick={() => setShowResolved(v => !v)}
+            sx={{ fontWeight: 800, fontSize: 12, background: showResolved ? (isDark ? "#1f3527" : "#dcfce7") : isDark ? "#2D2D2E" : "#f5f5f5", color: showResolved ? (isDark ? "#6ee7b7" : "#16a34a") : isDark ? "#818384" : "#999", border: `1.5px solid ${showResolved ? (isDark ? "rgba(110,231,183,0.42)" : "#86efac") : isDark ? "rgba(255,255,255,0.18)" : "#e0e0e0"}`, "&:hover": { background: showResolved ? (isDark ? "#27412f" : "#bbf7d0") : isDark ? "#343536" : "#ececec" } }}
+          />
+        </Box>
+
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
           <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={700}>
             {filtered.length} item{filtered.length !== 1 ? "s" : ""}
           </Typography>
-          <Box sx={{ display: "flex", gap: 1, alignItems: "center", width: { xs: "100%", sm: "auto" }, justifyContent: { xs: "space-between", sm: "flex-end" } }}>
-            {/* Listing type toggle — cycles All → Lost → Found → All */}
+          {/* Desktop: filter chips + sort */}
+          <Box sx={{ display: { xs: "none", sm: "flex" }, gap: 1, alignItems: "center" }}>
             {(() => {
               const cycle = ["all", "lost", "found"];
               const typeColor = listingTypeFilter === "all" ? "#A84D48" : LISTING_TYPE_COLORS[listingTypeFilter];
@@ -975,7 +1016,7 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
                 "&:hover": { background: showResolved ? (isDark ? "#27412f" : "#bbf7d0") : isDark ? "#343536" : "#ececec" },
               }}
             />
-            <FormControl size="small" sx={{ minWidth: { xs: 140, sm: 150 } }}>
+            <FormControl size="small" sx={{ minWidth: 150 }}>
               <InputLabel>Sort by</InputLabel>
               <Select value={sort} label="Sort by" onChange={e => setSort(e.target.value)} sx={{ background: isDark ? "#2D2D2E" : "#fff" }}>
                 {SORT_OPTIONS.map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}

@@ -29,7 +29,7 @@ import {
 import AppFooter from "./components/AppFooter";
 import ReferralPollModal from "./components/ReferralPollModal";
 import { Capacitor } from "@capacitor/core";
-import { AppBar, Toolbar, Button, Typography, Container, Box, Paper, CircularProgress, Badge, Chip } from '@mui/material';
+import { AppBar, Toolbar, Button, IconButton, Typography, Container, Box, Paper, Badge, Chip } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import HomeIcon from '@mui/icons-material/Home';
@@ -47,6 +47,52 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/timezone';
 import apiFetch from './utils/apiFetch';
 import { prefetchDashboard, clearDashboardCache } from './utils/dashboardPrefetch';
+
+const LOADER_MESSAGES = [
+  "Sniffing for lost items...",
+  "Chasing squirrels...",
+  "Fetching your data...",
+  "Wagging tail...",
+  "Digging up listings...",
+  "Following the scent...",
+  "Nose to the ground...",
+  "Running in circles...",
+  "Almost home!",
+];
+
+function LogoSpinner({ accent }) {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setIdx((i) => (i + 1) % LOADER_MESSAGES.length), 2000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+      <Box sx={{ position: "relative", width: 340, height: 340, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Box component="svg" width="340" height="340" viewBox="0 0 340 340"
+          sx={{ position: "absolute", top: 0, left: 0, animation: "spinLogo 1.4s linear infinite", transformOrigin: "170px 170px",
+            "@keyframes spinLogo": { to: { transform: "rotate(360deg)" } } }}>
+          <circle cx="170" cy="170" r="168" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="2" />
+          <circle cx="170" cy="170" r="168" fill="none" stroke={accent} strokeWidth="2" strokeLinecap="round" strokeDasharray="791 264" />
+        </Box>
+        <Box component="img" src="/TabLogo.png" alt="Lost & Hound" sx={{ width: 230, height: 230, objectFit: "contain", position: "relative", zIndex: 1 }} />
+      </Box>
+      <Typography
+        key={idx}
+        sx={{
+          fontSize: 18, fontWeight: 800, color: accent, opacity: 0.9,
+          animation: "fadeInMsg 0.3s ease",
+          "@keyframes fadeInMsg": {
+            from: { opacity: 0, transform: "translateY(4px)" },
+            to: { opacity: 0.9, transform: "translateY(0)" },
+          },
+        }}
+      >
+        {LOADER_MESSAGES[idx]}
+      </Typography>
+    </Box>
+  );
+}
 
 export default function App() {
   const { user, profile, sessionToken, logout, updateProfile, isPasswordRecovery, setIsPasswordRecovery } = useAuth();
@@ -255,8 +301,13 @@ export default function App() {
   const pageBg = effectiveTheme === "dark" ? darkBg : "#f9f5f4";
 
   useEffect(() => {
+    const bg = effectiveTheme === "dark" ? darkBg : "#f5f0f0";
+    const dot = effectiveTheme === "dark" ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
     document.documentElement.style.colorScheme = effectiveTheme;
-    document.body.style.backgroundColor = effectiveTheme === "dark" ? darkBg : "#f5f0f0";
+    document.documentElement.style.backgroundColor = bg;
+    document.body.style.backgroundColor = bg;
+    document.body.style.backgroundImage = `radial-gradient(circle, ${dot} 1px, transparent 1px)`;
+    document.body.style.backgroundSize = "24px 24px";
   }, [effectiveTheme]);
 
   const navBg = effectiveTheme === "dark" ? "#1A1A1B" : "#A84D48";
@@ -410,19 +461,7 @@ export default function App() {
               backgroundSize: "24px 24px",
             }}
           >
-            <Box sx={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <CircularProgress
-                size={340}
-                thickness={1}
-                sx={{ color: effectiveTheme === "dark" ? darkAccent : "#A84D48", position: "absolute" }}
-              />
-              <Box
-                component="img"
-                src="/TabLogo.png"
-                alt="Lost & Hound"
-                sx={{ width: 230, height: 230, objectFit: "contain" }}
-              />
-            </Box>
+            <LogoSpinner accent={effectiveTheme === "dark" ? darkAccent : "#A84D48"} />
           </Box>
         ) : (
           <ResetPasswordPage
@@ -456,26 +495,7 @@ export default function App() {
               backgroundSize: "24px 24px",
             }}
           >
-            <Box sx={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <CircularProgress
-                size={340}
-                thickness={1}
-                sx={{
-                  color: effectiveTheme === "dark" ? darkAccent : "#A84D48",
-                  position: "absolute",
-                }}
-              />
-              <Box
-                component="img"
-                src="/TabLogo.png"
-                alt="Lost & Hound"
-                sx={{
-                  width: 230,
-                  height: 230,
-                  objectFit: "contain",
-                }}
-              />
-            </Box>
+            <LogoSpinner accent={effectiveTheme === "dark" ? darkAccent : "#A84D48"} />
           </Box>
         ) : (
           <Routes>
@@ -523,25 +543,23 @@ export default function App() {
               }}
             >
               <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <Box component="img" src="/TabLogo.PNG" alt="Lost & Hound logo"
-                  sx={{ height: 32, width: 32, objectFit: "contain", filter: "brightness(0) invert(1)" }} />
+                <Box component="img" src="/TabLogo.png" alt="Lost & Hound logo"
+                  sx={{ height: 48, width: 48, objectFit: "contain" }} />
                 <Typography variant="h6" fontWeight={900} sx={{ letterSpacing: 0.5, display: { xs: "none", sm: "block" } }}>
                   Lost &amp; Hound
                 </Typography>
               </Box>
               <Box sx={{ flexGrow: 1 }} />
-              <Button
-                color="inherit"
-                onClick={toggleThemeFromNav}
-                startIcon={navThemeToggle.icon}
-                disabled={navThemeToggle.disabled}
-                sx={{ mr: 0.5, minWidth: 0 }}
-              >
-                {!isCompactNav ? navThemeToggle.label : null}
-              </Button>
-              <Button color="inherit" onClick={handleLogout} endIcon={<LogoutIcon />} sx={{ minWidth: 0 }}>
-                {!isCompactNav ? "Log Out" : null}
-              </Button>
+              {isCompactNav ? (
+                <IconButton color="inherit" onClick={toggleThemeFromNav} disabled={navThemeToggle.disabled} sx={{ mr: 0.5 }}>{navThemeToggle.icon}</IconButton>
+              ) : (
+                <Button color="inherit" onClick={toggleThemeFromNav} startIcon={navThemeToggle.icon} disabled={navThemeToggle.disabled} sx={{ mr: 1, minWidth: 0 }}>{navThemeToggle.label}</Button>
+              )}
+              {isCompactNav ? (
+                <IconButton color="inherit" onClick={handleLogout}><LogoutIcon /></IconButton>
+              ) : (
+                <Button color="inherit" onClick={handleLogout} endIcon={<LogoutIcon />} sx={{ minWidth: 0 }}>Log Out</Button>
+              )}
             </Toolbar>
           </AppBar>
           <Box sx={{ height: "calc(64px + env(safe-area-inset-top))" }} />
@@ -557,7 +575,8 @@ export default function App() {
           />
           <Box sx={{
             display: "flex", justifyContent: "center", alignItems: "center",
-            minHeight: "calc(100vh - 120px)", p: 3,
+            height: "calc(100dvh - 64px - env(safe-area-inset-top) - 56px - env(safe-area-inset-bottom))",
+            p: 3,
             boxSizing: "border-box",
           }}>
               <Paper elevation={0} sx={{
@@ -646,37 +665,23 @@ export default function App() {
               />
             )}
           </Box>
-          <Button
-            color="inherit"
-            component={Link}
-            to="/"
-            startIcon={<FeedIcon />}
-            sx={{ mr: { xs: 0.5, sm: 1 }, minWidth: 0 }}
-          >
-            {!isCompactNav ? "Feed" : null}
-          </Button>
-          <Button
-            color="inherit"
-            component={Link}
-            to="/map"
-            startIcon={<MapIcon />}
-            sx={{ mr: { xs: 0.5, sm: 1 }, minWidth: 0 }}
-          >
-            {!isCompactNav ? "Map" : null}
-          </Button>
-          <Button
-            color="inherit"
-            component={Link}
-            to="/messages"
-            startIcon={
-              <Badge badgeContent={unreadCount} color="error" max={99}>
-                <MessageIcon />
-              </Badge>
-            }
-            sx={{ minWidth: 0 }}
-          >
-            {!isCompactNav ? "Messages" : null}
-          </Button>
+          {isCompactNav ? (
+            <IconButton color="inherit" component={Link} to="/" sx={{ mr: 0.5 }}><FeedIcon /></IconButton>
+          ) : (
+            <Button color="inherit" component={Link} to="/" startIcon={<FeedIcon />} sx={{ mr: 1, minWidth: 0 }}>Feed</Button>
+          )}
+          {isCompactNav ? (
+            <IconButton color="inherit" component={Link} to="/map" sx={{ mr: 0.5 }}><MapIcon /></IconButton>
+          ) : (
+            <Button color="inherit" component={Link} to="/map" startIcon={<MapIcon />} sx={{ mr: 1, minWidth: 0 }}>Map</Button>
+          )}
+          {isCompactNav ? (
+            <IconButton color="inherit" component={Link} to="/messages">
+              <Badge badgeContent={unreadCount} color="error" max={99}><MessageIcon /></Badge>
+            </IconButton>
+          ) : (
+            <Button color="inherit" component={Link} to="/messages" startIcon={<Badge badgeContent={unreadCount} color="error" max={99}><MessageIcon /></Badge>} sx={{ minWidth: 0 }}>Messages</Button>
+          )}
           <Box sx={{ flexGrow: 1 }} />
           {!isDemoMode && !Capacitor.isNativePlatform() && effectiveProfile?.is_moderator && (
             <Button
@@ -693,42 +698,28 @@ export default function App() {
               ? effectiveProfile.first_name + " " + effectiveProfile.last_name
               : user?.email ?? "Demo User"}
           </Typography>
-          <Button
-            color="inherit"
-            onClick={toggleThemeFromNav}
-            startIcon={navThemeToggle.icon}
-            disabled={navThemeToggle.disabled}
-            sx={{ mr: { xs: 0.5, sm: 1 }, minWidth: 0 }}
-          >
-            {!isCompactNav ? navThemeToggle.label : null}
-          </Button>
-          <Button
-            color="inherit"
-            component={Link}
-            to="/settings"
-            endIcon={<SettingsIcon />}
-            sx={{ mr: { xs: 0.5, sm: 1 }, minWidth: 0 }}
-          >
-            {!isCompactNav ? "Settings" : null}
-          </Button>
-          {isDemoMode ? (
-            <Button
-              color="inherit"
-              onClick={handleExitDemo}
-              endIcon={<LogoutIcon />}
-              sx={{ minWidth: 0 }}
-            >
-              {!isCompactNav ? "Exit Demo" : null}
-            </Button>
+          {isCompactNav ? (
+            <IconButton color="inherit" onClick={toggleThemeFromNav} disabled={navThemeToggle.disabled} sx={{ mr: 0.5 }}>{navThemeToggle.icon}</IconButton>
           ) : (
-            <Button
-              color="inherit"
-              onClick={handleLogout}
-              endIcon={<LogoutIcon />}
-              sx={{ minWidth: 0 }}
-            >
-              {!isCompactNav ? "Log Out" : null}
-            </Button>
+            <Button color="inherit" onClick={toggleThemeFromNav} startIcon={navThemeToggle.icon} disabled={navThemeToggle.disabled} sx={{ mr: 1, minWidth: 0 }}>{navThemeToggle.label}</Button>
+          )}
+          {isCompactNav ? (
+            <IconButton color="inherit" component={Link} to="/settings" sx={{ mr: 0.5 }}><SettingsIcon /></IconButton>
+          ) : (
+            <Button color="inherit" component={Link} to="/settings" endIcon={<SettingsIcon />} sx={{ mr: 1, minWidth: 0 }}>Settings</Button>
+          )}
+          {isDemoMode ? (
+            isCompactNav ? (
+              <IconButton color="inherit" onClick={handleExitDemo}><LogoutIcon /></IconButton>
+            ) : (
+              <Button color="inherit" onClick={handleExitDemo} endIcon={<LogoutIcon />} sx={{ minWidth: 0 }}>Exit Demo</Button>
+            )
+          ) : (
+            isCompactNav ? (
+              <IconButton color="inherit" onClick={handleLogout}><LogoutIcon /></IconButton>
+            ) : (
+              <Button color="inherit" onClick={handleLogout} endIcon={<LogoutIcon />} sx={{ minWidth: 0 }}>Log Out</Button>
+            )
           )}
         </Toolbar>
       </AppBar>

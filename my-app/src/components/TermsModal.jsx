@@ -110,11 +110,19 @@ export default function TermsModal({
     [isDark]
   );
 
-  // Reset state when modal opens
+  // Reset state when modal opens; auto-unlock if content doesn't need scrolling
   useEffect(() => {
     if (open) {
       setAccepted(false);
       setScrolledToBottom(false);
+      // Defer so DialogContent has rendered and has its real dimensions
+      requestAnimationFrame(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        if (el.scrollHeight <= el.clientHeight) {
+          setScrolledToBottom(true);
+        }
+      });
     }
   }, [open]);
 
@@ -179,7 +187,12 @@ export default function TermsModal({
       <DialogContent
         ref={scrollRef}
         onScroll={handleScroll}
-        sx={{ px: 3, py: 2.5, background: styles.panelBg }}
+        sx={{
+          px: 3, py: 2.5, background: styles.panelBg,
+          overflowY: "scroll",
+          WebkitOverflowScrolling: "touch",
+          touchAction: "pan-y",
+        }}
       >
         <Typography variant="body2" sx={{ mb: 2.5, lineHeight: 1.6, color: styles.body }}>
           {readOnly
