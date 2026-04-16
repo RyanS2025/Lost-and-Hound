@@ -47,14 +47,14 @@ npm run build && npx cap sync
 
 ## Auth Flow Pages
 
-- [ ] **Forgot Password** (`/forgot-password`) — **Ben**
-- [ ] **Reset Password** (`/reset-password`) — **Ben**
+- [x] **Forgot Password** (`/forgot-password`) — **Ben**
+- [x] **Reset Password** (`/reset-password`) — **Ben**
 
 ---
 
 ## Settings
 
-- [ ] **Settings page** (`/settings`) — campus/timezone pickers, exit demo section, safe area bottom — **Ben**
+- [x] **Settings page** (`/settings`) — campus/timezone pickers, exit demo section, safe area bottom — **Ben**
 
 ---
 
