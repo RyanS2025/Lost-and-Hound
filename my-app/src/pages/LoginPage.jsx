@@ -139,6 +139,20 @@ export default function LoginPage({
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Reset scroll only when keyboard fully dismisses (not when tabbing between inputs)
+  useEffect(() => {
+    const resetScroll = () => {
+      setTimeout(() => {
+        const active = document.activeElement;
+        if (!active || active === document.body || active.tagName === "BODY") {
+          window.scrollTo(0, 0);
+        }
+      }, 100);
+    };
+    window.addEventListener("focusout", resetScroll);
+    return () => window.removeEventListener("focusout", resetScroll);
+  }, []);
+
   const [fadeOut, setFadeOut] = useState(false);
 
   const BRAND = {
@@ -512,16 +526,18 @@ export default function LoginPage({
 
       <Box
         sx={{
+          ...(!isSignUp && {
+            position: { xs: "fixed", md: "static" },
+            top: 0, left: 0, right: 0, bottom: 0,
+          }),
           minHeight: "100dvh",
           display: "flex",
-          alignItems: "center",
+          alignItems: { xs: "stretch", md: "center" },
           justifyContent: "center",
-          background: `
-            radial-gradient(circle, ${BRAND.dot} 1px, transparent 1px)
-          `,
+          background: `radial-gradient(circle, ${BRAND.dot} 1px, transparent 1px)`,
           backgroundColor: BRAND.bg,
           backgroundSize: "24px 24px",
-          p: { xs: 2, md: 4 },
+          p: { xs: 0, md: 4 },
           transition: "opacity 0.8s ease, filter 0.8s ease",
           ...(fadeOut && {
             opacity: 0,
@@ -536,14 +552,16 @@ export default function LoginPage({
             flexDirection: { xs: "column", md: "row" },
             maxWidth: 880,
             width: "100%",
-            borderRadius: 4,
+            borderRadius: { xs: 0, md: 4 },
             overflow: "hidden",
             background: BRAND.paper,
-            border: `1.5px solid ${BRAND.border}`,
-            boxShadow:
-              isDark
+            border: { xs: "none", md: `1.5px solid ${BRAND.border}` },
+            boxShadow: {
+              xs: "none",
+              md: isDark
                 ? "0 12px 48px rgba(0,0,0,0.55), 0 4px 16px rgba(0,0,0,0.35)"
                 : "0 12px 48px rgba(168, 77, 72, 0.28), 0 4px 16px rgba(0,0,0,0.1)",
+            },
             transition: "transform 0.7s cubic-bezier(.4,0,.2,1), box-shadow 0.7s ease",
             ...(loginTransition && {
               transform: "scale(1.02)",
@@ -558,14 +576,16 @@ export default function LoginPage({
           <Box
             sx={{
               flex: 1,
-              p: { xs: 4, md: 5 },
+              p: { xs: 3, md: 5 },
+              pt: { xs: "calc(52px + env(safe-area-inset-top))", md: 5 },
+              pb: { xs: 4, md: 5 },
               display: "flex",
               flexDirection: "column",
               justifyContent: "space-between",
               background: BRAND.leftPanelGradient,
               position: "relative",
               overflow: "hidden",
-              minHeight: { xs: 200, md: "auto" },
+              minHeight: { xs: isSignUp ? 180 : 240, md: "auto" },
             }}
           >
             <Box
@@ -602,6 +622,7 @@ export default function LoginPage({
                 width: "100%",
                 display: "flex",
                 justifyContent: "center",
+                mt: { xs: 2, md: 0 },
               }}
             >
               <Box
@@ -609,13 +630,13 @@ export default function LoginPage({
                 src="/MainLogoTextAlt.png"
                 alt="Lost & Hound"
                 sx={{
-                  width: { xs: "76%", md: "82%" },
-                  maxWidth: 300,
-                  minWidth: 180,
+                  width: { xs: "68%", md: "82%" },
+                  maxWidth: 260,
+                  minWidth: 160,
                   height: "auto",
                   objectFit: "contain",
                   display: "block",
-                  mb: 3,
+                  mb: 2,
                 }}
               />
             </Box>
@@ -674,23 +695,6 @@ export default function LoginPage({
               Made for Oasis @ Northeastern
             </Typography>
 
-            <Typography
-              variant="caption"
-              onClick={() => setDemoOpen(true)}
-              sx={{
-                color: BRAND.leftPanelBody,
-                mt: 1,
-                position: "relative",
-                zIndex: 1,
-                cursor: "pointer",
-                fontWeight: 700,
-                textDecoration: "underline",
-                textUnderlineOffset: 3,
-                "&:hover": { opacity: 0.85 },
-              }}
-            >
-              Want to preview our project?
-            </Typography>
           </Box>
 
           {/* --- Right panel: form --- */}
@@ -698,9 +702,11 @@ export default function LoginPage({
             sx={{
               flex: 1,
               p: { xs: 3, md: 5 },
+              pt: { xs: 3, md: 5 },
+              pb: { xs: "calc(32px + env(safe-area-inset-bottom))", md: 5 },
               display: "flex",
               flexDirection: "column",
-              justifyContent: "center",
+              justifyContent: { xs: "flex-start", md: "center" },
               position: "relative",
             }}
           >
@@ -942,7 +948,7 @@ export default function LoginPage({
                           label="First Name"
                           value={firstName}
                           onChange={(e) => setFirstName(e.target.value.slice(0, NAME_MAX_LENGTH))}
-                          inputProps={{ maxLength: NAME_MAX_LENGTH }}
+                          inputProps={{ maxLength: NAME_MAX_LENGTH, autoCapitalize: "words" }}
                           helperText={`${stripInvisible(firstName).length}/${NAME_MAX_LENGTH}`}
                           sx={autofillTextFieldSx}
                         />
@@ -953,7 +959,7 @@ export default function LoginPage({
                           label="Last Name"
                           value={lastName}
                           onChange={(e) => setLastName(e.target.value.slice(0, NAME_MAX_LENGTH))}
-                          inputProps={{ maxLength: NAME_MAX_LENGTH }}
+                          inputProps={{ maxLength: NAME_MAX_LENGTH, autoCapitalize: "words" }}
                           helperText={`${stripInvisible(lastName).length}/${NAME_MAX_LENGTH}`}
                           sx={autofillTextFieldSx}
                         />
@@ -1005,7 +1011,7 @@ export default function LoginPage({
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     autoComplete="email"
-                    autoFocus
+                    inputProps={{ autoCapitalize: "none" }}
                     sx={{ ...autofillTextFieldSx, mb: 1.5 }}
                   />
 
@@ -1020,7 +1026,7 @@ export default function LoginPage({
                     value={password}
                     onChange={(e) => setPassword(e.target.value.slice(0, PASSWORD_MAX_LENGTH))}
                     autoComplete="current-password"
-                    inputProps={{ minLength: 6, maxLength: PASSWORD_MAX_LENGTH }}
+                    inputProps={{ minLength: 6, maxLength: PASSWORD_MAX_LENGTH, autoCapitalize: "none" }}
                     sx={{ ...autofillTextFieldSx, mb: 3 }}
                   />
 
@@ -1164,6 +1170,24 @@ export default function LoginPage({
                 )}
               </>
             )}
+
+            <Typography
+              variant="caption"
+              onClick={() => setDemoOpen(true)}
+              sx={{
+                display: "block",
+                mt: 3,
+                textAlign: "center",
+                color: BRAND.accent,
+                cursor: "pointer",
+                fontWeight: 700,
+                textDecoration: "underline",
+                textUnderlineOffset: 3,
+                "&:hover": { opacity: 0.75 },
+              }}
+            >
+              Want to preview our project?
+            </Typography>
           </Box>
         </Paper>
       </Box>

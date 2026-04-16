@@ -80,6 +80,7 @@ function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAUL
   const navigate = useNavigate();
   const [returning, setReturning] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const isOwner = user?.id && item?.poster_id === user.id;
   if (!item) return null;
   return (
@@ -109,11 +110,27 @@ function DetailModal({ item, onClose, onClaim, isDark = false, timeZone = DEFAUL
         </Box>
 
         {item.image_url
-          ? <Box component="img" src={item.image_url} alt={item.title} sx={{ width: "100%", height: 200, objectFit: "cover", borderRadius: 2, mb: 2, border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc" }} />
+          ? <Box
+              component="img"
+              src={item.image_url}
+              alt={item.title}
+              onClick={() => setLightboxOpen(true)}
+              sx={{ width: "100%", height: 200, objectFit: "cover", borderRadius: 2, mb: 2, border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc", cursor: "zoom-in" }}
+            />
           : <Box sx={{ width: "100%", height: 120, background: isDark ? "#2D2D2E" : "#f5f0f0", borderRadius: 2, mb: 2, display: "flex", alignItems: "center", justifyContent: "center", border: isDark ? "1px dashed rgba(255,255,255,0.2)" : "1.5px dashed #dac8c8" }}>
               <Typography variant="caption" color={isDark ? "#818384" : "text.disabled"} fontWeight={700}>No photo provided</Typography>
             </Box>
         }
+
+        {/* Lightbox */}
+        <Modal open={lightboxOpen} onClose={() => setLightboxOpen(false)}>
+          <Box
+            onClick={() => setLightboxOpen(false)}
+            sx={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", p: 2, cursor: "zoom-out" }}
+          >
+            <Box component="img" src={item.image_url} alt={item.title} sx={{ maxWidth: "100%", maxHeight: "90dvh", objectFit: "contain", borderRadius: 2 }} />
+          </Box>
+        </Modal>
 
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mb: 2 }}>
           <Chip label={IMPORTANCE_LABELS[item.importance]} size="small" sx={{ background: IMPORTANCE_COLORS[item.importance] + "22", color: IMPORTANCE_COLORS[item.importance], fontWeight: 800 }} />

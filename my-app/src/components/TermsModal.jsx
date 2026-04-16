@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import {
-  Modal, Box, Typography, Button, IconButton, Checkbox,
+  Dialog, DialogContent, DialogActions, Box, Typography, Button, IconButton, Checkbox,
   FormControlLabel, Divider,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
@@ -127,235 +127,127 @@ export default function TermsModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose}>
-      <Box
-        sx={{
-          position: "absolute",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
+    <Dialog
+      open={open}
+      onClose={onClose}
+      scroll="paper"
+      fullWidth
+      maxWidth="sm"
+      PaperProps={{
+        sx: {
           background: styles.panelBg,
           border: styles.panelBorder,
-          borderRadius: 4,
-          width: "100%",
-          maxWidth: 560,
-          maxHeight: "90vh",
+          borderRadius: 3,
+          mx: 2,
+          width: "calc(100% - 32px)",
+          maxHeight: { xs: "calc(88vh - env(safe-area-inset-top))", sm: "90vh" },
+          mt: "env(safe-area-inset-top)",
+        },
+      }}
+    >
+      {/* Header */}
+      <Box
+        sx={{
           display: "flex",
-          flexDirection: "column",
-          outline: "none",
-          overflow: "hidden",
-          boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
-          mx: 1.5,
-          boxSizing: "border-box",
+          alignItems: "center",
+          justifyContent: "space-between",
+          px: 3,
+          py: 2.5,
+          borderBottom: `1.5px solid ${styles.divider}`,
+          flexShrink: 0,
         }}
       >
-        {/* Header */}
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            px: 3,
-            py: 2.5,
-            borderBottom: `1.5px solid ${styles.divider}`,
-            flexShrink: 0,
-          }}
-        >
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-            <Box
-              sx={{
-                width: 40,
-                height: 40,
-                borderRadius: 2,
-                background: styles.iconBg,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <GavelIcon sx={{ color: styles.accent, fontSize: 22 }} />
-            </Box>
-            <Box>
-              <Typography variant="h6" fontWeight={900} sx={{ lineHeight: 1.2, color: styles.title }}>
-                Terms & Conditions
-              </Typography>
-              <Typography variant="caption" sx={{ color: styles.secondary }} fontWeight={600}>
-                {readOnly ? "Please review the full terms" : "Please read before creating your account"}
-              </Typography>
-            </Box>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+          <Box sx={{ width: 40, height: 40, borderRadius: 2, background: styles.iconBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <GavelIcon sx={{ color: styles.accent, fontSize: 22 }} />
           </Box>
-          <IconButton onClick={onClose} size="small" sx={{ color: styles.secondary }}>
-            <CloseIcon />
-          </IconButton>
-        </Box>
-
-        {/* Scrollable content */}
-        <Box
-          ref={scrollRef}
-          onScroll={handleScroll}
-          sx={{
-            flex: 1,
-            overflowY: "auto",
-            px: 3,
-            py: 2.5,
-            minHeight: 0,
-          }}
-        >
-          <Typography
-            variant="body2"
-            sx={{ mb: 2.5, lineHeight: 1.6, color: styles.body }}
-          >
-            {readOnly
-              ? "Welcome to Lost & Hound — a student-made lost and found platform for Northeastern University. Please review the full terms and conditions below."
-              : "Welcome to Lost & Hound — a student-made lost and found platform for Northeastern University. By creating an account, you agree to the following terms. Please read them carefully."}
-          </Typography>
-
-          {SECTIONS.map((section, i) => (
-            <Box key={i} sx={{ mb: 2.5 }}>
-              <Typography
-                fontWeight={800}
-                fontSize={14}
-                sx={{ mb: 0.75, color: styles.sectionTitle }}
-              >
-                {section.title}
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{ lineHeight: 1.7, fontSize: 13, color: styles.body }}
-              >
-                {section.content}
-              </Typography>
-              {i < SECTIONS.length - 1 && (
-                <Divider sx={{ mt: 2.5, borderColor: styles.divider }} />
-              )}
-            </Box>
-          ))}
-
-          <Box
-            sx={{
-              mt: 1,
-              mb: 1,
-              p: 2,
-              borderRadius: 2,
-              background: styles.noticeBg,
-              border: styles.noticeBorder,
-            }}
-          >
-            <Typography
-              variant="caption"
-              fontWeight={700}
-              sx={{ display: "block", mb: 0.5, color: styles.secondary }}
-            >
-              Last updated: March 2026
+          <Box>
+            <Typography variant="h6" fontWeight={900} sx={{ lineHeight: 1.2, color: styles.title }}>
+              Terms & Conditions
             </Typography>
-            <Typography variant="caption" sx={{ color: styles.secondary }}>
-              If you have questions about these Terms, contact the Lost & Hound team.
+            <Typography variant="caption" sx={{ color: styles.secondary }} fontWeight={600}>
+              {readOnly ? "Please review the full terms" : "Please read before creating your account"}
             </Typography>
           </Box>
         </Box>
-
-        {/* Footer — checkbox + accept button (or read-only close) */}
-        <Box
-          sx={{
-            px: 3,
-            py: 2,
-            borderTop: `1.5px solid ${styles.divider}`,
-            background: styles.footerBg,
-            flexShrink: 0,
-          }}
-        >
-          {!readOnly && !scrolledToBottom && (
-            <Typography
-              variant="caption"
-              sx={{
-                display: "block",
-                textAlign: "center",
-                color: styles.hint,
-                fontWeight: 600,
-                mb: 1,
-                fontSize: 11,
-              }}
-            >
-              ↓ Scroll to the bottom to continue
-            </Typography>
-          )}
-
-          {readOnly ? (
-            <Button
-              variant="contained"
-              fullWidth
-              onClick={onClose}
-              sx={{
-                mt: 1,
-                  background: styles.accent,
-                  "&:hover": { background: styles.accentHover },
-                fontWeight: 800,
-                borderRadius: 2,
-                py: 1.25,
-                fontSize: 15,
-                textTransform: "none",
-              }}
-            >
-              Close
-            </Button>
-          ) : (
-            <>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={accepted}
-                    onChange={(e) => setAccepted(e.target.checked)}
-                    disabled={!scrolledToBottom}
-                    sx={{
-                      color: styles.accent,
-                      "&.Mui-checked": { color: styles.accent },
-                      "&.Mui-disabled": { color: styles.checkboxDisabled },
-                    }}
-                  />
-                }
-                label={
-                  <Typography
-                    variant="body2"
-                    fontWeight={600}
-                    sx={{
-                      color: scrolledToBottom ? styles.sectionTitle : styles.checkboxLabelDisabled,
-                      fontSize: 13,
-                    }}
-                  >
-                    I have read and agree to the Terms & Conditions
-                  </Typography>
-                }
-              />
-
-              <Button
-                variant="contained"
-                fullWidth
-                disabled={!accepted}
-                onClick={() => {
-                  onAccept();
-                  onClose();
-                }}
-                sx={{
-                  mt: 1,
-                  background: styles.accent,
-                  "&:hover": { background: styles.accentHover },
-                  "&.Mui-disabled": {
-                    background: styles.buttonDisabledBg,
-                    color: styles.buttonDisabledText,
-                  },
-                  fontWeight: 800,
-                  borderRadius: 2,
-                  py: 1.25,
-                  fontSize: 15,
-                  textTransform: "none",
-                }}
-              >
-                Accept & Create Account
-              </Button>
-            </>
-          )}
-        </Box>
+        <IconButton onClick={onClose} size="small" sx={{ color: styles.secondary }}>
+          <CloseIcon />
+        </IconButton>
       </Box>
-    </Modal>
+
+      {/* Scrollable content — Dialog scroll="paper" makes DialogContent the scroll container */}
+      <DialogContent
+        ref={scrollRef}
+        onScroll={handleScroll}
+        sx={{ px: 3, py: 2.5, background: styles.panelBg }}
+      >
+        <Typography variant="body2" sx={{ mb: 2.5, lineHeight: 1.6, color: styles.body }}>
+          {readOnly
+            ? "Welcome to Lost & Hound — a student-made lost and found platform for Northeastern University. Please review the full terms and conditions below."
+            : "Welcome to Lost & Hound — a student-made lost and found platform for Northeastern University. By creating an account, you agree to the following terms. Please read them carefully."}
+        </Typography>
+
+        {SECTIONS.map((section, i) => (
+          <Box key={i} sx={{ mb: 2.5 }}>
+            <Typography fontWeight={800} fontSize={14} sx={{ mb: 0.75, color: styles.sectionTitle }}>
+              {section.title}
+            </Typography>
+            <Typography variant="body2" sx={{ lineHeight: 1.7, fontSize: 13, color: styles.body }}>
+              {section.content}
+            </Typography>
+            {i < SECTIONS.length - 1 && <Divider sx={{ mt: 2.5, borderColor: styles.divider }} />}
+          </Box>
+        ))}
+
+        <Box sx={{ mt: 1, mb: 1, p: 2, borderRadius: 2, background: styles.noticeBg, border: styles.noticeBorder }}>
+          <Typography variant="caption" fontWeight={700} sx={{ display: "block", mb: 0.5, color: styles.secondary }}>
+            Last updated: March 2026
+          </Typography>
+          <Typography variant="caption" sx={{ color: styles.secondary }}>
+            If you have questions about these Terms, contact the Lost & Hound team.
+          </Typography>
+        </Box>
+      </DialogContent>
+
+      {/* Footer */}
+      <DialogActions sx={{ px: 3, py: 2, borderTop: `1.5px solid ${styles.divider}`, background: styles.footerBg, flexDirection: "column", alignItems: "stretch" }}>
+        {!readOnly && !scrolledToBottom && (
+          <Typography variant="caption" sx={{ display: "block", textAlign: "center", color: styles.hint, fontWeight: 600, mb: 1, fontSize: 11 }}>
+            ↓ Scroll to the bottom to continue
+          </Typography>
+        )}
+
+        {readOnly ? (
+          <Button variant="contained" fullWidth onClick={onClose}
+            sx={{ background: styles.accent, "&:hover": { background: styles.accentHover }, fontWeight: 800, borderRadius: 2, py: 1.25, fontSize: 15, textTransform: "none" }}>
+            Close
+          </Button>
+        ) : (
+          <>
+            <FormControlLabel
+              control={
+                <Checkbox checked={accepted} onChange={(e) => setAccepted(e.target.checked)} disabled={!scrolledToBottom}
+                  sx={{ color: styles.accent, "&.Mui-checked": { color: styles.accent }, "&.Mui-disabled": { color: styles.checkboxDisabled } }} />
+              }
+              label={
+                <Typography variant="body2" fontWeight={600}
+                  sx={{ color: scrolledToBottom ? styles.sectionTitle : styles.checkboxLabelDisabled, fontSize: 13 }}>
+                  I have read and agree to the Terms & Conditions
+                </Typography>
+              }
+            />
+            <Button variant="contained" fullWidth disabled={!accepted}
+              onClick={() => { onAccept(); onClose(); }}
+              sx={{
+                mt: 1, background: styles.accent, "&:hover": { background: styles.accentHover },
+                "&.Mui-disabled": { background: styles.buttonDisabledBg, color: styles.buttonDisabledText },
+                fontWeight: 800, borderRadius: 2, py: 1.25, fontSize: 15, textTransform: "none",
+              }}>
+              Accept & Create Account
+            </Button>
+          </>
+        )}
+      </DialogActions>
+    </Dialog>
   );
 }

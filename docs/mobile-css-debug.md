@@ -34,6 +34,11 @@ npm run build && npx cap sync
 ## Core App Pages (main nav)
 
 - [x] **Login page** — safe area top/bottom, edge-to-edge on mobile, logo clearance from Dynamic Island ✅ — **Ryan**
+  - [x] Sign in form — keyboard behavior, no autofocus, no autocaps, scroll snap-back ✅
+  - [x] Sign up form — scrollable, autocaps on names only, keyboard space for all fields ✅
+  - [x] Auth/MFA page — number pad keyboard, layout correct ✅
+  - [ ] Terms & Conditions modal — centered, safe area fixed, **scroll still broken on iOS** ⚠️
+  - [ ] QR code (2FA setup) page — needs visual check
 - [ ] **Feed page** (`/`) — listings, NewItemModal, NoteCard position — **Ryan**
 - [ ] **Map page** (`/map`) — map fills screen, pins visible, NoteCard position — **Ryan**
 - [ ] **Messages page** (`/messages`) — conversation list, chat view height, keyboard behavior — **Ryan**
