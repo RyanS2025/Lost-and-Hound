@@ -604,7 +604,7 @@ export default function SettingsPage({
                         <Box>
                           <Typography variant="body2" sx={{ fontWeight: 600, color: BRAND.textPrimary }}>Face ID Sign-in</Typography>
                           <Typography variant="caption" sx={{ color: BRAND.textSecondary }}>
-                            {faceIdEnabled ? `Enabled for ${localStorage.getItem("biometric_email")}` : "Sign in with Face ID instead of typing your password"}
+                            {faceIdEnabled ? `Enabled for ${isDemoMode ? effectiveUser?.email : localStorage.getItem("biometric_email")}` : "Sign in with Face ID instead of typing your password"}
                           </Typography>
                         </Box>
                       }
