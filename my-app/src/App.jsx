@@ -199,12 +199,16 @@ export default function App() {
     };
     fetchConversations();
 
-    // Live update: refresh conversation list when new messages or conversations change
+    // Live update: refresh conversation list when new messages, conversations, or blocks change
     const convoChannel = supabase
       .channel("convo-list-web")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, fetchConversations)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "conversations" }, fetchConversations)
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "conversations" }, fetchConversations)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "blocked_users", filter: `blocker_id=eq.${user.id}` }, fetchConversations)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "blocked_users", filter: `blocker_id=eq.${user.id}` }, fetchConversations)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "blocked_users", filter: `blocked_id=eq.${user.id}` }, fetchConversations)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "blocked_users", filter: `blocked_id=eq.${user.id}` }, fetchConversations)
       .subscribe();
 
     return () => { supabase.removeChannel(convoChannel); };

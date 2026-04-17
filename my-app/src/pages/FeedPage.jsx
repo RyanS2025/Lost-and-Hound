@@ -632,11 +632,21 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
   const [blockedUsers, setBlockedUsers] = useState(new Set());
 
   useEffect(() => {
-    if (!user || isDemoMode) return;
-    supabase.from("blocked_users").select("blocked_id")
-      .then(({ data }) => setBlockedUsers(new Set(data?.map(r => r.blocked_id) || [])))
-      .catch(() => {});
-  }, [user, isDemoMode]);
+    if (!user?.id || isDemoMode) return;
+    const refresh = () =>
+      apiFetch("/api/blocked-ids")
+        .then(({ ids }) => setBlockedUsers(new Set(ids || [])))
+        .catch(() => {});
+    refresh();
+    const channel = supabase
+      .channel(`blocked-feed-${user.id}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "blocked_users", filter: `blocker_id=eq.${user.id}` }, refresh)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "blocked_users", filter: `blocker_id=eq.${user.id}` }, refresh)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "blocked_users", filter: `blocked_id=eq.${user.id}` }, refresh)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "blocked_users", filter: `blocked_id=eq.${user.id}` }, refresh)
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [user?.id, isDemoMode]);
 
   const handleBlock = async (userId) => {
     try {

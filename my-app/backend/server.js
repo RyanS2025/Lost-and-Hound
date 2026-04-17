@@ -1168,10 +1168,12 @@ app.get("/api/conversations", requireAuth, require2FA, async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
 
-  // Fetch conversations and hidden list in parallel
-  const [convosResult, hiddenResult] = await Promise.all([
+  // Fetch conversations, hidden list, and blocked users in parallel
+  const [convosResult, hiddenResult, myBlocksResult, blockersOfMeResult] = await Promise.all([
     supabase.from("conversations").select("*").or(`participant_1.eq.${userId},participant_2.eq.${userId}`).order("created_at", { ascending: false }),
     supabase.from("hidden_conversations").select("conversation_id").eq("user_id", userId),
+    supabase.from("blocked_users").select("blocked_id").eq("blocker_id", userId),
+    supabase.from("blocked_users").select("blocker_id").eq("blocked_id", userId),
   ]);
 
   if (convosResult.error) return dbError(res, convosResult.error, "GET /api/conversations");
@@ -1181,7 +1183,16 @@ app.get("/api/conversations", requireAuth, require2FA, async (req, res) => {
   }
 
   const hiddenIds = new Set((hiddenResult.data || []).map((h) => h.conversation_id));
-  const visible = convos.filter((c) => !hiddenIds.has(c.id));
+  const blockedUserIds = new Set([
+    ...(myBlocksResult.data ?? []).map(r => r.blocked_id),
+    ...(blockersOfMeResult.data ?? []).map(r => r.blocker_id),
+  ]);
+
+  const visible = convos.filter((c) => {
+    if (hiddenIds.has(c.id)) return false;
+    const otherId = c.participant_1 === userId ? c.participant_2 : c.participant_1;
+    return !blockedUserIds.has(otherId);
+  });
 
   const total = visible.length;
   const offset = (page - 1) * limit;
@@ -1434,6 +1445,21 @@ app.post("/api/conversations/:id/messages", writeLimiter, requireAuth, require2F
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // BLOCK ROUTES
+
+// Returns all user IDs that should be hidden from the current user's feed/messages
+// — both users they've blocked AND users who've blocked them.
+// Backend service key bypasses RLS so both directions are readable.
+app.get("/api/blocked-ids", requireAuth, async (req, res) => {
+  const [myBlocks, blockersOfMe] = await Promise.all([
+    supabase.from("blocked_users").select("blocked_id").eq("blocker_id", req.user.id),
+    supabase.from("blocked_users").select("blocker_id").eq("blocked_id", req.user.id),
+  ]);
+  const ids = [
+    ...(myBlocks.data ?? []).map(r => r.blocked_id),
+    ...(blockersOfMe.data ?? []).map(r => r.blocker_id),
+  ];
+  res.json({ ids: [...new Set(ids)] });
+});
 
 app.post("/api/users/:id/block", requireAuth, async (req, res) => {
   const blockedId = req.params.id;
