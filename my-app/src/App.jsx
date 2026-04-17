@@ -47,6 +47,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/timezone';
 import apiFetch from './utils/apiFetch';
 import { prefetchDashboard, clearDashboardCache } from './utils/dashboardPrefetch';
+import usePushNotifications from './hooks/usePushNotifications';
 
 const LOADER_MESSAGES = [
   "Sniffing for lost items...",
@@ -97,8 +98,23 @@ function LogoSpinner({ accent }) {
 export default function App() {
   const { user, profile, sessionToken, logout, updateProfile, isPasswordRecovery, setIsPasswordRecovery } = useAuth();
   const { isDemoMode, exitDemo } = useDemo();
+  usePushNotifications(user?.id);
   const navigate = useNavigate();
   const [demoDismissed, setDemoDismissed] = useState(false);
+
+  // Drain any referral source that was saved at signup (unauthenticated flow)
+  // so the poll modal is suppressed on first login without re-asking the user
+  const [referralPending, setReferralPending] = useState(() => !!localStorage.getItem("pending_referral_source"));
+  useEffect(() => {
+    if (!user || !profile || !referralPending) return;
+    const source = localStorage.getItem("pending_referral_source");
+    localStorage.removeItem("pending_referral_source");
+    if (!source) { setReferralPending(false); return; }
+    apiFetch("/api/referral/user", { method: "POST", body: JSON.stringify({ source }) })
+      .then(() => updateProfile({ referral_answered: true }))
+      .catch(() => {})
+      .finally(() => setReferralPending(false));
+  }, [user?.id, !!profile]); // eslint-disable-line react-hooks/exhaustive-deps
   const demoDisclaimerOpen = isDemoMode && !demoDismissed;
 
   useEffect(() => {
@@ -776,7 +792,7 @@ export default function App() {
       <AppFooter effectiveTheme={effectiveTheme} />
 
       <ReferralPollModal
-        open={!isDemoMode && !!profile && !profile.referral_answered}
+        open={!isDemoMode && !!profile && !profile.referral_answered && !referralPending}
         isDark={effectiveTheme === "dark"}
         onDone={() => updateProfile({ referral_answered: true })}
       />

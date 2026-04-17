@@ -13,6 +13,10 @@ my-app/backend/.env.*
 my-app/dist/
 my-app/dist-ssr/
 
+# Sensitive credentials — never commit
+sensitive-info/
+*.p8
+
 # OS/editor
 .DS_Store
 .vscode/

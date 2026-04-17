@@ -2660,7 +2660,6 @@ app.post("/api/support-tickets/:id/replies", requireAuth, require2FA, requireMod
 app.post("/api/push-tokens", requireAuth, async (req, res) => {
   const { playerId } = req.body;
   if (!playerId || typeof playerId !== "string") {
-    console.error("[push-tokens] 400 body:", JSON.stringify(req.body));
     return res.status(400).json({ error: "playerId is required" });
   }
 
@@ -2736,17 +2735,18 @@ async function sendBroadcastPush(title, body, data = {}) {
 }
 
 // Mod-only manual trigger for the daily lost items broadcast
-app.post("/api/push/broadcast-lost-items", requireAuth, require2FA, requireModerator, async (_req, res) => {
-  const { count } = await supabase
+app.post("/api/push/broadcast-lost-items", requireAuth, require2FA, requireOwner, async (_req, res) => {
+  const result = await supabase
     .from("listings")
-    .select("id", { count: "exact", head: true })
-    .eq("type", "lost")
-    .eq("is_resolved", false);
+    .select("item_id", { count: "exact", head: true })
+    .neq("resolved", true);
+  console.log("[broadcast] count result:", result.count, "error:", result.error?.message);
+  const { count } = result;
 
   const n = count ?? 0;
   await sendBroadcastPush(
     "Lost & Hound",
-    `There are currently ${n} lost items that need help. Can you lend a paw? 🐾`,
+    `There are currently ${n} active posts. Can you lend a paw? 🐾`,
     { type: "broadcast_lost_items" }
   );
   res.json({ ok: true, count: n });
@@ -3026,14 +3026,13 @@ cron.schedule("0 * * * *", () => {
 cron.schedule("0 15 * * *", () => {
   supabase
     .from("listings")
-    .select("id", { count: "exact", head: true })
-    .eq("type", "lost")
-    .eq("is_resolved", false)
+    .select("item_id", { count: "exact", head: true })
+    .neq("resolved", true)
     .then(({ count }) => {
       if (!count || count === 0) return;
       return sendBroadcastPush(
         "Lost & Hound",
-        `There are currently ${count} lost items that need help. Can you lend a paw? 🐾`,
+        `There are currently ${count} active posts. Can you lend a paw? 🐾`,
         { type: "broadcast_lost_items" }
       );
     })

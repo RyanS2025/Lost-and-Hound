@@ -253,13 +253,15 @@ export default function LoginPage({
       setMessage("SIGNUP_SUCCESS");
       setFirstName("");
       setLastName("");
-      // Fire-and-forget referral — never block the success flow
+      // Fire-and-forget referral — log source anonymously; stash locally so
+      // first authenticated load can mark referral_answered without re-showing the modal
       if (referralSource) {
         fetch(`${API_BASE}/api/referral`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source: referralSource, userId: data.user.id }),
+          body: JSON.stringify({ source: referralSource }),
         }).catch(() => {});
+        localStorage.setItem("pending_referral_source", referralSource);
       }
     } catch (err) {
       setError(cleanErrorMessage(err.message || err.code));

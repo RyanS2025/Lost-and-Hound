@@ -22,6 +22,8 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
+  Switch,
+  FormControlLabel,
 } from "@mui/material";
 import { useAuth } from "../AuthContext";
 import Avatar from "@mui/material/Avatar";
@@ -32,6 +34,7 @@ import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
+import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
 import { CAMPUSES } from "../constants/campuses";
 import { TIME_ZONE_OPTIONS } from "../utils/timezone";
 
@@ -79,6 +82,18 @@ export default function SettingsPage({
       : (effectiveProfile?.default_campus || "boston")
   );
   const [campusMessage, setCampusMessage] = useState("");
+  const [notifEmail, setNotifEmail] = useState(effectiveProfile?.email_notifications_enabled ?? true);
+  const [notifPush, setNotifPush] = useState(effectiveProfile?.push_notifications_enabled ?? true);
+
+  const handleSaveNotif = async (key, value) => {
+    if (isDemoMode) return;
+    if (key === "emailNotifications") setNotifEmail(value);
+    else setNotifPush(value);
+    await apiFetch("/api/settings/notifications", {
+      method: "PATCH",
+      body: JSON.stringify({ [key]: value }),
+    }).catch(() => {});
+  };
 
   const handleSaveCampus = async (campusId) => {
     setDefaultCampus(campusId);
@@ -673,6 +688,66 @@ export default function SettingsPage({
                     {campusMessage}
                   </Alert>
                 )}
+
+                <Divider sx={{ my: 2.5, borderColor: BRAND.cardBorder }} />
+
+                {/* -- Notifications -- */}
+                <SectionLabel icon={NotificationsOutlinedIcon}>Notifications</SectionLabel>
+                <Box
+                  sx={{
+                    bgcolor: BRAND.maroonFaint,
+                    borderRadius: 2,
+                    px: 2,
+                    py: 1.5,
+                    mb: 2.5,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 1,
+                  }}
+                >
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        size="small"
+                        checked={notifEmail}
+                        onChange={(e) => handleSaveNotif("emailNotifications", e.target.checked)}
+                        sx={{
+                          "& .MuiSwitch-switchBase.Mui-checked": { color: BRAND.maroon },
+                          "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": { backgroundColor: BRAND.maroon },
+                        }}
+                      />
+                    }
+                    label={
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 600, color: BRAND.textPrimary }}>Email digest</Typography>
+                        <Typography variant="caption" sx={{ color: BRAND.textSecondary }}>Unread message reminder after 24h</Typography>
+                      </Box>
+                    }
+                    labelPlacement="start"
+                    sx={{ justifyContent: "space-between", ml: 0, width: "100%" }}
+                  />
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        size="small"
+                        checked={notifPush}
+                        onChange={(e) => handleSaveNotif("pushNotifications", e.target.checked)}
+                        sx={{
+                          "& .MuiSwitch-switchBase.Mui-checked": { color: BRAND.maroon },
+                          "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": { backgroundColor: BRAND.maroon },
+                        }}
+                      />
+                    }
+                    label={
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 600, color: BRAND.textPrimary }}>Push notifications</Typography>
+                        <Typography variant="caption" sx={{ color: BRAND.textSecondary }}>Messages and support replies on iPhone</Typography>
+                      </Box>
+                    }
+                    labelPlacement="start"
+                    sx={{ justifyContent: "space-between", ml: 0, width: "100%" }}
+                  />
+                </Box>
 
                 <Divider sx={{ my: 2.5, borderColor: BRAND.cardBorder }} />
 
