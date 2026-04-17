@@ -50,7 +50,7 @@ export default function PrivacyPage({ effectiveTheme = "light" }) {
           {/* Back button */}
           <Box
             onClick={() => navigate(-1)}
-            sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, cursor: "pointer", color: "rgba(255,255,255,0.8)", mb: 4, mt: 1, "&:hover": { color: "#fff" }, transition: "color 0.15s" }}
+            sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, cursor: "pointer", color: "rgba(255,255,255,0.8)", mb: 4, mt: { xs: 5, sm: 2 }, "&:hover": { color: "#fff" }, transition: "color 0.15s" }}
           >
             <ArrowBackIcon sx={{ fontSize: 18 }} />
             <Typography variant="body2" fontWeight={600}>Back</Typography>
@@ -119,7 +119,7 @@ export default function PrivacyPage({ effectiveTheme = "light" }) {
         <Section icon={<DeleteOutlineIcon />} title="Your Rights" brand={BRAND}>
           <Item brand={BRAND}>Delete your account and all data: Settings → Delete Account</Item>
           <Item brand={BRAND}>Opt out of push notifications: Settings → Notifications</Item>
-          <Item brand={BRAND}>Contact us with data requests: <Link href="mailto:support@thelostandhound.com" sx={{ color: BRAND.accent, fontWeight: 600 }}>support@thelostandhound.com</Link></Item>
+          <Item brand={BRAND}>Contact us with data requests: <Link href="mailto:thelostandhoundservices@gmail.com" sx={{ color: BRAND.accent, fontWeight: 600 }}>thelostandhoundservices@gmail.com</Link></Item>
         </Section>
 
         <Divider sx={{ borderColor: BRAND.border, my: 4 }} />
