@@ -985,7 +985,7 @@ export default function LoginPage({
 
                 {!isSignUp && biometryAvailable && storedBiometricEmail && !manualMode ? (
                   /* ── Face ID sign-in mode ── */
-                  <Box>
+                  <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                     <Button
                       fullWidth
                       variant="contained"

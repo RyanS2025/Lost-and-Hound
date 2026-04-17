@@ -29,7 +29,8 @@ import {
 import AppFooter from "./components/AppFooter";
 import ReferralPollModal from "./components/ReferralPollModal";
 import { Capacitor } from "@capacitor/core";
-import { AppBar, Toolbar, Button, IconButton, Typography, Container, Box, Paper, Badge, Chip, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, CircularProgress } from '@mui/material';
+import { App as CapApp } from "@capacitor/app";
+import { AppBar, Toolbar, Button, IconButton, Typography, Container, Box, Paper, Badge, Chip, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, CircularProgress, TextField } from '@mui/material';
 import { BiometricAuth } from "@aparajita/capacitor-biometric-auth";
 import { Preferences } from "@capacitor/preferences";
 import { ThemeProvider, createTheme } from '@mui/material/styles';
@@ -438,7 +439,10 @@ export default function App() {
     }
   }, [profile, user]);
 
+  const justLoggedIn = useRef(false);
+
   const onLoginSuccess = useCallback(() => {
+    justLoggedIn.current = true;
     setLoginTransition(true);
     setAwaitingProfile(true);
     didLoginTransition.current = true;
@@ -449,6 +453,89 @@ export default function App() {
     setLoginTransition(false);
     setAwaitingProfile(false);
   }, []);
+
+  // ── App lock ──────────────────────────────────────────────
+  const LOCK_GRACE_MS = 15000;
+  const backgroundedAt = useRef(null);
+  const coldStartChecked = useRef(false);
+  const [appLocked, setAppLocked] = useState(false);
+  const [lockLoading, setLockLoading] = useState(false);
+  const [lockPassword, setLockPassword] = useState("");
+  const [lockError, setLockError] = useState("");
+  const [showPasswordFallback, setShowPasswordFallback] = useState(false);
+
+  const faceIdEnrolled = !!localStorage.getItem("biometric_email");
+
+  const lockApp = useCallback(() => {
+    setAppLocked(true);
+    setLockPassword("");
+    setLockError("");
+    setShowPasswordFallback(false);
+  }, []);
+
+  const unlockWithFaceId = useCallback(async () => {
+    setLockLoading(true);
+    setLockError("");
+    try {
+      await BiometricAuth.authenticate({ reason: "Unlock Lost & Hound" });
+      setAppLocked(false);
+    } catch (err) {
+      const msg = err?.message || "";
+      if (!msg.toLowerCase().includes("cancel")) {
+        setLockError("Face ID failed.");
+        setShowPasswordFallback(true);
+      }
+    } finally {
+      setLockLoading(false);
+    }
+  }, []);
+
+  const unlockWithPassword = useCallback(async () => {
+    if (!lockPassword) return;
+    setLockLoading(true);
+    setLockError("");
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: user?.email, password: lockPassword });
+      if (error) throw error;
+      setAppLocked(false);
+      setLockPassword("");
+    } catch {
+      setLockError("Incorrect password.");
+    } finally {
+      setLockLoading(false);
+    }
+  }, [lockPassword, user?.email]);
+
+  // Cold start: lock when existing session is restored (not after a fresh login)
+  useEffect(() => {
+    if (!user || !profile) { coldStartChecked.current = false; return; }
+    if (coldStartChecked.current) return;
+    coldStartChecked.current = true;
+    if (!Capacitor.isNativePlatform()) return;
+    if (justLoggedIn.current) { justLoggedIn.current = false; return; }
+    lockApp();
+  }, [user, profile, lockApp]);
+
+  // Resume from background: lock after grace period
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    const sub = CapApp.addListener("appStateChange", ({ isActive }) => {
+      if (!isActive) {
+        backgroundedAt.current = Date.now();
+      } else if (user && profile) {
+        const elapsed = backgroundedAt.current ? Date.now() - backgroundedAt.current : Infinity;
+        if (elapsed > LOCK_GRACE_MS) lockApp();
+      }
+    });
+    return () => { sub.then(h => h.remove()); };
+  }, [user, profile, lockApp]);
+
+  // Auto-trigger Face ID when lock screen appears
+  useEffect(() => {
+    if (!appLocked || !Capacitor.isNativePlatform() || !faceIdEnrolled) return;
+    const t = setTimeout(() => unlockWithFaceId(), 300);
+    return () => clearTimeout(t);
+  }, [appLocked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [faceIdEnrollOpen, setFaceIdEnrollOpen] = useState(false);
   const [faceIdEnrolling, setFaceIdEnrolling] = useState(false);
@@ -860,6 +947,125 @@ export default function App() {
           description="Message other students directly to coordinate item pickups. Built-in safety reminders keep everyone safe."
         />
       )}
+      {/* ── App lock screen ── */}
+      {appLocked && (
+        <Box
+          sx={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            backgroundColor: effectiveTheme === "dark" ? "#030303" : "#f5f0f0",
+            backgroundImage: `radial-gradient(circle, ${effectiveTheme === "dark" ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.12)"} 1px, transparent 1px)`,
+            backgroundSize: "24px 24px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            px: 3,
+            pb: "env(safe-area-inset-bottom)",
+            pt: "env(safe-area-inset-top)",
+          }}
+        >
+          <Box
+            component="img"
+            src="/MainLogoTextAlt.png"
+            alt="Lost & Hound"
+            sx={{ width: 180, mb: 4, opacity: 0.9 }}
+          />
+
+          <Paper
+            elevation={0}
+            sx={{
+              width: "100%",
+              maxWidth: 340,
+              p: 3,
+              borderRadius: 3,
+              background: effectiveTheme === "dark" ? "#1A1A1B" : "#fff",
+              border: `1px solid ${effectiveTheme === "dark" ? "rgba(255,255,255,0.14)" : "#ecdcdc"}`,
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+            }}
+          >
+            <Typography variant="h6" fontWeight={800} textAlign="center">
+              Unlock Lost &amp; Hound
+            </Typography>
+
+            {faceIdEnrolled && !showPasswordFallback ? (
+              <>
+                <Button
+                  fullWidth
+                  variant="contained"
+                  onClick={unlockWithFaceId}
+                  disabled={lockLoading}
+                  startIcon={lockLoading ? <CircularProgress size={18} color="inherit" /> : null}
+                  sx={{
+                    py: 1.25, fontWeight: 700, borderRadius: 2, fontSize: 15,
+                    textTransform: "none",
+                    background: effectiveTheme === "dark" ? "#FF4500" : "#A84D48",
+                    "&:hover": { background: effectiveTheme === "dark" ? "#E03D00" : "#8f3e3a" },
+                  }}
+                >
+                  {lockLoading ? "Unlocking…" : "Unlock with Face ID"}
+                </Button>
+                {lockError && (
+                  <Typography variant="caption" color="error" textAlign="center">{lockError}</Typography>
+                )}
+                <Button
+                  fullWidth variant="text" size="small"
+                  onClick={() => setShowPasswordFallback(true)}
+                  sx={{ color: "text.secondary", textTransform: "none", display: "block", textAlign: "center" }}
+                >
+                  Use password instead
+                </Button>
+              </>
+            ) : (
+              <>
+                <TextField
+                  autoFocus fullWidth size="small" type="password"
+                  label="Password" value={lockPassword}
+                  onChange={(e) => setLockPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && lockPassword && unlockWithPassword()}
+                  sx={{ "& .MuiOutlinedInput-root": { fontSize: { xs: 16, md: 13 } } }}
+                />
+                {lockError && (
+                  <Typography variant="caption" color="error" textAlign="center">{lockError}</Typography>
+                )}
+                <Button
+                  fullWidth variant="contained" disabled={!lockPassword || lockLoading}
+                  onClick={unlockWithPassword}
+                  startIcon={lockLoading ? <CircularProgress size={18} color="inherit" /> : null}
+                  sx={{
+                    py: 1.25, fontWeight: 700, borderRadius: 2, fontSize: 15,
+                    textTransform: "none",
+                    background: effectiveTheme === "dark" ? "#FF4500" : "#A84D48",
+                    "&:hover": { background: effectiveTheme === "dark" ? "#E03D00" : "#8f3e3a" },
+                  }}
+                >
+                  {lockLoading ? "Unlocking…" : "Unlock"}
+                </Button>
+                {faceIdEnrolled && (
+                  <Button
+                    fullWidth variant="text" size="small"
+                    onClick={() => { setShowPasswordFallback(false); unlockWithFaceId(); }}
+                    sx={{ color: "text.secondary", textTransform: "none" }}
+                  >
+                    Try Face ID again
+                  </Button>
+                )}
+              </>
+            )}
+
+            <Button
+              fullWidth variant="text" size="small" onClick={handleLogout}
+              sx={{ color: "error.main", textTransform: "none", fontWeight: 600 }}
+            >
+              Sign Out
+            </Button>
+          </Paper>
+        </Box>
+      )}
+
       {/* Face ID enrollment prompt — shown once after first trusted-device login */}
       <Dialog
         open={faceIdEnrollOpen}
