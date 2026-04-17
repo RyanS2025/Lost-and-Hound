@@ -468,7 +468,7 @@ export default function App() {
         {!sessionReady ? (
           <Box
             sx={{
-              minHeight: "100vh",
+              minHeight: "100dvh",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -502,7 +502,7 @@ export default function App() {
         {(awaitingProfile || profileInitLoading) && !loginTransition ? (
           <Box
             sx={{
-              minHeight: '100vh',
+              minHeight: '100dvh',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',

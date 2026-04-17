@@ -661,7 +661,7 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
           display: "flex",
           justifyContent: "center",
           width: "100%",
-          minHeight: "calc(100vh - 100px)",
+          minHeight: "calc(100dvh - 100px)",
           boxSizing: "border-box",
           px: { xs: 1.25, sm: 2, md: 3 },
           py: { xs: 1.25, sm: 2, md: 3 },

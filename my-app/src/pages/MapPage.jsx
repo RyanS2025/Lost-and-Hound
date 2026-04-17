@@ -713,7 +713,7 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
             sx={{
               flex: 1,
               minHeight: { xs: 240, md: 400 },
-              height: { xs: "40vh", md: "calc(100vh - 240px)" },
+              height: { xs: "40dvh", md: "calc(100dvh - 240px)" },
               overflow: "hidden", borderRadius: 3, position: "relative",
               border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
               background: isDark ? "#1A1A1B" : "#fff",
@@ -847,7 +847,7 @@ export default function MapPage({ effectiveTheme = "light", timeZone = DEFAULT_T
                 elevation={2}
                 sx={{
                   width: 320, p: 2.5, borderRadius: 3,
-                  height: "calc(100vh - 240px)",
+                  height: "calc(100dvh - 240px)",
                   overflowY: "auto",
                   border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc",
                   background: isDark ? "#1A1A1B" : "#fff",

@@ -586,7 +586,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendGuestMessage())}
                             inputProps={{ maxLength: 1000 }}
                             helperText={`${stripInvisible(chatInput).length}/1000`}
-                            sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13, bgcolor: styles.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }}
+                            sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: { xs: 16, md: 13 }, bgcolor: styles.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }}
                           />
                           <IconButton onClick={sendGuestMessage} disabled={!chatInput.trim() || chatSending}
                             sx={{ bgcolor: styles.accent, color: "#fff", borderRadius: 2, width: 40, height: 40, flexShrink: 0, "&:hover": { bgcolor: styles.accentHover }, "&.Mui-disabled": { bgcolor: styles.buttonDisabledBg } }}>
@@ -889,7 +889,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                       onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendGuestMessage(); } }}
                       inputProps={{ maxLength: 1000 }}
                       helperText={`${stripInvisible(chatInput).length}/1000`}
-                      sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13, bgcolor: styles.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }}
+                      sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: { xs: 16, md: 13 }, bgcolor: styles.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }}
                     />
                     <IconButton onClick={sendGuestMessage} disabled={!chatInput.trim() || chatSending}
                       sx={{ bgcolor: styles.accent, color: "#fff", borderRadius: 2, width: 38, height: 38, flexShrink: 0, "&:hover": { bgcolor: styles.accentHover }, "&.Mui-disabled": { bgcolor: styles.buttonDisabledBg } }}>

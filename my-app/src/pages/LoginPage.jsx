@@ -1,4 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { Capacitor } from "@capacitor/core";
+import { Keyboard } from "@capacitor/keyboard";
 import { useDemo } from "../contexts/DemoContext";
 import ConfettiCanvas from "../components/ConfettiCanvas";
 import { useNavigate } from "react-router-dom";
@@ -139,19 +141,17 @@ export default function LoginPage({
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reset scroll only when keyboard fully dismisses (not when tabbing between inputs)
+  // Keyboard slide-up: shift the whole page up on native iOS when keyboard opens so
+  // email/password stay visible (KeyboardResize.None keeps the webview fixed-size)
+  const isNative = useMemo(() => Capacitor.isNativePlatform(), []);
+  const [keyboardH, setKeyboardH] = useState(0);
+
   useEffect(() => {
-    const resetScroll = () => {
-      setTimeout(() => {
-        const active = document.activeElement;
-        if (!active || active === document.body || active.tagName === "BODY") {
-          window.scrollTo(0, 0);
-        }
-      }, 100);
-    };
-    window.addEventListener("focusout", resetScroll);
-    return () => window.removeEventListener("focusout", resetScroll);
-  }, []);
+    if (!isNative) return;
+    const showSub = Keyboard.addListener("keyboardWillShow", ({ keyboardHeight }) => setKeyboardH(keyboardHeight));
+    const hideSub = Keyboard.addListener("keyboardWillHide", () => setKeyboardH(0));
+    return () => { showSub.then((h) => h.remove()); hideSub.then((h) => h.remove()); };
+  }, [isNative]);
 
   const [fadeOut, setFadeOut] = useState(false);
 
@@ -540,7 +540,8 @@ export default function LoginPage({
           backgroundColor: BRAND.bg,
           backgroundSize: "24px 24px",
           p: { xs: 0, md: 4 },
-          transition: "opacity 0.8s ease, filter 0.8s ease",
+          transition: "opacity 0.8s ease, filter 0.8s ease, transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+          transform: isNative && keyboardH > 0 ? `translateY(-${Math.round(keyboardH / 2)}px)` : "none",
           ...(fadeOut && {
             opacity: 0,
             filter: "blur(6px)",
@@ -1220,6 +1221,7 @@ export default function LoginPage({
         onViewDemo={handleViewDemo}
         effectiveTheme={effectiveTheme}
       />
+
     </>
   );
 }

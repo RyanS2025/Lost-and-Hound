@@ -10,6 +10,7 @@ import {
   DialogContentText,
   IconButton,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import TermsModal from "./TermsModal";
@@ -44,6 +45,7 @@ export default function AppFooter({ effectiveTheme = "light" }) {
   const [termsOpen, setTermsOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const isMobileWeb = useMediaQuery("(max-width:900px)");
   const isDark = effectiveTheme === "dark";
 
   useEffect(() => {
@@ -52,13 +54,15 @@ export default function AppFooter({ effectiveTheme = "light" }) {
       const hide = Keyboard.addListener("keyboardWillHide", () => setKeyboardOpen(false));
       return () => { show.then((h) => h.remove()); hide.then((h) => h.remove()); };
     }
-    // Web browser fallback
+    // Web browser fallback — guarded to mobile widths to avoid false positives
+    // from desktop devtools viewport resize or pinch-zoom
+    if (!isMobileWeb) return;
     const vv = window.visualViewport;
     if (!vv) return;
     const handle = () => setKeyboardOpen(window.innerHeight - vv.height > 100);
     vv.addEventListener("resize", handle);
     return () => vv.removeEventListener("resize", handle);
-  }, []);
+  }, [isMobileWeb]);
 
   const styles = useMemo(
     () => ({

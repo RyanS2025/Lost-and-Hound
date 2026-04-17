@@ -148,7 +148,7 @@ export default function TermsModal({
           borderRadius: 3,
           mx: 2,
           width: "calc(100% - 32px)",
-          maxHeight: { xs: "calc(88vh - env(safe-area-inset-top))", sm: "90vh" },
+          maxHeight: { xs: "calc(88dvh - env(safe-area-inset-top))", sm: "90dvh" },
           mt: "env(safe-area-inset-top)",
         },
       }}
