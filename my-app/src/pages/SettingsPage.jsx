@@ -831,7 +831,7 @@ export default function SettingsPage({
                     label={
                       <Box>
                         <Typography variant="body2" sx={{ fontWeight: 600, color: BRAND.textPrimary }}>Push notifications</Typography>
-                        <Typography variant="caption" sx={{ color: BRAND.textSecondary }}>Messages and support replies on iPhone</Typography>
+                        <Typography variant="caption" sx={{ color: BRAND.textSecondary }}>Messages, support replies, and community updates</Typography>
                       </Box>
                     }
                     labelPlacement="start"
