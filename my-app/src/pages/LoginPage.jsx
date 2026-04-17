@@ -1164,6 +1164,19 @@ export default function LoginPage({
                     >
                       Need Help?
                     </MuiLink>
+                    <Typography variant="body2" sx={{ color: "text.secondary" }}>·</Typography>
+                    <MuiLink
+                      component="button"
+                      variant="body2"
+                      onClick={() => navigate("/privacy")}
+                      sx={{
+                        cursor: "pointer",
+                        color: BRAND.accent,
+                        fontWeight: 600,
+                      }}
+                    >
+                      Privacy Policy
+                    </MuiLink>
                     {manualMode && biometryAvailable && storedBiometricEmail && (
                       <>
                         <Typography variant="body2" sx={{ color: "text.secondary" }}>·</Typography>

@@ -19,6 +19,7 @@ import MyWorkPage from "./pages/dashboard/MyWorkPage";
 import StatsPage from "./pages/dashboard/StatsPage";
 import FinancesPage from "./pages/dashboard/FinancesPage";
 import NotFoundPage from "./pages/NotFoundPage";
+import PrivacyPage from "./pages/PrivacyPage";
 import NoteCard from "./components/NoteCard";
 import DemoDisclaimerModal from "./components/DemoDisclaimerModal";
 import { useDemo } from "./contexts/DemoContext";
@@ -638,6 +639,10 @@ export default function App() {
           </Box>
         ) : (
           <Routes>
+            <Route
+              path="/privacy"
+              element={<PrivacyPage effectiveTheme={effectiveTheme} />}
+            />
             <Route
               path="/forgot-password"
               element={<ForgotPasswordPage effectiveTheme={effectiveTheme} />}
