@@ -28,6 +28,8 @@ import {
   Switch,
   FormControlLabel,
   CircularProgress,
+  IconButton,
+  Chip,
 } from "@mui/material";
 import { useAuth } from "../AuthContext";
 import Avatar from "@mui/material/Avatar";
@@ -36,6 +38,7 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import BlockIcon from "@mui/icons-material/Block";
 import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
@@ -88,6 +91,27 @@ export default function SettingsPage({
   const [campusMessage, setCampusMessage] = useState("");
   const [notifEmail, setNotifEmail] = useState(effectiveProfile?.email_notifications_enabled ?? true);
   const [notifPush, setNotifPush] = useState(effectiveProfile?.push_notifications_enabled ?? true);
+  const [notifBroadcast, setNotifBroadcast] = useState(effectiveProfile?.broadcast_notifications_enabled ?? true);
+
+  const [blockedUsers, setBlockedUsers] = useState([]);
+
+  useEffect(() => {
+    if (!effectiveUser || isDemoMode) return;
+    supabase.from("blocked_users").select("blocked_id")
+      .then(async ({ data }) => {
+        const ids = data?.map(r => r.blocked_id) || [];
+        if (!ids.length) return setBlockedUsers([]);
+        const { data: profiles } = await supabase.from("profiles").select("id, first_name, last_name").in("id", ids);
+        setBlockedUsers(profiles || []);
+      }).catch(() => {});
+  }, [effectiveUser, isDemoMode]);
+
+  const handleUnblockUser = async (userId) => {
+    try {
+      await apiFetch(`/api/users/${userId}/block`, { method: "DELETE" });
+      setBlockedUsers(prev => prev.filter(u => u.id !== userId));
+    } catch {}
+  };
 
   const [faceIdEnabled, setFaceIdEnabled] = useState(false);
   const [faceIdAvailable, setFaceIdAvailable] = useState(false);
@@ -139,7 +163,8 @@ export default function SettingsPage({
   const handleSaveNotif = async (key, value) => {
     if (isDemoMode) return;
     if (key === "emailNotifications") setNotifEmail(value);
-    else setNotifPush(value);
+    else if (key === "pushNotifications") setNotifPush(value);
+    else if (key === "broadcastNotifications") setNotifBroadcast(value);
     await apiFetch("/api/settings/notifications", {
       method: "PATCH",
       body: JSON.stringify({ [key]: value }),
@@ -830,13 +855,67 @@ export default function SettingsPage({
                     }
                     label={
                       <Box>
-                        <Typography variant="body2" sx={{ fontWeight: 600, color: BRAND.textPrimary }}>Push notifications</Typography>
-                        <Typography variant="caption" sx={{ color: BRAND.textSecondary }}>Messages and support replies on iPhone</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600, color: BRAND.textPrimary }}>Message notifications</Typography>
+                        <Typography variant="caption" sx={{ color: BRAND.textSecondary }}>New messages and support replies</Typography>
                       </Box>
                     }
                     labelPlacement="start"
                     sx={{ justifyContent: "space-between", ml: 0, width: "100%" }}
                   />
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        size="small"
+                        checked={notifBroadcast}
+                        onChange={(e) => handleSaveNotif("broadcastNotifications", e.target.checked)}
+                        sx={{
+                          "& .MuiSwitch-switchBase.Mui-checked": { color: BRAND.maroon },
+                          "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": { backgroundColor: BRAND.maroon },
+                        }}
+                      />
+                    }
+                    label={
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 600, color: BRAND.textPrimary }}>Community updates</Typography>
+                        <Typography variant="caption" sx={{ color: BRAND.textSecondary }}>Daily lost item broadcasts and announcements</Typography>
+                      </Box>
+                    }
+                    labelPlacement="start"
+                    sx={{ justifyContent: "space-between", ml: 0, width: "100%" }}
+                  />
+                </Box>
+
+                <Divider sx={{ my: 2.5, borderColor: BRAND.cardBorder }} />
+
+                {/* -- Blocked Users -- */}
+                <SectionLabel icon={BlockIcon}>Blocked Users</SectionLabel>
+                <Box sx={{ bgcolor: BRAND.maroonFaint, borderRadius: 2, px: 2, py: 1.5, mb: 2.5 }}>
+                  {blockedUsers.length === 0 ? (
+                    <Typography variant="body2" sx={{ color: BRAND.textSecondary }}>
+                      No blocked users.
+                    </Typography>
+                  ) : (
+                    <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                      {blockedUsers.map(u => (
+                        <Box key={u.id} sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                            <Avatar sx={{ width: 28, height: 28, bgcolor: BRAND.maroon, fontSize: 12, fontWeight: 700 }}>
+                              {u.first_name?.[0]}{u.last_name?.[0]}
+                            </Avatar>
+                            <Typography variant="body2" fontWeight={600} sx={{ color: BRAND.textPrimary }}>
+                              {u.first_name} {u.last_name}
+                            </Typography>
+                          </Box>
+                          <Chip
+                            label="Unblock"
+                            size="small"
+                            onClick={() => handleUnblockUser(u.id)}
+                            sx={{ fontWeight: 700, fontSize: 11, cursor: "pointer", bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)", "&:hover": { bgcolor: isDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.12)" } }}
+                          />
+                        </Box>
+                      ))}
+                    </Box>
+                  )}
                 </Box>
 
                 <Divider sx={{ my: 2.5, borderColor: BRAND.cardBorder }} />

@@ -618,10 +618,11 @@ app.patch("/api/profile/campus", requireAuth, require2FA, async (req, res) => {
 });
 
 app.patch("/api/settings/notifications", requireAuth, async (req, res) => {
-  const { emailNotifications, pushNotifications } = req.body;
+  const { emailNotifications, pushNotifications, broadcastNotifications } = req.body;
   const updates = {};
-  if (typeof emailNotifications === "boolean") updates.email_notifications_enabled = emailNotifications;
-  if (typeof pushNotifications  === "boolean") updates.push_notifications_enabled  = pushNotifications;
+  if (typeof emailNotifications     === "boolean") updates.email_notifications_enabled      = emailNotifications;
+  if (typeof pushNotifications      === "boolean") updates.push_notifications_enabled       = pushNotifications;
+  if (typeof broadcastNotifications === "boolean") updates.broadcast_notifications_enabled  = broadcastNotifications;
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No valid fields" });
 
   const { error } = await supabase.from("profiles").update(updates).eq("id", req.user.id);
@@ -1167,10 +1168,12 @@ app.get("/api/conversations", requireAuth, require2FA, async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
 
-  // Fetch conversations and hidden list in parallel
-  const [convosResult, hiddenResult] = await Promise.all([
+  // Fetch conversations, hidden list, and blocked users in parallel
+  const [convosResult, hiddenResult, myBlocksResult, blockersOfMeResult] = await Promise.all([
     supabase.from("conversations").select("*").or(`participant_1.eq.${userId},participant_2.eq.${userId}`).order("created_at", { ascending: false }),
     supabase.from("hidden_conversations").select("conversation_id").eq("user_id", userId),
+    supabase.from("blocked_users").select("blocked_id").eq("blocker_id", userId),
+    supabase.from("blocked_users").select("blocker_id").eq("blocked_id", userId),
   ]);
 
   if (convosResult.error) return dbError(res, convosResult.error, "GET /api/conversations");
@@ -1180,7 +1183,16 @@ app.get("/api/conversations", requireAuth, require2FA, async (req, res) => {
   }
 
   const hiddenIds = new Set((hiddenResult.data || []).map((h) => h.conversation_id));
-  const visible = convos.filter((c) => !hiddenIds.has(c.id));
+  const blockedUserIds = new Set([
+    ...(myBlocksResult.data ?? []).map(r => r.blocked_id),
+    ...(blockersOfMeResult.data ?? []).map(r => r.blocker_id),
+  ]);
+
+  const visible = convos.filter((c) => {
+    if (hiddenIds.has(c.id)) return false;
+    const otherId = c.participant_1 === userId ? c.participant_2 : c.participant_1;
+    return !blockedUserIds.has(otherId);
+  });
 
   const total = visible.length;
   const offset = (page - 1) * limit;
@@ -1395,6 +1407,16 @@ app.post("/api/conversations/:id/messages", writeLimiter, requireAuth, require2F
 
   if (profanityCheck(res, { "message": content })) return;
 
+  // Check if either party has blocked the other
+  const otherId = req.conversation.participant_1 === req.user.id
+    ? req.conversation.participant_2
+    : req.conversation.participant_1;
+  const { data: blockRows } = await supabase
+    .from("blocked_users")
+    .select("id")
+    .or(`and(blocker_id.eq.${req.user.id},blocked_id.eq.${otherId}),and(blocker_id.eq.${otherId},blocked_id.eq.${req.user.id})`);
+  if (blockRows?.length > 0) return res.status(403).json({ error: "Messaging is not available in this conversation." });
+
   const { data, error } = await supabase
     .from("messages")
     .insert({
@@ -1407,11 +1429,7 @@ app.post("/api/conversations/:id/messages", writeLimiter, requireAuth, require2F
 
   if (error) return dbError(res, error, "POST /api/conversations/messages");
 
-  // Send push notification to the other participant
-  const otherId = req.conversation.participant_1 === req.user.id
-    ? req.conversation.participant_2
-    : req.conversation.participant_1;
-
+  // Send push notification to the other participant (otherId already computed above)
   const { data: senderProfile } = await supabase
     .from("profiles")
     .select("first_name")
@@ -1423,6 +1441,44 @@ app.post("/api/conversations/:id/messages", writeLimiter, requireAuth, require2F
   sendPushNotification(otherId, senderName, preview, { conversationId: req.params.id }).catch(() => {});
 
   res.json(data);
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BLOCK ROUTES
+
+// Returns all user IDs that should be hidden from the current user's feed/messages
+// — both users they've blocked AND users who've blocked them.
+// Backend service key bypasses RLS so both directions are readable.
+app.get("/api/blocked-ids", requireAuth, async (req, res) => {
+  const [myBlocks, blockersOfMe] = await Promise.all([
+    supabase.from("blocked_users").select("blocked_id").eq("blocker_id", req.user.id),
+    supabase.from("blocked_users").select("blocker_id").eq("blocked_id", req.user.id),
+  ]);
+  const ids = [
+    ...(myBlocks.data ?? []).map(r => r.blocked_id),
+    ...(blockersOfMe.data ?? []).map(r => r.blocker_id),
+  ];
+  res.json({ ids: [...new Set(ids)] });
+});
+
+app.post("/api/users/:id/block", requireAuth, async (req, res) => {
+  const blockedId = req.params.id;
+  if (blockedId === req.user.id) return res.status(400).json({ error: "Cannot block yourself" });
+  const { error } = await supabase
+    .from("blocked_users")
+    .upsert({ blocker_id: req.user.id, blocked_id: blockedId });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+app.delete("/api/users/:id/block", requireAuth, async (req, res) => {
+  const { error } = await supabase
+    .from("blocked_users")
+    .delete()
+    .eq("blocker_id", req.user.id)
+    .eq("blocked_id", req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2718,16 +2774,38 @@ async function sendBroadcastPush(title, body, data = {}) {
   const appId  = process.env.ONESIGNAL_APP_ID;
   if (!apiKey || !appId) return;
   try {
+    let notifPayload = {
+      app_id: appId,
+      included_segments: ["All"],
+      headings: { en: title },
+      contents: { en: body },
+      data,
+    };
+
+    // Exclude users who have opted out of community broadcasts
+    try {
+      const { data: optedOut } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("broadcast_notifications_enabled", false);
+      if (optedOut?.length > 0) {
+        const optedOutIds = optedOut.map(r => r.id);
+        const { data: tokens } = await supabase
+          .from("push_tokens")
+          .select("player_id")
+          .not("user_id", "in", `(${optedOutIds.join(",")})`);
+        const playerIds = (tokens ?? []).map(t => t.player_id).filter(Boolean);
+        if (playerIds.length > 0) {
+          delete notifPayload.included_segments;
+          notifPayload.include_player_ids = playerIds;
+        }
+      }
+    } catch {} // broadcast_notifications_enabled column may not exist yet
+
     await fetch("https://onesignal.com/api/v1/notifications", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Basic ${apiKey}` },
-      body: JSON.stringify({
-        app_id: appId,
-        included_segments: ["All"],
-        headings: { en: title },
-        contents: { en: body },
-        data,
-      }),
+      body: JSON.stringify(notifPayload),
     });
     await incrementPushCount();
   } catch (err) {
