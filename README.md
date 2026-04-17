@@ -9,6 +9,7 @@ Post what you've found. Find what you've lost. Connect with your campus in real 
 <br />
 
 [![Live](https://img.shields.io/badge/Live%20at-thelostandhound.com-A84D48?style=for-the-badge)](https://thelostandhound.com)
+[![App Store](https://img.shields.io/badge/iOS-App%20Store-000000?style=for-the-badge&logo=apple)](https://thelostandhound.com)
 [![Campuses](https://img.shields.io/badge/12%20Global-Campuses-6366f1?style=for-the-badge)](#campuses)
 [![AI Safety](https://img.shields.io/badge/AI-Content%20Screening-0ea5e9?style=for-the-badge)](#ai-powered-safety)
 [![Real-Time](https://img.shields.io/badge/Real--Time-Live%20Updates-16a34a?style=for-the-badge)](#real-time-everything)
@@ -16,6 +17,19 @@ Post what you've found. Find what you've lost. Connect with your campus in real 
 </div>
 
 <img src="docs/hero.png" alt="Lost & Hound — The smarter campus lost and found" width="100%" style="border-radius:14px;" />
+
+---
+
+## iOS App
+
+Lost & Hound is available on the Apple App Store for iPhone.
+
+- Native iOS experience built with Capacitor
+- Face ID sign-in
+- Push notifications for new messages and community updates
+- Full feature parity with the web app — feed, map, messaging, settings
+
+> **Currently under App Store review.** Visit [thelostandhound.com](https://thelostandhound.com) in the meantime.
 
 ---
 
@@ -185,11 +199,13 @@ Lost & Hound is built on a production-grade stack chosen for real-time performan
 | Layer | Technology |
 |---|---|
 | Frontend | React 19, Material UI v7, Vite |
+| Mobile | Capacitor (iOS) |
 | Backend | Node.js, Express 5 |
 | Database & Auth | Supabase (PostgreSQL) |
 | Real-Time | Supabase Realtime WebSocket subscriptions |
 | Maps | Google Maps JavaScript API |
 | AI Safety | Google Cloud Vision API |
+| Push Notifications | OneSignal |
 | Email | Resend |
 | Hosting | Railway |
 
