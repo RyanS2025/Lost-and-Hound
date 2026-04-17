@@ -9,7 +9,9 @@ import ChatIcon from "@mui/icons-material/ChatBubbleOutline";
 import DeleteIcon from "@mui/icons-material/Delete";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import FlagIcon from "@mui/icons-material/Flag";
+import BlockIcon from "@mui/icons-material/Block";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import Tooltip from "@mui/material/Tooltip";
 import ReportModal from "../components/ReportModal";
 import { supabase } from "../../backend/supabaseClient";
 import apiFetch from "../utils/apiFetch";
@@ -43,6 +45,8 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
   const [sending, setSending] = useState(false);
   const [msgProfane, setMsgProfane] = useState(false);
   const [reportTarget, setReportTarget] = useState(null);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blockLoading, setBlockLoading] = useState(false);
   const [searchParams] = useSearchParams();
 
   const overlayRef = useRef(null);
@@ -211,9 +215,25 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
       setIsClosed(false);
       setMsgHasMore(false);
       setMsgPage(1);
+      setIsBlocked(false);
       return;
     }
     setIsClosed(false);
+
+    // Check if current user has blocked the other participant
+    if (!isDemoMode) {
+      const otherId = selectedConversation.participant_1 === currentUserId
+        ? selectedConversation.participant_2
+        : selectedConversation.participant_1;
+      supabase
+        .from("blocked_users")
+        .select("id")
+        .eq("blocker_id", currentUserId)
+        .eq("blocked_id", otherId)
+        .maybeSingle()
+        .then(({ data }) => setIsBlocked(!!data))
+        .catch(() => setIsBlocked(false));
+    }
 
     let channel;
     let closedChannel;
@@ -340,6 +360,26 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
     fetchAndSelect();
   }, [conversations, searchParams]);
 
+  const handleBlock = async () => {
+    const other = getOtherParticipant();
+    if (!other) return;
+    setBlockLoading(true);
+    try {
+      await apiFetch(`/api/users/${other.id}/block`, { method: "POST" });
+      setIsBlocked(true);
+    } catch { } finally { setBlockLoading(false); }
+  };
+
+  const handleUnblock = async () => {
+    const other = getOtherParticipant();
+    if (!other) return;
+    setBlockLoading(true);
+    try {
+      await apiFetch(`/api/users/${other.id}/block`, { method: "DELETE" });
+      setIsBlocked(false);
+    } catch { } finally { setBlockLoading(false); }
+  };
+
   const getOtherParticipant = () => {
     if (!selectedConversation) return null;
     const otherId = selectedConversation.participant_1 === currentUserId
@@ -409,6 +449,15 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
       <Box sx={{ p: 2, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", textAlign: "center", flexShrink: 0 }}>
         <Typography variant="caption" fontWeight={700} color={mutedTextColor}>This conversation has been closed.</Typography>
       </Box>
+    ) : isBlocked ? (
+      <Box sx={{ p: 2, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", textAlign: "center", flexShrink: 0 }}>
+        <Typography variant="caption" fontWeight={700} color={mutedTextColor}>
+          You've blocked this user. They can't send you messages.{" "}
+        </Typography>
+        <Button size="small" onClick={handleUnblock} disabled={blockLoading} sx={{ textTransform: "none", color: "#A84D48", fontSize: 12, fontWeight: 700, p: 0, minWidth: 0 }}>
+          Unblock
+        </Button>
+      </Box>
     ) : (
       <Box sx={{ display: "flex", alignItems: "center", p: 1.5, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", gap: 1, flexShrink: 0 }}>
         <TextField
@@ -441,12 +490,22 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
       </Box>
       {(() => {
         const other = getOtherParticipant();
-        if (!other) return null;
+        if (!other || isDemoMode) return null;
         return (
-          <Button size="small" startIcon={<FlagIcon sx={{ fontSize: 14 }} />} onClick={() => setReportTarget({ id: other.id, name: other.name })}
-            sx={{ color: isDark ? "#f2c27a" : "#92400e", fontSize: 11, fontWeight: 700, textTransform: "none", whiteSpace: "nowrap", flexShrink: 0, "&:hover": { color: "#A84D48", background: isDark ? "rgba(255,255,255,0.1)" : "rgba(168,77,72,0.08)" } }}>
-            Report
-          </Button>
+          <Box sx={{ display: "flex", gap: 0.5, flexShrink: 0 }}>
+            <Button size="small" startIcon={<FlagIcon sx={{ fontSize: 14 }} />} onClick={() => setReportTarget({ id: other.id, name: other.name })}
+              sx={{ color: isDark ? "#f2c27a" : "#92400e", fontSize: 11, fontWeight: 700, textTransform: "none", whiteSpace: "nowrap", "&:hover": { color: "#A84D48", background: isDark ? "rgba(255,255,255,0.1)" : "rgba(168,77,72,0.08)" } }}>
+              Report
+            </Button>
+            <Tooltip title={isBlocked ? "Unblock user" : "Block user"}>
+              <span>
+                <IconButton size="small" onClick={isBlocked ? handleUnblock : handleBlock} disabled={blockLoading}
+                  sx={{ color: isBlocked ? "error.main" : isDark ? "#f2c27a" : "#92400e", p: 0.5 }}>
+                  {blockLoading ? <CircularProgress size={14} /> : <BlockIcon sx={{ fontSize: 16 }} />}
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
         );
       })()}
     </Box>
