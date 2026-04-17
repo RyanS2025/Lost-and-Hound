@@ -1,4 +1,8 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { Capacitor } from "@capacitor/core";
+import { Keyboard } from "@capacitor/keyboard";
+import { BiometricAuth } from "@aparajita/capacitor-biometric-auth";
+import { Preferences } from "@capacitor/preferences";
 import { useDemo } from "../contexts/DemoContext";
 import ConfettiCanvas from "../components/ConfettiCanvas";
 import { useNavigate } from "react-router-dom";
@@ -139,19 +143,34 @@ export default function LoginPage({
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reset scroll only when keyboard fully dismisses (not when tabbing between inputs)
+  // Keyboard slide-up: shift the whole page up on native iOS when keyboard opens so
+  // email/password stay visible (KeyboardResize.None keeps the webview fixed-size)
+  const isNative = useMemo(() => Capacitor.isNativePlatform(), []);
+  const [keyboardH, setKeyboardH] = useState(0);
+
   useEffect(() => {
-    const resetScroll = () => {
-      setTimeout(() => {
-        const active = document.activeElement;
-        if (!active || active === document.body || active.tagName === "BODY") {
-          window.scrollTo(0, 0);
-        }
-      }, 100);
-    };
-    window.addEventListener("focusout", resetScroll);
-    return () => window.removeEventListener("focusout", resetScroll);
-  }, []);
+    if (!isNative) return;
+    const showSub = Keyboard.addListener("keyboardWillShow", ({ keyboardHeight }) => setKeyboardH(keyboardHeight));
+    const hideSub = Keyboard.addListener("keyboardWillHide", () => setKeyboardH(0));
+    return () => { showSub.then((h) => h.remove()); hideSub.then((h) => h.remove()); };
+  }, [isNative]);
+
+  const [biometryAvailable, setBiometryAvailable] = useState(false);
+  const [storedBiometricEmail, setStoredBiometricEmail] = useState(null);
+  const [faceIdLoading, setFaceIdLoading] = useState(false);
+  const [manualMode, setManualMode] = useState(false);
+
+  useEffect(() => {
+    if (!isNative) return;
+    BiometricAuth.checkBiometry()
+      .then(({ isAvailable }) => {
+        if (!isAvailable) return;
+        const stored = localStorage.getItem("biometric_email");
+        setBiometryAvailable(true);
+        if (stored) setStoredBiometricEmail(stored);
+      })
+      .catch(() => {});
+  }, [isNative]);
 
   const [fadeOut, setFadeOut] = useState(false);
 
@@ -224,6 +243,7 @@ export default function LoginPage({
   useEffect(() => {
     setTermsAccepted(false);
     setReferralSource("");
+    setManualMode(false);
   }, [isSignUp]);
 
   const doSignUp = async () => {
@@ -346,6 +366,87 @@ export default function LoginPage({
     setMessage("Set up your authenticator app, then enter the 6-digit code to complete login.");
   };
 
+  const doSignIn = async (emailArg, passArg) => {
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      email: emailArg,
+      password: passArg,
+    });
+    if (signInError) throw signInError;
+
+    const { data: factorsData, error: factorsError } = await supabase.auth.mfa.listFactors();
+    if (factorsError) throw factorsError;
+
+    const hasVerifiedTotp =
+      (factorsData?.all || []).some((f) => f.factor_type === "totp" && f.status === "verified") ||
+      (factorsData?.totp || []).some((f) => f.status === "verified");
+
+    if (!hasVerifiedTotp) {
+      setMfaLoading(true);
+      try {
+        await startMfaFlow(factorsData);
+      } catch (mfaErr) {
+        setError(mfaErr.message || "Failed to start MFA. Please try again.");
+        await supabase.auth.signOut();
+      } finally {
+        setMfaLoading(false);
+      }
+      return;
+    }
+
+    let deviceTrusted = false;
+    if (signInData?.session?.access_token) {
+      try {
+        const checkData = await apiFetch("/api/auth/check-device", { method: "POST" });
+        deviceTrusted = checkData?.trusted === true;
+      } catch {
+        deviceTrusted = false;
+      }
+    }
+
+    if (deviceTrusted) {
+      if (
+        isNative &&
+        biometryAvailable &&
+        !storedBiometricEmail &&
+        !localStorage.getItem("face_id_prompted") &&
+        passArg
+      ) {
+        await Preferences.set({ key: "__bio_enroll_pending", value: passArg });
+      }
+      onLoginSuccess?.();
+    } else {
+      setMfaLoading(true);
+      try {
+        await startMfaFlow();
+      } catch (mfaErr) {
+        setError(mfaErr.message || "Failed to start MFA. Please try again.");
+        await supabase.auth.signOut();
+      } finally {
+        setMfaLoading(false);
+      }
+    }
+  };
+
+  const handleFaceIdSignIn = async () => {
+    setFaceIdLoading(true);
+    setError("");
+    try {
+      await BiometricAuth.authenticate({ reason: "Sign in to Lost & Hound" });
+      const { value: storedPass } = await Preferences.get({ key: "__bio_credential" });
+      if (!storedPass) throw new Error("No stored credential");
+      await doSignIn(storedBiometricEmail, storedPass);
+    } catch (err) {
+      const msg = err?.message || "";
+      if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("user cancel")) return;
+      setError("Face ID sign-in failed. Please sign in with your password.");
+      localStorage.removeItem("biometric_email");
+      await Preferences.remove({ key: "__bio_credential" });
+      setStoredBiometricEmail(null);
+    } finally {
+      setFaceIdLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -385,66 +486,8 @@ export default function LoginPage({
         }
         await doSignUp();
       } else {
-          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-          });
-
-          if (signInError) {
-            throw signInError;
-          }
-
-          // Force MFA setup when no verified factor exists, regardless of old trusted devices.
-          const { data: factorsData, error: factorsError } = await supabase.auth.mfa.listFactors();
-          if (factorsError) throw factorsError;
-
-          const hasVerifiedTotp =
-            (factorsData?.all || []).some((f) => f.factor_type === "totp" && f.status === "verified") ||
-            (factorsData?.totp || []).some((f) => f.status === "verified");
-
-          if (!hasVerifiedTotp) {
-            setMfaLoading(true);
-            try {
-              await startMfaFlow(factorsData);
-            } catch (mfaErr) {
-              setError(mfaErr.message || "Failed to start MFA. Please try again.");
-              await supabase.auth.signOut();
-            } finally {
-              setMfaLoading(false);
-            }
-            return;
-          }
-
-          // 2FA gate: check whether this device is already trusted
-          let deviceTrusted = false;
-          if (signInData?.session?.access_token) {
-            try {
-              const checkData = await apiFetch("/api/auth/check-device", {
-                method: "POST",
-              });
-              deviceTrusted = checkData?.trusted === true;
-            } catch {
-              deviceTrusted = false;
-            }
-          }
-
-          if (deviceTrusted) {
-            // Already trusted — proceed straight into the app
-            onLoginSuccess?.();
-          } else {
-            // Device not trusted — start Supabase MFA challenge/enrollment flow.
-            setMfaLoading(true);
-            try {
-              await startMfaFlow();
-            } catch (mfaErr) {
-              setError(mfaErr.message || "Failed to start MFA. Please try again.");
-              // Sign the user out so they aren't partially authenticated
-              await supabase.auth.signOut();
-            } finally {
-              setMfaLoading(false);
-            }
-          }
-        }
+        await doSignIn(email, password);
+      }
     } catch (err) {
       setError(cleanErrorMessage(err.message || err.code));
     }
@@ -540,7 +583,8 @@ export default function LoginPage({
           backgroundColor: BRAND.bg,
           backgroundSize: "24px 24px",
           p: { xs: 0, md: 4 },
-          transition: "opacity 0.8s ease, filter 0.8s ease",
+          transition: "opacity 0.8s ease, filter 0.8s ease, transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+          transform: isNative && keyboardH > 0 ? `translateY(-${Math.round(keyboardH / 2)}px)` : "none",
           ...(fadeOut && {
             opacity: 0,
             filter: "blur(6px)",
@@ -939,116 +983,159 @@ export default function LoginPage({
                   </MuiLink>
                 </Typography>
 
-                <Box component="form" onSubmit={handleSubmit} noValidate>
-                  {isSignUp && (
-                    <>
-                      <Box sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, gap: 1.5, mb: 0.75 }}>
-                        <TextField
-                          required
-                          fullWidth
-                          size="small"
-                          label="First Name"
-                          value={firstName}
-                          onChange={(e) => setFirstName(e.target.value.slice(0, NAME_MAX_LENGTH))}
-                          inputProps={{ maxLength: NAME_MAX_LENGTH, autoCapitalize: "words" }}
-                          helperText={`${stripInvisible(firstName).length}/${NAME_MAX_LENGTH}`}
-                          sx={autofillTextFieldSx}
-                        />
-                        <TextField
-                          required
-                          fullWidth
-                          size="small"
-                          label="Last Name"
-                          value={lastName}
-                          onChange={(e) => setLastName(e.target.value.slice(0, NAME_MAX_LENGTH))}
-                          inputProps={{ maxLength: NAME_MAX_LENGTH, autoCapitalize: "words" }}
-                          helperText={`${stripInvisible(lastName).length}/${NAME_MAX_LENGTH}`}
-                          sx={autofillTextFieldSx}
-                        />
-                      </Box>
-                      <Typography variant="caption" sx={{ display: "block", mb: 1.5, color: isDark ? "#A9AAAB" : "text.secondary" }}>
-                        Max {NAME_MAX_LENGTH} characters for first and last name.
-                      </Typography>
+                {!isSignUp && biometryAvailable && storedBiometricEmail && !manualMode ? (
+                  /* ── Face ID sign-in mode ── */
+                  <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      onClick={handleFaceIdSignIn}
+                      disabled={faceIdLoading}
+                      startIcon={faceIdLoading ? <CircularProgress size={18} /> : null}
+                      sx={{
+                        py: 1.5,
+                        background: BRAND.accent,
+                        "&:hover": { background: BRAND.accentHover },
+                        fontWeight: 700,
+                        borderRadius: 2,
+                        fontSize: 15,
+                        textTransform: "none",
+                      }}
+                    >
+                      {faceIdLoading ? "Signing in…" : `Sign in as ${storedBiometricEmail}`}
+                    </Button>
+                    <MuiLink
+                      component="button"
+                      type="button"
+                      variant="body2"
+                      onClick={() => setManualMode(true)}
+                      sx={{
+                        display: "block",
+                        textAlign: "center",
+                        mt: 1.5,
+                        color: "text.secondary",
+                        fontWeight: 500,
+                        cursor: "pointer",
+                        textDecoration: "none",
+                        "&:hover": { color: BRAND.accent },
+                      }}
+                    >
+                      Use password instead
+                    </MuiLink>
+                  </Box>
+                ) : (
+                  /* ── Password / sign-up form ── */
+                  <Box component="form" onSubmit={handleSubmit} noValidate>
+                    {isSignUp && (
+                      <>
+                        <Box sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, gap: 1.5, mb: 0.75 }}>
+                          <TextField
+                            required
+                            fullWidth
+                            size="small"
+                            label="First Name"
+                            value={firstName}
+                            onChange={(e) => setFirstName(e.target.value.slice(0, NAME_MAX_LENGTH))}
+                            inputProps={{ maxLength: NAME_MAX_LENGTH, autoCapitalize: "words" }}
+                            helperText={`${stripInvisible(firstName).length}/${NAME_MAX_LENGTH}`}
+                            sx={autofillTextFieldSx}
+                          />
+                          <TextField
+                            required
+                            fullWidth
+                            size="small"
+                            label="Last Name"
+                            value={lastName}
+                            onChange={(e) => setLastName(e.target.value.slice(0, NAME_MAX_LENGTH))}
+                            inputProps={{ maxLength: NAME_MAX_LENGTH, autoCapitalize: "words" }}
+                            helperText={`${stripInvisible(lastName).length}/${NAME_MAX_LENGTH}`}
+                            sx={autofillTextFieldSx}
+                          />
+                        </Box>
+                        <Typography variant="caption" sx={{ display: "block", mb: 1.5, color: isDark ? "#A9AAAB" : "text.secondary" }}>
+                          Max {NAME_MAX_LENGTH} characters for first and last name.
+                        </Typography>
 
-                      <Box sx={{ display: "flex", alignItems: "flex-start", gap: 0.75, mb: 1.5 }}>
-                        <FormControl fullWidth size="small">
-                          <InputLabel sx={{ fontSize: 14 }}>How did you find us?</InputLabel>
-                          <Select
-                            value={referralSource}
-                            label="How did you find us?"
-                            onChange={(e) => setReferralSource(e.target.value)}
-                            sx={{
-                              fontSize: 14,
-                              background: BRAND.inputBg,
-                              "& .MuiOutlinedInput-notchedOutline": { borderColor: BRAND.inputBorder },
-                              "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: BRAND.inputBorderHover },
-                              "& .MuiSelect-select": { color: BRAND.inputText },
-                            }}
-                          >
-                            <MenuItem value="word_of_mouth">Word of mouth</MenuItem>
-                            <MenuItem value="social_media">Instagram / Social media</MenuItem>
-                            <MenuItem value="reddit">Reddit</MenuItem>
-                            <MenuItem value="yikyak">YikYak</MenuItem>
-                            <MenuItem value="northeastern_website">Northeastern website</MenuItem>
-                            <MenuItem value="professor_class">Professor or class</MenuItem>
-                            <MenuItem value="flyer_poster">Flyer or poster</MenuItem>
-                            <MenuItem value="oasis_event">Oasis event</MenuItem>
-                            <MenuItem value="other">Other</MenuItem>
-                          </Select>
-                        </FormControl>
-                        <Tooltip title="This is collected anonymously and is never linked to your account." placement="top">
-                          <InfoOutlinedIcon sx={{ fontSize: 15, mt: 1.1, color: "text.disabled", cursor: "help", flexShrink: 0 }} />
-                        </Tooltip>
-                      </Box>
-                    </>
-                  )}
+                        <Box sx={{ display: "flex", alignItems: "flex-start", gap: 0.75, mb: 1.5 }}>
+                          <FormControl fullWidth size="small">
+                            <InputLabel sx={{ fontSize: 14 }}>How did you find us?</InputLabel>
+                            <Select
+                              value={referralSource}
+                              label="How did you find us?"
+                              onChange={(e) => setReferralSource(e.target.value)}
+                              sx={{
+                                fontSize: 14,
+                                background: BRAND.inputBg,
+                                "& .MuiOutlinedInput-notchedOutline": { borderColor: BRAND.inputBorder },
+                                "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: BRAND.inputBorderHover },
+                                "& .MuiSelect-select": { color: BRAND.inputText },
+                              }}
+                            >
+                              <MenuItem value="word_of_mouth">Word of mouth</MenuItem>
+                              <MenuItem value="social_media">Instagram / Social media</MenuItem>
+                              <MenuItem value="reddit">Reddit</MenuItem>
+                              <MenuItem value="yikyak">YikYak</MenuItem>
+                              <MenuItem value="northeastern_website">Northeastern website</MenuItem>
+                              <MenuItem value="professor_class">Professor or class</MenuItem>
+                              <MenuItem value="flyer_poster">Flyer or poster</MenuItem>
+                              <MenuItem value="oasis_event">Oasis event</MenuItem>
+                              <MenuItem value="other">Other</MenuItem>
+                            </Select>
+                          </FormControl>
+                          <Tooltip title="This is collected anonymously and is never linked to your account." placement="top">
+                            <InfoOutlinedIcon sx={{ fontSize: 15, mt: 1.1, color: "text.disabled", cursor: "help", flexShrink: 0 }} />
+                          </Tooltip>
+                        </Box>
+                      </>
+                    )}
 
-                  <TextField
-                    ref={emailRef}
-                    required
-                    fullWidth
-                    size="small"
-                    label="Email"
-                    placeholder="you@northeastern.edu"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    autoComplete="email"
-                    inputProps={{ autoCapitalize: "none" }}
-                    sx={{ ...autofillTextFieldSx, mb: 1.5 }}
-                  />
+                    <TextField
+                      ref={emailRef}
+                      required
+                      fullWidth
+                      size="small"
+                      label="Email"
+                      placeholder="you@northeastern.edu"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      autoComplete="email"
+                      inputProps={{ autoCapitalize: "none" }}
+                      sx={{ ...autofillTextFieldSx, mb: 1.5 }}
+                    />
 
-                  <TextField
-                    ref={passwordRef}
-                    required
-                    fullWidth
-                    size="small"
-                    label="Password"
-                    type="password"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value.slice(0, PASSWORD_MAX_LENGTH))}
-                    autoComplete="current-password"
-                    inputProps={{ minLength: 6, maxLength: PASSWORD_MAX_LENGTH, autoCapitalize: "none" }}
-                    sx={{ ...autofillTextFieldSx, mb: 3 }}
-                  />
+                    <TextField
+                      ref={passwordRef}
+                      required
+                      fullWidth
+                      size="small"
+                      label="Password"
+                      type="password"
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value.slice(0, PASSWORD_MAX_LENGTH))}
+                      autoComplete="current-password"
+                      inputProps={{ minLength: 6, maxLength: PASSWORD_MAX_LENGTH, autoCapitalize: "none" }}
+                      sx={{ ...autofillTextFieldSx, mb: 3 }}
+                    />
 
-                  <Button
-                    type="submit"
-                    fullWidth
-                    variant="contained"
-                    sx={{
-                      py: 1.25,
-                      background: BRAND.accent,
-                      "&:hover": { background: BRAND.accentHover },
-                      fontWeight: 700,
-                      borderRadius: 2,
-                      fontSize: 15,
-                      textTransform: "none",
-                    }}
-                  >
-                    {isSignUp ? "Create account" : "Sign in"}
-                  </Button>
-                </Box>
+                    <Button
+                      type="submit"
+                      fullWidth
+                      variant="contained"
+                      sx={{
+                        py: 1.25,
+                        background: BRAND.accent,
+                        "&:hover": { background: BRAND.accentHover },
+                        fontWeight: 700,
+                        borderRadius: 2,
+                        fontSize: 15,
+                        textTransform: "none",
+                      }}
+                    >
+                      {isSignUp ? "Create account" : "Sign in"}
+                    </Button>
+                  </Box>
+                )}
 
                 {!isSignUp && (
                   <Box sx={{ display: "flex", justifyContent: "center", gap: 2, mt: 2 }}>
@@ -1077,6 +1164,19 @@ export default function LoginPage({
                     >
                       Need Help?
                     </MuiLink>
+                    {manualMode && biometryAvailable && storedBiometricEmail && (
+                      <>
+                        <Typography variant="body2" sx={{ color: "text.secondary" }}>·</Typography>
+                        <MuiLink
+                          component="button"
+                          variant="body2"
+                          onClick={() => setManualMode(false)}
+                          sx={{ cursor: "pointer", color: BRAND.accent, fontWeight: 600 }}
+                        >
+                          Use Face ID
+                        </MuiLink>
+                      </>
+                    )}
                   </Box>
                 )}
 
@@ -1220,6 +1320,7 @@ export default function LoginPage({
         onViewDemo={handleViewDemo}
         effectiveTheme={effectiveTheme}
       />
+
     </>
   );
 }

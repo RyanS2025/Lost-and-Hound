@@ -1,4 +1,5 @@
 import type { CapacitorConfig } from '@capacitor/cli';
+import { KeyboardResize } from '@capacitor/keyboard';
 
 const config: CapacitorConfig = {
   appId: 'com.lostandhound.app',
@@ -14,6 +15,10 @@ const config: CapacitorConfig = {
     SplashScreen: {
       launchAutoHide: false,
       backgroundColor: '#FFFFFF',
+    },
+    Keyboard: {
+      resize: KeyboardResize.None,
+      resizeOnFullScreen: true,
     },
   },
 };

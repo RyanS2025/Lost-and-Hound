@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
+import { Capacitor } from "@capacitor/core";
+import { Keyboard } from "@capacitor/keyboard";
 import { Box, Typography, Paper, TextField, IconButton, Button, CircularProgress } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import SendIcon from "@mui/icons-material/Send";
@@ -43,19 +45,34 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
   const [reportTarget, setReportTarget] = useState(null);
   const [searchParams] = useSearchParams();
 
-  // Track visual viewport height so keyboard open/close resizes the chat container
-  const [viewportH, setViewportH] = useState(
-    () => window.visualViewport?.height ?? window.innerHeight
-  );
+  const overlayRef = useRef(null);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+
   useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const update = () => setViewportH(vv.height);
-    vv.addEventListener("resize", update);
-    return () => vv.removeEventListener("resize", update);
+    if (!Capacitor.isNativePlatform()) return;
+    const showSub = Keyboard.addListener("keyboardWillShow", ({ keyboardHeight }) => {
+      setKeyboardOpen(true);
+      if (overlayRef.current) {
+        overlayRef.current.style.height = `calc(100dvh - ${keyboardHeight}px)`;
+      }
+      // Scroll messages to bottom so the latest message stays visible above the keyboard
+      requestAnimationFrame(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+        }
+      });
+    });
+    const hideSub = Keyboard.addListener("keyboardWillHide", () => {
+      setKeyboardOpen(false);
+      if (overlayRef.current) {
+        overlayRef.current.style.height = "100dvh";
+      }
+    });
+    return () => {
+      showSub.then((h) => h.remove());
+      hideSub.then((h) => h.remove());
+    };
   }, []);
-  // Heuristic: keyboard is open when visible viewport is <80% of screen height
-  const keyboardOpen = viewportH < window.screen.height * 0.8;
 
   const scrollContainerRef = useRef(null);
   const scrollIntentRef = useRef("none");
@@ -336,327 +353,268 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
     };
   };
 
+  const msgListContent = (maxW) => (
+    <>
+      {msgHasMore && (
+        <Box sx={{ display: "flex", justifyContent: "center", mb: 1 }}>
+          <Button size="small" disabled={loadingOlder}
+            onClick={async () => {
+              setLoadingOlder(true);
+              try {
+                const nextPage = msgPage + 1;
+                const result = await apiFetch(`/api/conversations/${selectedConversation.id}/messages?page=${nextPage}&limit=10`);
+                const older = result?.messages || [];
+                prevScrollHeightRef.current = scrollContainerRef.current?.scrollHeight || 0;
+                scrollIntentRef.current = "preserve";
+                setMessages(prev => [...older, ...prev]);
+                setMsgHasMore(result?.hasMore ?? false);
+                setMsgPage(nextPage);
+              } catch (err) { console.error("Load older messages error:", err); }
+              setLoadingOlder(false);
+            }}
+            sx={{ color: isDark ? "#FF4500" : "#A84D48", fontWeight: 600, textTransform: "none", fontSize: 12 }}
+          >
+            {loadingOlder ? <CircularProgress size={16} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} /> : "Load older messages"}
+          </Button>
+        </Box>
+      )}
+      {messages.map((msg) => {
+        if (msg.is_system) {
+          return (
+            <Box key={msg.id} sx={{ alignSelf: "center", my: 0.5 }}>
+              <Typography variant="caption" sx={{ px: 2, py: 0.5, borderRadius: 99, background: isDark ? "#2D2D2E" : "#f0e8e8", color: isDark ? "#818384" : "#999", display: "block", textAlign: "center" }}>
+                {msg.content}
+              </Typography>
+            </Box>
+          );
+        }
+        const isOwn = msg.sender_id === currentUserId;
+        return (
+          <Box key={msg.id} sx={{ alignSelf: isOwn ? "flex-end" : "flex-start", maxWidth: maxW, minWidth: 0 }}>
+            <Box sx={{ p: "10px 14px", borderRadius: 3, background: isOwn ? "#A84D48" : isDark ? "#2D2D2E" : "#f5eded", color: isOwn ? "#fff" : isDark ? "#D7DADC" : "#333", maxWidth: "100%" }}>
+              <Typography fontSize={14} sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>{msg.content}</Typography>
+            </Box>
+            <Typography variant="caption" color={mutedTextColor} sx={{ display: "block", mt: 0.5, textAlign: isOwn ? "right" : "left" }}>
+              {formatTime(msg.created_at, timeZone)}
+            </Typography>
+          </Box>
+        );
+      })}
+      <div />
+    </>
+  );
+
+  const inputBar = (
+    isClosed ? (
+      <Box sx={{ p: 2, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", textAlign: "center", flexShrink: 0 }}>
+        <Typography variant="caption" fontWeight={700} color={mutedTextColor}>This conversation has been closed.</Typography>
+      </Box>
+    ) : (
+      <Box sx={{ display: "flex", alignItems: "center", p: 1.5, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", gap: 1, flexShrink: 0 }}>
+        <TextField
+          fullWidth size="small" placeholder="Type a message..."
+          value={newMessage}
+          onChange={(e) => { const v = e.target.value.slice(0, MESSAGE_MAX_LENGTH); setNewMessage(v); setMsgProfane(containsProfanity(v)); }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !sending) { e.preventDefault(); sendMessage(); } }}
+          error={msgProfane}
+          helperText={msgProfane ? "Cannot use that word" : `${stripInvisible(newMessage).length}/${MESSAGE_MAX_LENGTH}`}
+          inputProps={{ maxLength: MESSAGE_MAX_LENGTH }}
+          sx={{
+            "& .MuiOutlinedInput-root": { background: isDark ? "#2D2D2E" : "#fff", color: isDark ? "#D7DADC" : "inherit" },
+            "& .MuiFormHelperText-root": { textAlign: "right", color: isDark ? "#818384" : "text.secondary", mr: 0.5 },
+          }}
+        />
+        <IconButton onClick={sendMessage} disabled={sending || !newMessage.trim() || newMessage.trim().length > MESSAGE_MAX_LENGTH || msgProfane} sx={{ color: "#A84D48" }}>
+          {sending ? <CircularProgress size={20} sx={{ color: "#A84D48" }} /> : <SendIcon />}
+        </IconButton>
+      </Box>
+    )
+  );
+
+  const safetyBanner = (
+    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, px: 2, py: 1, flexShrink: 0, background: isDark ? "#3a2f22" : "#fff8e1", borderBottom: isDark ? "1px solid rgba(255,193,7,0.35)" : "1px solid #ffe082" }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1, minWidth: 0 }}>
+        <WarningAmberIcon sx={{ color: "#f59e0b", fontSize: 18, flexShrink: 0 }} />
+        <Typography variant="caption" sx={{ color: isDark ? "#f6c66a" : "#92400e", fontWeight: 600, lineHeight: 1.4 }}>
+          Safety reminder: Never share personal information and always meet in a public place.
+        </Typography>
+      </Box>
+      {(() => {
+        const other = getOtherParticipant();
+        if (!other) return null;
+        return (
+          <Button size="small" startIcon={<FlagIcon sx={{ fontSize: 14 }} />} onClick={() => setReportTarget({ id: other.id, name: other.name })}
+            sx={{ color: isDark ? "#f2c27a" : "#92400e", fontSize: 11, fontWeight: 700, textTransform: "none", whiteSpace: "nowrap", flexShrink: 0, "&:hover": { color: "#A84D48", background: isDark ? "rgba(255,255,255,0.1)" : "rgba(168,77,72,0.08)" } }}>
+            Report
+          </Button>
+        );
+      })()}
+    </Box>
+  );
+
+  const convoListItems = (
+    <>
+      {!conversationsLoaded ? (
+        <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+          <CircularProgress size={24} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} />
+        </Box>
+      ) : conversations.length === 0 ? (
+        <Typography variant="caption" color={mutedTextColor} fontWeight={700} sx={{ p: 2, display: "block" }}>No conversations yet</Typography>
+      ) : (
+        conversations.map((convo) => (
+          <Box key={convo.id}
+            onClick={() => { setSelectedConversation(convo); setUnreadCounts((prev) => ({ ...prev, [convo.id]: 0 })); }}
+            tabIndex={0} role="button"
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedConversation(convo); } }}
+            sx={{
+              p: 2, cursor: "pointer",
+              background: selectedConversation?.id === convo.id ? (isDark ? "#2D2D2E" : "#fdf0f0") : "transparent",
+              borderBottom: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid #f5eded",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              "&:hover": { background: isDark ? "#343536" : "#fdf7f7", "& .delete-btn": { opacity: 1 } },
+              "&:focus-visible": { outline: "2px solid #A84D48", outlineOffset: -2 },
+            }}
+          >
+            {(() => {
+              const otherId = convo.participant_1 === currentUserId ? convo.participant_2 : convo.participant_1;
+              const other = profiles[otherId];
+              const listing = listings[convo.listing_id];
+              return (
+                <>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography fontWeight={700} fontSize={13} noWrap>{listing ? listing.title : "Unknown Listing"}</Typography>
+                    <Typography variant="caption" color={secondaryTextColor} noWrap>{other ? `${other.first_name} ${other.last_name}` : "Loading..."}</Typography>
+                  </Box>
+                  {unreadCounts[convo.id] > 0 && (
+                    <Box sx={{ minWidth: 20, height: 20, borderRadius: 10, px: 0.5, backgroundColor: "#A84D48", display: "flex", alignItems: "center", justifyContent: "center", ml: 1, flexShrink: 0 }}>
+                      <Typography sx={{ color: "#fff", fontSize: 11, fontWeight: 800, lineHeight: 1 }}>{unreadCounts[convo.id]}</Typography>
+                    </Box>
+                  )}
+                </>
+              );
+            })()}
+            <IconButton className="delete-btn" size="small" onClick={(e) => hideConversation(convo, e)}
+              sx={{ opacity: { xs: 1, md: 0 }, transition: "opacity 0.15s", color: isDark ? "#818384" : "#bbb", "&:hover": { color: "#A84D48" }, ml: 1, flexShrink: 0 }}>
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Box>
+        ))
+      )}
+    </>
+  );
+
   return (
     <>
-      <Box
-        sx={{
-          position: "fixed",
-          inset: 0,
-          zIndex: -1,
-          backgroundColor: pageBg,
-          backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`,
-          backgroundSize: "24px 24px",
-        }}
-      />
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "center",
-          width: "100%",
-          px: { xs: 1.25, sm: 2, md: 3 },
-          py: { xs: 1.25, sm: 2, md: 3 },
-          boxSizing: "border-box",
-          height: keyboardOpen
-            ? `calc(${viewportH}px - 64px - env(safe-area-inset-top))`
-            : "calc(100dvh - 64px - 56px - env(safe-area-inset-top) - env(safe-area-inset-bottom))",
-          overflow: "hidden",
-          color: isDark ? "#D7DADC" : "inherit",
-        }}
-      >
-      <Box sx={{ width: "100%", maxWidth: 900, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <Typography variant="h4" fontWeight={900} sx={{ mb: 2.5, flexShrink: 0 }}>
-          Messages
-        </Typography>
+      <Box sx={{ position: "fixed", inset: 0, zIndex: -1, backgroundColor: pageBg, backgroundImage: `radial-gradient(circle, ${pageDot} 1px, transparent 1px)`, backgroundSize: "24px 24px" }} />
 
-        <Paper
-          elevation={2}
-          sx={{
-            flex: 1, borderRadius: 3,
-            border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc",
-            overflow: "hidden",
-            background: isDark ? "#1A1A1B" : "#fff",
-            minHeight: 0,
-          }}
-        >
-          <Box sx={{ display: "flex", flexDirection: "row", height: "100%" }}>
-
-            {/* Left sidebar */}
-            <Box
-              sx={{
-                width: { xs: "100%", md: "30%" },
-                borderRight: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc",
-                overflowY: "auto",
-                display: isMobile && selectedConversation ? "none" : "block",
-              }}
-            >
-              {!conversationsLoaded ? (
-                <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
-                  <CircularProgress size={24} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} />
+      {/* ── DESKTOP: split-panel ── */}
+      {!isMobile && (
+        <Box sx={{ display: "flex", justifyContent: "center", px: 3, py: 3, height: "calc(100dvh - 64px - env(safe-area-inset-top) - 56px - env(safe-area-inset-bottom))", boxSizing: "border-box", overflow: "hidden", color: isDark ? "#D7DADC" : "inherit" }}>
+          <Box sx={{ width: "100%", maxWidth: 900, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <Typography variant="h4" fontWeight={900} sx={{ mb: 2.5, flexShrink: 0 }}>Messages</Typography>
+            <Paper elevation={2} sx={{ flex: 1, borderRadius: 3, border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc", overflow: "hidden", background: isDark ? "#1A1A1B" : "#fff", minHeight: 0 }}>
+              <Box sx={{ display: "flex", flexDirection: "row", height: "100%" }}>
+                <Box sx={{ width: "30%", borderRight: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", overflowY: "auto" }}>
+                  {convoListItems}
                 </Box>
-              ) : conversations.length === 0 ? (
-                <Typography variant="caption" color={mutedTextColor} fontWeight={700} sx={{ p: 2, display: "block" }}>
-                  No conversations yet
-                </Typography>
-              ) : (
-                conversations.map((convo) => (
-                  <Box
-                    key={convo.id}
-                    onClick={() => { setSelectedConversation(convo); setUnreadCounts((prev) => ({ ...prev, [convo.id]: 0 })); }}
-                    tabIndex={0}
-                    role="button"
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedConversation(convo); } }}
-                    sx={{
-                      p: 2, cursor: "pointer",
-                      background: selectedConversation?.id === convo.id ? (isDark ? "#2D2D2E" : "#fdf0f0") : "transparent",
-                      borderBottom: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid #f5eded",
-                      display: "flex", alignItems: "center", justifyContent: "space-between",
-                      "&:hover": { background: isDark ? "#343536" : "#fdf7f7", "& .delete-btn": { opacity: 1 } },
-                      "&:focus-visible": { outline: "2px solid #A84D48", outlineOffset: -2 },
-                    }}
-                  >
-                    {(() => {
-                      const otherId = convo.participant_1 === currentUserId ? convo.participant_2 : convo.participant_1;
-                      const other = profiles[otherId];
-                      const listing = listings[convo.listing_id];
-                      return (
-                        <>
-                          <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <Typography fontWeight={700} fontSize={13} noWrap>
-                              {listing ? listing.title : "Unknown Listing"}
-                            </Typography>
-                            <Typography variant="caption" color={secondaryTextColor} noWrap>
-                              {other ? `${other.first_name} ${other.last_name}` : "Loading..."}
-                            </Typography>
-                          </Box>
-                          {unreadCounts[convo.id] > 0 && (
-                            <Box sx={{
-                              minWidth: 20, height: 20, borderRadius: 10, px: 0.5,
-                              backgroundColor: "#A84D48", display: "flex",
-                              alignItems: "center", justifyContent: "center",
-                              ml: 1, flexShrink: 0,
-                            }}>
-                              <Typography sx={{ color: "#fff", fontSize: 11, fontWeight: 800, lineHeight: 1 }}>
-                                {unreadCounts[convo.id]}
-                              </Typography>
-                            </Box>
-                          )}
-                        </>
-                      );
-                    })()}
-                    <IconButton
-                      className="delete-btn"
-                      size="small"
-                      onClick={(e) => hideConversation(convo, e)}
-                      sx={{ opacity: { xs: 1, md: 0 }, transition: "opacity 0.15s", color: isDark ? "#818384" : "#bbb", "&:hover": { color: "#A84D48" }, ml: 1, flexShrink: 0 }}
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                ))
-              )}
-            </Box>
-
-            {/* Right panel */}
-            <Box
-              sx={{
-                flex: 1,
-                display: isMobile && !selectedConversation ? "none" : "flex",
-                flexDirection: "column",
-                overflow: "hidden",
-                minHeight: 0,
-              }}
-            >
-              {!selectedConversation ? (
-                <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Typography fontWeight={700} color={mutedTextColor}>Select a conversation</Typography>
-                </Box>
-              ) : (
                 <Box sx={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-                  {isMobile && (
-                    <Box sx={{ px: 1.25, py: 0.75, borderBottom: isDark ? "1px solid rgba(255,255,255,0.12)" : "1px solid #ecdcdc", flexShrink: 0 }}>
-                      <Button
-                        size="small"
-                        startIcon={<ArrowBackIcon fontSize="small" />}
-                        onClick={() => setSelectedConversation(null)}
-                        sx={{ color: "#A84D48", fontWeight: 700, textTransform: "none" }}
-                      >
-                        Back to conversations
-                      </Button>
-                    </Box>
-                  )}
-                  {/* Safety warning + report button */}
-                  <Box
-                    sx={{
-                      display: "flex", alignItems: "center", justifyContent: "space-between",
-                      gap: 1, px: 2, py: 1, flexShrink: 0,
-                      background: isDark ? "#3a2f22" : "#fff8e1", borderBottom: isDark ? "1px solid rgba(255,193,7,0.35)" : "1px solid #ffe082",
-                    }}
-                  >
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1, minWidth: 0 }}>
-                      <WarningAmberIcon sx={{ color: "#f59e0b", fontSize: 18, flexShrink: 0 }} />
-                      <Typography variant="caption" sx={{ color: isDark ? "#f6c66a" : "#92400e", fontWeight: 600, lineHeight: 1.4 }}>
-                        Safety reminder: Never share personal information and always meet in a public place.
-                      </Typography>
-                    </Box>
-                    {(() => {
-                      const other = getOtherParticipant();
-                      return (
-                        <Button
-                          size="small"
-                          startIcon={<FlagIcon sx={{ fontSize: 14 }} />}
-                          onClick={() => setReportTarget({ id: other.id, name: other.name })}
-                          sx={{
-                            color: isDark ? "#f2c27a" : "#92400e", fontSize: 11, fontWeight: 700,
-                            textTransform: "none", whiteSpace: "nowrap", flexShrink: 0,
-                            "&:hover": { color: "#A84D48", background: isDark ? "rgba(255,255,255,0.1)" : "rgba(168,77,72,0.08)" },
-                          }}
-                        >
-                          Report
-                        </Button>
-                      );
-                    })()}
-                  </Box>
-
-                  {/* Messages — scrollable area */}
-                  <Box ref={scrollContainerRef} sx={{ flex: 1, overflowY: "auto", p: 2, display: "flex", flexDirection: "column", gap: 1, minHeight: 0 }}>
-                    {loadingMessages ? (
-                      <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <CircularProgress size={28} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} />
-                      </Box>
-                    ) : <>
-                    {msgHasMore && (
-                      <Box sx={{ display: "flex", justifyContent: "center", mb: 1 }}>
-                        <Button
-                          size="small"
-                          onClick={async () => {
-                            setLoadingOlder(true);
-                            try {
-                              const nextPage = msgPage + 1;
-                              const result = await apiFetch(
-                                `/api/conversations/${selectedConversation.id}/messages?page=${nextPage}&limit=10`
-                              );
-                              const olderMsgs = result?.messages || [];
-                              prevScrollHeightRef.current = scrollContainerRef.current?.scrollHeight || 0;
-                              scrollIntentRef.current = "preserve";
-                              setMessages(prev => [...olderMsgs, ...prev]);
-                              setMsgHasMore(result?.hasMore ?? false);
-                              setMsgPage(nextPage);
-                            } catch (err) {
-                              console.error("Load older messages error:", err);
-                            }
-                            setLoadingOlder(false);
-                          }}
-                          disabled={loadingOlder}
-                          sx={{
-                            color: isDark ? "#FF4500" : "#A84D48",
-                            fontWeight: 600,
-                            textTransform: "none",
-                            fontSize: 12,
-                          }}
-                        >
-                          {loadingOlder ? <CircularProgress size={16} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} /> : "Load older messages"}
-                        </Button>
-                      </Box>
-                    )}
-                    {messages.map((msg) => {
-                      if (msg.is_system) {
-                        return (
-                          <Box key={msg.id} sx={{ alignSelf: "center", my: 0.5 }}>
-                            <Typography
-                              variant="caption"
-                              sx={{
-                                px: 2, py: 0.5, borderRadius: 99,
-                                background: isDark ? "#2D2D2E" : "#f0e8e8", color: isDark ? "#818384" : "#999",
-                                display: "block", textAlign: "center",
-                              }}
-                            >
-                              {msg.content}
-                            </Typography>
-                          </Box>
-                        );
-                      }
-
-                      const isOwn = msg.sender_id === currentUserId;
-                      return (
-                        <Box key={msg.id} sx={{ alignSelf: isOwn ? "flex-end" : "flex-start", maxWidth: { xs: "85%", md: "70%" }, minWidth: 0 }}>
-                          <Box sx={{
-                            p: "10px 14px", borderRadius: 3,
-                            background: isOwn ? "#A84D48" : isDark ? "#2D2D2E" : "#f5eded",
-                            color: isOwn ? "#fff" : isDark ? "#D7DADC" : "#333",
-                            maxWidth: "100%",
-                          }}>
-                            <Typography fontSize={14} sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
-                              {msg.content}
-                            </Typography>
-                          </Box>
-                          <Typography
-                            variant="caption" color={mutedTextColor}
-                            sx={{ display: "block", mt: 0.5, textAlign: isOwn ? "right" : "left" }}
-                          >
-                            {formatTime(msg.created_at, timeZone)}
-                          </Typography>
-                        </Box>
-                      );
-                    })}
-                    <div />
-                    </>}
-                  </Box>
-
-                  {/* Input — pinned to bottom */}
-                  {isClosed ? (
-                    <Box sx={{ p: 2, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", textAlign: "center", flexShrink: 0 }}>
-                      <Typography variant="caption" fontWeight={700} color={mutedTextColor}>
-                        This conversation has been closed.
-                      </Typography>
+                  {!selectedConversation ? (
+                    <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Typography fontWeight={700} color={mutedTextColor}>Select a conversation</Typography>
                     </Box>
                   ) : (
-                    <Box sx={{ display: "flex", alignItems: "center", p: 1.5, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", gap: 1, flexShrink: 0 }}>
-                      <TextField
-                        fullWidth size="small" placeholder="Type a message..."
-                        value={newMessage}
-                        onChange={(e) => {
-                          const v = e.target.value.slice(0, MESSAGE_MAX_LENGTH);
-                          setNewMessage(v);
-                          setMsgProfane(containsProfanity(v));
-                        }}
-                        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !sending) { e.preventDefault(); sendMessage(); } }}
-                        error={msgProfane}
-                        helperText={msgProfane ? "Cannot use that word" : `${stripInvisible(newMessage).length}/${MESSAGE_MAX_LENGTH}`}
-                        inputProps={{ maxLength: MESSAGE_MAX_LENGTH }}
-                        sx={{
-                          "& .MuiOutlinedInput-root": {
-                            background: isDark ? "#2D2D2E" : "#fff",
-                            color: isDark ? "#D7DADC" : "inherit",
-                          },
-                          "& .MuiFormHelperText-root": {
-                            textAlign: "right",
-                            color: isDark ? "#818384" : "text.secondary",
-                            mr: 0.5,
-                          },
-                        }}
-                      />
-                      <IconButton onClick={sendMessage} disabled={sending || !newMessage.trim() || newMessage.trim().length > MESSAGE_MAX_LENGTH || msgProfane} sx={{ color: "#A84D48" }}>
-                        {sending ? <CircularProgress size={20} sx={{ color: "#A84D48" }} /> : <SendIcon />}
-                      </IconButton>
+                    <Box sx={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+                      {safetyBanner}
+                      <Box ref={scrollContainerRef} sx={{ flex: 1, overflowY: "auto", p: 2, display: "flex", flexDirection: "column", gap: 1, minHeight: 0 }}>
+                        {loadingMessages ? (
+                          <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <CircularProgress size={28} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} />
+                          </Box>
+                        ) : msgListContent("70%")}
+                      </Box>
+                      {inputBar}
                     </Box>
                   )}
                 </Box>
-              )}
+              </Box>
+            </Paper>
+          </Box>
+        </Box>
+      )}
+
+      {/* ── MOBILE: conversation list ── */}
+      {isMobile && (
+        <Box sx={{ px: 1.5, py: 1.5, color: isDark ? "#D7DADC" : "inherit" }}>
+          <Typography variant="h4" fontWeight={900} sx={{ mb: 2 }}>Messages</Typography>
+          <Paper elevation={2} sx={{ borderRadius: 3, border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc", overflow: "hidden", background: isDark ? "#1A1A1B" : "#fff" }}>
+            {convoListItems}
+          </Paper>
+        </Box>
+      )}
+
+      {/* ── MOBILE: thread slide-in overlay ──
+          Outer: handles viewport sizing (never animates, never re-layouts).
+          Inner: handles the slide animation (never resizes). */}
+      {isMobile && (
+        <Box ref={overlayRef} sx={{
+          position: "fixed",
+          inset: 0,
+          height: "100dvh",
+          zIndex: 1300,
+          pointerEvents: selectedConversation ? "auto" : "none",
+          overflow: "hidden",
+        }}>
+          <Box sx={{
+            width: "100%",
+            height: "100%",
+            display: "flex", flexDirection: "column",
+            background: isDark ? "#1A1A1B" : "#fff",
+            transform: selectedConversation ? "translateX(0)" : "translateX(100%)",
+            transition: "transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+            willChange: "transform",
+            backfaceVisibility: "hidden",
+          }}>
+            {/* Header */}
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, px: 0.5, pt: "calc(env(safe-area-inset-top) + 8px)", pb: 0.75, flexShrink: 0, borderBottom: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid #ecdcdc", background: isDark ? "#1A1A1B" : "#fff" }}>
+              <IconButton size="small" onClick={() => setSelectedConversation(null)} sx={{ color: isDark ? "#D7DADC" : "#1a1a1a" }}>
+                <ArrowBackIcon />
+              </IconButton>
+              {selectedConversation && (() => {
+                const otherId = selectedConversation.participant_1 === currentUserId ? selectedConversation.participant_2 : selectedConversation.participant_1;
+                const other = profiles[otherId];
+                const listing = listings[selectedConversation.listing_id];
+                return (
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography fontWeight={800} fontSize={15} noWrap sx={{ color: isDark ? "#D7DADC" : "#1a1a1a" }}>
+                      {other ? `${other.first_name} ${other.last_name}` : "Loading..."}
+                    </Typography>
+                    {listing && <Typography variant="caption" color={secondaryTextColor} noWrap sx={{ display: "block" }}>{listing.title}</Typography>}
+                  </Box>
+                );
+              })()}
             </Box>
 
-          </Box>
-        </Paper>
-      </Box>
+            {/* Safety banner */}
+            {selectedConversation && safetyBanner}
 
-      {/* Report modal */}
-      <ReportModal
-        open={!!reportTarget}
-        onClose={() => setReportTarget(null)}
-        type="user"
-        targetId={reportTarget?.id}
-        targetLabel={reportTarget?.name}
-      />
-      </Box>
+            {/* Messages */}
+            <Box ref={scrollContainerRef} sx={{ flex: 1, overflowY: "auto", p: 2, display: "flex", flexDirection: "column", gap: 1, minHeight: 0 }}>
+              {loadingMessages ? (
+                <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <CircularProgress size={28} sx={{ color: isDark ? "#FF4500" : "#A84D48" }} />
+                </Box>
+              ) : msgListContent("85%")}
+            </Box>
+
+            {/* Input */}
+            <Box sx={{ flexShrink: 0, pb: keyboardOpen ? 0 : "env(safe-area-inset-bottom)" }}>
+              {inputBar}
+            </Box>
+          </Box>
+        </Box>
+      )}
+
+      <ReportModal open={!!reportTarget} onClose={() => setReportTarget(null)} type="user" targetId={reportTarget?.id} targetLabel={reportTarget?.name} />
     </>
   );
 }

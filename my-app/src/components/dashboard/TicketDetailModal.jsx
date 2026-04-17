@@ -244,13 +244,13 @@ export default function TicketDetailModal({ ticket, onClose, onUpdateStatus, onD
                         value={moderators.find(m => m.id === engEdit.assignee_id) || null}
                         onChange={(_, mod) => setEngEdit(p => ({ ...p, assignee: mod?.name || null, assignee_id: mod?.id || null }))}
                         isOptionEqualToValue={(o, v) => o.id === v.id}
-                        renderInput={(params) => <TextField {...params} placeholder="Search moderators…" sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 13 } }} />}
+                        renderInput={(params) => <TextField {...params} placeholder="Search moderators…" sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: { xs: 16, md: 13 } } }} />}
                       />
                     </Box>
                     <Box>
                       <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Deadline</Typography>
                       <TextField size="small" fullWidth type="datetime-local" value={engEdit.deadline || ""} onChange={(e) => setEngEdit(p => ({ ...p, deadline: e.target.value }))}
-                        InputLabelProps={{ shrink: true }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 13 } }} />
+                        InputLabelProps={{ shrink: true }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: { xs: 16, md: 13 } } }} />
                     </Box>
                   </Box>
 
@@ -291,17 +291,17 @@ export default function TicketDetailModal({ ticket, onClose, onUpdateStatus, onD
                         <Box>
                           <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Reproduction Steps</Typography>
                           <TextField size="small" fullWidth multiline minRows={2} maxRows={5} placeholder="How to reproduce this bug…" value={engEdit.repro_steps || ""} onChange={(e) => setEngEdit(p => ({ ...p, repro_steps: e.target.value }))}
-                            inputProps={{ maxLength: 1000 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 13 } }} />
+                            inputProps={{ maxLength: 1000 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: { xs: 16, md: 13 } } }} />
                         </Box>
                         <Box>
                           <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>Fix Notes</Typography>
                           <TextField size="small" fullWidth multiline minRows={2} maxRows={5} placeholder="What was changed to fix this…" value={engEdit.fix_notes || ""} onChange={(e) => setEngEdit(p => ({ ...p, fix_notes: e.target.value }))}
-                            inputProps={{ maxLength: 1000 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 13 } }} />
+                            inputProps={{ maxLength: 1000 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: { xs: 16, md: 13 } } }} />
                         </Box>
                         <Box>
                           <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.4, fontSize: 10 }}>PR / Commit URL</Typography>
                           <TextField size="small" fullWidth placeholder="https://github.com/…" value={engEdit.fix_pr_url || ""} onChange={(e) => setEngEdit(p => ({ ...p, fix_pr_url: e.target.value }))}
-                            inputProps={{ maxLength: 300 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 13 } }} />
+                            inputProps={{ maxLength: 300 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: { xs: 16, md: 13 } } }} />
                         </Box>
                       </Box>
                     </>
@@ -406,7 +406,7 @@ export default function TicketDetailModal({ ticket, onClose, onUpdateStatus, onD
                   <Box>
                     <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.75 }}>Reply as Support Team</Typography>
                     {replyError && <Alert severity="error" sx={{ py: 0, mb: 0.75, fontSize: 12 }}>{replyError}</Alert>}
-                    <TextField multiline minRows={2} maxRows={5} fullWidth size="small" placeholder="Type a reply…" value={replyText} onChange={(e) => setReplyText(e.target.value)} inputProps={{ maxLength: 1000 }} sx={{ mb: 0.75, "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: 13 } }} />
+                    <TextField multiline minRows={2} maxRows={5} fullWidth size="small" placeholder="Type a reply…" value={replyText} onChange={(e) => setReplyText(e.target.value)} inputProps={{ maxLength: 1000 }} sx={{ mb: 0.75, "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: { xs: 16, md: 13 } } }} />
                     <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
                       <Button size="small" variant="contained" disabled={!replyText.trim() || replySubmitting} onClick={handleReply} endIcon={replySubmitting ? <CircularProgress size={12} color="inherit" /> : null} sx={{ background: accent, "&:hover": { background: accentHover }, fontWeight: 700, borderRadius: 1.5, fontSize: 12 }}>Send Reply</Button>
                     </Box>
@@ -470,7 +470,7 @@ export default function TicketDetailModal({ ticket, onClose, onUpdateStatus, onD
                 <Box sx={{ px: 1.5, py: 1.25, borderTop: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid #f0e8e8", flexShrink: 0 }}>
                   {replyError && <Alert severity="error" sx={{ mb: 0.75, py: 0, fontSize: 12 }}>{replyError}</Alert>}
                   <Box sx={{ display: "flex", gap: 1, alignItems: "flex-end" }}>
-                    <TextField size="small" fullWidth multiline maxRows={4} placeholder="Reply as Support Team…" value={replyText} onChange={(e) => setReplyText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleReply(); } }} inputProps={{ maxLength: 1000 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: 13 } }} />
+                    <TextField size="small" fullWidth multiline maxRows={4} placeholder="Reply as Support Team…" value={replyText} onChange={(e) => setReplyText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleReply(); } }} inputProps={{ maxLength: 1000 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: { xs: 16, md: 13 } } }} />
                     <IconButton onClick={handleReply} disabled={!replyText.trim() || replySubmitting} sx={{ bgcolor: accent, color: "#fff", borderRadius: 2, width: 38, height: 38, flexShrink: 0, "&:hover": { bgcolor: accentHover }, "&.Mui-disabled": { bgcolor: isDark ? "#37383A" : "#e0d6d6" } }}>
                       {replySubmitting ? <CircularProgress size={16} color="inherit" /> : <SendIcon sx={{ fontSize: 17 }} />}
                     </IconButton>

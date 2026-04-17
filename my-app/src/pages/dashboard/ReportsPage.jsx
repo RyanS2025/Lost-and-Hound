@@ -53,7 +53,7 @@ function DashboardListingModal({ listing, open, onClose, isDark = false, timeZon
       <Box sx={{
         position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
         background: isDark ? "#1A1A1B" : "#fff", borderRadius: 4, p: "26px",
-        maxHeight: "90vh", overflowY: "auto", outline: "none",
+        maxHeight: "90dvh", overflowY: "auto", outline: "none",
         border: isDark ? "1px solid rgba(255,255,255,0.14)" : "none",
         mx: 1.5, boxSizing: "border-box",
         width: { xs: "calc(100% - 24px)", sm: "100%", md: 520 },
