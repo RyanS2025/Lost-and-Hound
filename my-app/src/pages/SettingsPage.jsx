@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
 import { BiometricAuth } from "@aparajita/capacitor-biometric-auth";
+import { Preferences } from "@capacitor/preferences";
 import { supabase } from "../../backend/supabaseClient";
 import apiFetch from "../utils/apiFetch";
 import { useDemo } from "../contexts/DemoContext";
@@ -111,7 +112,7 @@ export default function SettingsPage({
     setFaceIdSaving(true);
     try {
       await BiometricAuth.authenticate({ reason: "Enable Face ID sign-in for Lost & Hound" });
-      localStorage.setItem("__bio_credential", faceIdPassword);
+      await Preferences.set({ key: "__bio_credential", value: faceIdPassword });
       localStorage.setItem("biometric_email", effectiveUser?.email || "");
       setFaceIdEnabled(true);
       setFaceIdPasswordDialog(false);
@@ -129,9 +130,9 @@ export default function SettingsPage({
     }
   };
 
-  const handleDisableFaceId = () => {
+  const handleDisableFaceId = async () => {
     localStorage.removeItem("biometric_email");
-    localStorage.removeItem("__bio_credential");
+    await Preferences.remove({ key: "__bio_credential" });
     setFaceIdEnabled(false);
   };
 

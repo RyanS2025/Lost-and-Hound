@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard } from "@capacitor/keyboard";
 import { BiometricAuth } from "@aparajita/capacitor-biometric-auth";
+import { Preferences } from "@capacitor/preferences";
 import { useDemo } from "../contexts/DemoContext";
 import ConfettiCanvas from "../components/ConfettiCanvas";
 import { useNavigate } from "react-router-dom";
@@ -410,7 +411,7 @@ export default function LoginPage({
         !localStorage.getItem("face_id_prompted") &&
         passArg
       ) {
-        localStorage.setItem("__bio_enroll_pending", passArg);
+        await Preferences.set({ key: "__bio_enroll_pending", value: passArg });
       }
       onLoginSuccess?.();
     } else {
@@ -431,7 +432,7 @@ export default function LoginPage({
     setError("");
     try {
       await BiometricAuth.authenticate({ reason: "Sign in to Lost & Hound" });
-      const storedPass = localStorage.getItem("__bio_credential");
+      const { value: storedPass } = await Preferences.get({ key: "__bio_credential" });
       if (!storedPass) throw new Error("No stored credential");
       await doSignIn(storedBiometricEmail, storedPass);
     } catch (err) {
@@ -439,7 +440,7 @@ export default function LoginPage({
       if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("user cancel")) return;
       setError("Face ID sign-in failed. Please sign in with your password.");
       localStorage.removeItem("biometric_email");
-      localStorage.removeItem("__bio_credential");
+      await Preferences.remove({ key: "__bio_credential" });
       setStoredBiometricEmail(null);
     } finally {
       setFaceIdLoading(false);

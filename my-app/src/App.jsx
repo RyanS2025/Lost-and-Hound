@@ -31,6 +31,7 @@ import ReferralPollModal from "./components/ReferralPollModal";
 import { Capacitor } from "@capacitor/core";
 import { AppBar, Toolbar, Button, IconButton, Typography, Container, Box, Paper, Badge, Chip, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, CircularProgress } from '@mui/material';
 import { BiometricAuth } from "@aparajita/capacitor-biometric-auth";
+import { Preferences } from "@capacitor/preferences";
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import HomeIcon from '@mui/icons-material/Home';
@@ -455,30 +456,30 @@ export default function App() {
   useEffect(() => {
     if (!user || !profile) return;
     if (!Capacitor.isNativePlatform()) return;
-    const pending = localStorage.getItem("__bio_enroll_pending");
-    if (!pending) return;
-    setFaceIdEnrollOpen(true);
+    Preferences.get({ key: "__bio_enroll_pending" }).then(({ value }) => {
+      if (value) setFaceIdEnrollOpen(true);
+    });
   }, [user, profile]);
 
   const handleFaceIdEnrollConfirm = async () => {
     setFaceIdEnrolling(true);
-    const pendingPass = localStorage.getItem("__bio_enroll_pending");
+    const { value: pendingPass } = await Preferences.get({ key: "__bio_enroll_pending" });
     try {
       await BiometricAuth.authenticate({ reason: "Enable Face ID sign-in for Lost & Hound" });
-      localStorage.setItem("__bio_credential", pendingPass);
+      await Preferences.set({ key: "__bio_credential", value: pendingPass });
       localStorage.setItem("biometric_email", user?.email || "");
     } catch {
       // cancelled or failed — just skip enrollment
     } finally {
-      localStorage.removeItem("__bio_enroll_pending");
+      await Preferences.remove({ key: "__bio_enroll_pending" });
       localStorage.setItem("face_id_prompted", "1");
       setFaceIdEnrollOpen(false);
       setFaceIdEnrolling(false);
     }
   };
 
-  const handleFaceIdEnrollSkip = () => {
-    localStorage.removeItem("__bio_enroll_pending");
+  const handleFaceIdEnrollSkip = async () => {
+    await Preferences.remove({ key: "__bio_enroll_pending" });
     localStorage.setItem("face_id_prompted", "1");
     setFaceIdEnrollOpen(false);
   };
