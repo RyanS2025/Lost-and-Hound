@@ -29,7 +29,8 @@ import {
 import AppFooter from "./components/AppFooter";
 import ReferralPollModal from "./components/ReferralPollModal";
 import { Capacitor } from "@capacitor/core";
-import { AppBar, Toolbar, Button, IconButton, Typography, Container, Box, Paper, Badge, Chip } from '@mui/material';
+import { AppBar, Toolbar, Button, IconButton, Typography, Container, Box, Paper, Badge, Chip, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, CircularProgress } from '@mui/material';
+import { BiometricAuth } from "@aparajita/capacitor-biometric-auth";
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import HomeIcon from '@mui/icons-material/Home';
@@ -448,6 +449,40 @@ export default function App() {
     setAwaitingProfile(false);
   }, []);
 
+  const [faceIdEnrollOpen, setFaceIdEnrollOpen] = useState(false);
+  const [faceIdEnrolling, setFaceIdEnrolling] = useState(false);
+
+  useEffect(() => {
+    if (!user || !profile) return;
+    if (!Capacitor.isNativePlatform()) return;
+    const pending = localStorage.getItem("__bio_enroll_pending");
+    if (!pending) return;
+    setFaceIdEnrollOpen(true);
+  }, [user, profile]);
+
+  const handleFaceIdEnrollConfirm = async () => {
+    setFaceIdEnrolling(true);
+    const pendingPass = localStorage.getItem("__bio_enroll_pending");
+    try {
+      await BiometricAuth.authenticate({ reason: "Enable Face ID sign-in for Lost & Hound" });
+      localStorage.setItem("__bio_credential", pendingPass);
+      localStorage.setItem("biometric_email", user?.email || "");
+    } catch {
+      // cancelled or failed — just skip enrollment
+    } finally {
+      localStorage.removeItem("__bio_enroll_pending");
+      localStorage.setItem("face_id_prompted", "1");
+      setFaceIdEnrollOpen(false);
+      setFaceIdEnrolling(false);
+    }
+  };
+
+  const handleFaceIdEnrollSkip = () => {
+    localStorage.removeItem("__bio_enroll_pending");
+    localStorage.setItem("face_id_prompted", "1");
+    setFaceIdEnrollOpen(false);
+  };
+
   useEffect(() => {
     if (profile || !user) {
       setAwaitingProfile(false);
@@ -824,6 +859,59 @@ export default function App() {
           description="Message other students directly to coordinate item pickups. Built-in safety reminders keep everyone safe."
         />
       )}
+      {/* Face ID enrollment prompt — shown once after first trusted-device login */}
+      <Dialog
+        open={faceIdEnrollOpen}
+        onClose={handleFaceIdEnrollSkip}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            px: 1,
+            background: effectiveTheme === "dark" ? "#1A1A1B" : "#fff",
+            border: `1px solid ${effectiveTheme === "dark" ? "rgba(255,255,255,0.14)" : "#ecdcdc"}`,
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, pt: 3 }}>
+          Sign in faster with Face ID
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Enable Face ID to sign in instantly next time — no typing required. You can turn this off in Settings.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3, flexDirection: "column", gap: 1.25 }}>
+          <Button
+            fullWidth
+            variant="contained"
+            onClick={handleFaceIdEnrollConfirm}
+            disabled={faceIdEnrolling}
+            startIcon={faceIdEnrolling ? <CircularProgress size={16} color="inherit" /> : null}
+            sx={{
+              py: 1.25,
+              background: effectiveTheme === "dark" ? "#FF4500" : "#A84D48",
+              "&:hover": { background: effectiveTheme === "dark" ? "#E03D00" : "#8f3e3a" },
+              fontWeight: 700,
+              borderRadius: 2,
+              fontSize: 15,
+              textTransform: "none",
+            }}
+          >
+            {faceIdEnrolling ? "Setting up…" : "Enable Face ID"}
+          </Button>
+          <Button
+            fullWidth
+            variant="text"
+            onClick={handleFaceIdEnrollSkip}
+            sx={{ color: "text.secondary", textTransform: "none", fontWeight: 600 }}
+          >
+            Not now
+          </Button>
+        </DialogActions>
+      </Dialog>
+
     </>
     </ThemeProvider>
   );

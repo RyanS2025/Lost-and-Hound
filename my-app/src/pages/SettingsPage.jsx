@@ -1,5 +1,7 @@
 // --- SettingsPage: User account settings UI ---
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { Capacitor } from "@capacitor/core";
+import { BiometricAuth } from "@aparajita/capacitor-biometric-auth";
 import { supabase } from "../../backend/supabaseClient";
 import apiFetch from "../utils/apiFetch";
 import { useDemo } from "../contexts/DemoContext";
@@ -24,6 +26,7 @@ import {
   DialogActions,
   Switch,
   FormControlLabel,
+  CircularProgress,
 } from "@mui/material";
 import { useAuth } from "../AuthContext";
 import Avatar from "@mui/material/Avatar";
@@ -84,6 +87,53 @@ export default function SettingsPage({
   const [campusMessage, setCampusMessage] = useState("");
   const [notifEmail, setNotifEmail] = useState(effectiveProfile?.email_notifications_enabled ?? true);
   const [notifPush, setNotifPush] = useState(effectiveProfile?.push_notifications_enabled ?? true);
+
+  const [faceIdEnabled, setFaceIdEnabled] = useState(false);
+  const [faceIdAvailable, setFaceIdAvailable] = useState(false);
+  const [faceIdPasswordDialog, setFaceIdPasswordDialog] = useState(false);
+  const [faceIdPassword, setFaceIdPassword] = useState("");
+  const [faceIdError, setFaceIdError] = useState("");
+  const [faceIdSaving, setFaceIdSaving] = useState(false);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    BiometricAuth.checkBiometry()
+      .then(({ isAvailable }) => {
+        if (!isAvailable) return;
+        setFaceIdAvailable(true);
+        setFaceIdEnabled(!!localStorage.getItem("biometric_email"));
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleEnableFaceId = async () => {
+    setFaceIdError("");
+    setFaceIdSaving(true);
+    try {
+      await BiometricAuth.authenticate({ reason: "Enable Face ID sign-in for Lost & Hound" });
+      localStorage.setItem("__bio_credential", faceIdPassword);
+      localStorage.setItem("biometric_email", effectiveUser?.email || "");
+      setFaceIdEnabled(true);
+      setFaceIdPasswordDialog(false);
+      setFaceIdPassword("");
+    } catch (err) {
+      const msg = err?.message || "";
+      if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("user cancel")) {
+        setFaceIdPasswordDialog(false);
+        setFaceIdPassword("");
+      } else {
+        setFaceIdError("Face ID setup failed. Please try again.");
+      }
+    } finally {
+      setFaceIdSaving(false);
+    }
+  };
+
+  const handleDisableFaceId = () => {
+    localStorage.removeItem("biometric_email");
+    localStorage.removeItem("__bio_credential");
+    setFaceIdEnabled(false);
+  };
 
   const handleSaveNotif = async (key, value) => {
     if (isDemoMode) return;
@@ -491,6 +541,45 @@ export default function SettingsPage({
                   Change Password
                 </Button>
 
+                {faceIdAvailable && (
+                  <Box
+                    sx={{
+                      bgcolor: BRAND.maroonFaint,
+                      borderRadius: 2,
+                      px: 2,
+                      py: 1.5,
+                      mt: 2,
+                    }}
+                  >
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          size="small"
+                          checked={faceIdEnabled}
+                          onChange={(e) => {
+                            if (e.target.checked) setFaceIdPasswordDialog(true);
+                            else handleDisableFaceId();
+                          }}
+                          sx={{
+                            "& .MuiSwitch-switchBase.Mui-checked": { color: BRAND.maroon },
+                            "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": { backgroundColor: BRAND.maroon },
+                          }}
+                        />
+                      }
+                      label={
+                        <Box>
+                          <Typography variant="body2" sx={{ fontWeight: 600, color: BRAND.textPrimary }}>Face ID Sign-in</Typography>
+                          <Typography variant="caption" sx={{ color: BRAND.textSecondary }}>
+                            {faceIdEnabled ? `Enabled for ${localStorage.getItem("biometric_email")}` : "Sign in with Face ID instead of typing your password"}
+                          </Typography>
+                        </Box>
+                      }
+                      labelPlacement="start"
+                      sx={{ justifyContent: "space-between", ml: 0, width: "100%" }}
+                    />
+                  </Box>
+                )}
+
                 <Divider sx={{ my: 2.5, borderColor: BRAND.cardBorder }} />
 
                 {/* -- Log Out / Exit Demo -- */}
@@ -779,6 +868,50 @@ export default function SettingsPage({
           </Paper>
         </Container>
       </Box>
+
+      {/* --- Face ID password dialog --- */}
+      <Dialog
+        open={faceIdPasswordDialog}
+        onClose={() => { setFaceIdPasswordDialog(false); setFaceIdPassword(""); setFaceIdError(""); }}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, px: 1 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Enable Face ID</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            Enter your password once to enable Face ID sign-in.
+          </DialogContentText>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            type="password"
+            label="Password"
+            value={faceIdPassword}
+            onChange={(e) => setFaceIdPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && faceIdPassword && handleEnableFaceId()}
+            sx={{ "& .MuiOutlinedInput-root": { fontSize: { xs: 16, md: 13 } }, ...textFieldSx }}
+          />
+          {faceIdError && <Alert severity="error" sx={{ mt: 1.5, py: 0.5, borderRadius: 2 }}>{faceIdError}</Alert>}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => { setFaceIdPasswordDialog(false); setFaceIdPassword(""); setFaceIdError(""); }}
+            sx={{ color: BRAND.textSecondary, textTransform: "none", fontWeight: 600 }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            disabled={!faceIdPassword || faceIdSaving}
+            onClick={handleEnableFaceId}
+            sx={{ ...btnMain, py: 0.5, px: 2.5 }}
+          >
+            {faceIdSaving ? <CircularProgress size={16} color="inherit" /> : "Enable"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* --- Delete confirmation dialog --- */}
       <Dialog
