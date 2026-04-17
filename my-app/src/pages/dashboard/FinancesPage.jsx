@@ -609,10 +609,19 @@ export default function FinancesPage() {
     setExpenses(exp ?? []);
   };
 
+  const fetchSummary = useRef(() => {});
+  fetchSummary.current = () =>
+    apiFetch("/api/finances/summary")
+      .then((data) => { if (mountedRef.current) setSummary(data); })
+      .catch(() => {});
+
   useEffect(() => {
     mountedRef.current = true;
-    apiFetch("/api/finances/summary").then(setSummary).catch(() => {}).finally(() => setLoading(false));
+    fetchSummary.current();
+    setLoading(false);
     fetchConfig.current();
+
+    const interval = setInterval(() => fetchSummary.current(), 30000);
 
     const channel = supabase
       .channel("finances-realtime")
@@ -622,16 +631,14 @@ export default function FinancesPage() {
 
     return () => {
       mountedRef.current = false;
+      clearInterval(interval);
       supabase.removeChannel(channel);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([
-      apiFetch("/api/finances/summary").then(setSummary).catch(() => {}),
-      fetchConfig.current(),
-    ]);
+    await Promise.all([fetchSummary.current(), fetchConfig.current()]);
     setRefreshing(false);
   };
 
