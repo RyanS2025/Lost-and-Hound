@@ -664,7 +664,10 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
 
   const fetchItems = useCallback(async () => {
     setRefreshing(true);
-    await refreshItems();
+    await Promise.all([
+      refreshItems(),
+      apiFetch("/api/blocked-ids").then(({ ids }) => setBlockedUsers(new Set(ids || []))).catch(() => {}),
+    ]);
     setRefreshing(false);
   }, [refreshItems]);
 
