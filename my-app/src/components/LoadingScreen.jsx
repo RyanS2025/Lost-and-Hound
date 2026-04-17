@@ -22,7 +22,7 @@ export default function LoadingScreen() {
   const dot = prefersDark ? "rgba(255,255,255,0.07)" : "rgba(122,41,41,0.18)";
   const track = prefersDark ? "rgba(255,255,255,0.08)" : "rgba(168,77,72,0.12)";
 
-  const [msgIndex, setMsgIndex] = useState(0);
+  const [msgIndex, setMsgIndex] = useState(() => Math.floor(Math.random() * MESSAGES.length));
 
   useEffect(() => {
     if (Capacitor.isNativePlatform()) {
