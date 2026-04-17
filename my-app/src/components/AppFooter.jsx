@@ -1,4 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { Capacitor } from "@capacitor/core";
+import { Keyboard } from "@capacitor/keyboard";
 import {
   Box,
   Button,
@@ -41,7 +43,22 @@ export default function AppFooter({ effectiveTheme = "light" }) {
   const [openModal, setOpenModal] = useState(null);
   const [termsOpen, setTermsOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const isDark = effectiveTheme === "dark";
+
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      const show = Keyboard.addListener("keyboardWillShow", () => setKeyboardOpen(true));
+      const hide = Keyboard.addListener("keyboardWillHide", () => setKeyboardOpen(false));
+      return () => { show.then((h) => h.remove()); hide.then((h) => h.remove()); };
+    }
+    // Web browser fallback
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const handle = () => setKeyboardOpen(window.innerHeight - vv.height > 100);
+    vv.addEventListener("resize", handle);
+    return () => vv.removeEventListener("resize", handle);
+  }, []);
 
   const styles = useMemo(
     () => ({
@@ -59,7 +76,7 @@ export default function AppFooter({ effectiveTheme = "light" }) {
 
   return (
     <>
-      <Box
+      {!keyboardOpen && <Box
         component="footer"
         sx={{
           position: "fixed",
@@ -140,7 +157,7 @@ export default function AppFooter({ effectiveTheme = "light" }) {
             </Button>
           </Box>
         </Box>
-      </Box>
+      </Box>}
 
       <Dialog
         open={!!modal}
@@ -183,9 +200,9 @@ export default function AppFooter({ effectiveTheme = "light" }) {
       />
 
       <SupportModal
-        open={supportOpen} // Render the modal when supportOpen is true
-        onClose={() => setSupportOpen(false)} // Close the modal when requested
-        effectiveTheme={effectiveTheme} // Pass the theme prop if needed
+        open={supportOpen}
+        onClose={() => setSupportOpen(false)}
+        effectiveTheme={effectiveTheme}
       />
     </>
   );

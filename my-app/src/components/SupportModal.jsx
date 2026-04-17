@@ -267,10 +267,9 @@ export default function SupportModal({ open, onClose }) {
       open={open}
       onClose={handleClose}
       slotProps={{ backdrop: { sx: { backgroundColor: BRAND.backdrop, backdropFilter: "blur(1px)" } } }}
+      sx={{ display: "flex", alignItems: "center", justifyContent: "center", p: 2 }}
     >
       <Box sx={{
-        position: "absolute", top: "50%", left: "50%",
-        transform: "translate(-50%, -50%)",
         display: "flex", flexDirection: "row",
         outline: "none",
       }}>

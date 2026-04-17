@@ -54,7 +54,7 @@
 .home-page {
   width: 100%;
   margin: 0 auto;
-  min-height: calc(100vh - 72px);
+  min-height: calc(100dvh - 72px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -142,7 +142,7 @@
 /* --- .map-column: Column for map and controls --- */
 .map-column {
   width: 50vw;
-  height: calc(100vh - var(--nav-height));
+  height: calc(100dvh - var(--nav-height));
   box-sizing: border-box;
   padding: 24px;
 

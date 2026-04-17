@@ -2736,12 +2736,10 @@ async function sendBroadcastPush(title, body, data = {}) {
 
 // Mod-only manual trigger for the daily lost items broadcast
 app.post("/api/push/broadcast-lost-items", requireAuth, require2FA, requireOwner, async (_req, res) => {
-  const result = await supabase
+  const { count } = await supabase
     .from("listings")
     .select("item_id", { count: "exact", head: true })
     .neq("resolved", true);
-  console.log("[broadcast] count result:", result.count, "error:", result.error?.message);
-  const { count } = result;
 
   const n = count ?? 0;
   await sendBroadcastPush(
