@@ -2706,8 +2706,8 @@ async function sendPushNotification(userId, title, body, data = {}) {
         data,
       }),
     });
-    // Log every push for usage tracking (10k/mo free tier)
     supabase.from("push_logs").insert({ user_id: userId }).catch(() => {});
+    incrementPushCount().catch(() => {});
   } catch (err) {
     console.error("Push notification error:", err);
   }
@@ -2729,9 +2729,23 @@ async function sendBroadcastPush(title, body, data = {}) {
         data,
       }),
     });
+    await incrementPushCount();
   } catch (err) {
     console.error("Broadcast push error:", err);
   }
+}
+
+async function incrementPushCount() {
+  const { data: cfg } = await supabase
+    .from("finance_config")
+    .select("overrides")
+    .eq("id", "singleton")
+    .single();
+  const current = cfg?.overrides?.push_count || 6;
+  const next = { ...(cfg?.overrides ?? {}), push_count: current + 1 };
+  await supabase
+    .from("finance_config")
+    .upsert({ id: "singleton", overrides: next, updated_at: new Date().toISOString() });
 }
 
 // Mod-only manual trigger for the daily lost items broadcast
@@ -2813,12 +2827,12 @@ app.get("/api/finances/summary", requireAuth, require2FA, requireOwner, async (_
     }
   }
 
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
-  const { count: pushCount } = await supabase
-    .from("push_logs")
-    .select("*", { count: "exact", head: true })
-    .gte("created_at", monthStart);
-  const push = { month: month, sentCount: pushCount ?? 0, freeLimit: 10000 };
+  const { data: cfgData } = await supabase
+    .from("finance_config")
+    .select("overrides")
+    .eq("id", "singleton")
+    .single();
+  const push = { month, sentCount: cfgData?.overrides?.push_count || 6, freeLimit: 10000 };
 
   res.json({ vision, railway, push });
 });
