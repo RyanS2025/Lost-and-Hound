@@ -97,7 +97,7 @@ export default function SettingsPage({
 
   useEffect(() => {
     if (!effectiveUser || isDemoMode) return;
-    supabase.from("blocked_users").select("blocked_id")
+    supabase.from("blocked_users").select("blocked_id").eq("blocker_id", effectiveUser.id)
       .then(async ({ data }) => {
         const ids = data?.map(r => r.blocked_id) || [];
         if (!ids.length) return setBlockedUsers([]);
