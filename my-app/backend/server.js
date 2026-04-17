@@ -618,10 +618,11 @@ app.patch("/api/profile/campus", requireAuth, require2FA, async (req, res) => {
 });
 
 app.patch("/api/settings/notifications", requireAuth, async (req, res) => {
-  const { emailNotifications, pushNotifications } = req.body;
+  const { emailNotifications, pushNotifications, broadcastNotifications } = req.body;
   const updates = {};
-  if (typeof emailNotifications === "boolean") updates.email_notifications_enabled = emailNotifications;
-  if (typeof pushNotifications  === "boolean") updates.push_notifications_enabled  = pushNotifications;
+  if (typeof emailNotifications     === "boolean") updates.email_notifications_enabled      = emailNotifications;
+  if (typeof pushNotifications      === "boolean") updates.push_notifications_enabled       = pushNotifications;
+  if (typeof broadcastNotifications === "boolean") updates.broadcast_notifications_enabled  = broadcastNotifications;
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No valid fields" });
 
   const { error } = await supabase.from("profiles").update(updates).eq("id", req.user.id);
@@ -2747,16 +2748,38 @@ async function sendBroadcastPush(title, body, data = {}) {
   const appId  = process.env.ONESIGNAL_APP_ID;
   if (!apiKey || !appId) return;
   try {
+    let notifPayload = {
+      app_id: appId,
+      included_segments: ["All"],
+      headings: { en: title },
+      contents: { en: body },
+      data,
+    };
+
+    // Exclude users who have opted out of community broadcasts
+    try {
+      const { data: optedOut } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("broadcast_notifications_enabled", false);
+      if (optedOut?.length > 0) {
+        const optedOutIds = optedOut.map(r => r.id);
+        const { data: tokens } = await supabase
+          .from("push_tokens")
+          .select("player_id")
+          .not("user_id", "in", `(${optedOutIds.join(",")})`);
+        const playerIds = (tokens ?? []).map(t => t.player_id).filter(Boolean);
+        if (playerIds.length > 0) {
+          delete notifPayload.included_segments;
+          notifPayload.include_player_ids = playerIds;
+        }
+      }
+    } catch {} // broadcast_notifications_enabled column may not exist yet
+
     await fetch("https://onesignal.com/api/v1/notifications", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Basic ${apiKey}` },
-      body: JSON.stringify({
-        app_id: appId,
-        included_segments: ["All"],
-        headings: { en: title },
-        contents: { en: body },
-        data,
-      }),
+      body: JSON.stringify(notifPayload),
     });
     await incrementPushCount();
   } catch (err) {

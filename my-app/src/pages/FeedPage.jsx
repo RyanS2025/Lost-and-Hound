@@ -11,7 +11,10 @@ import CloseIcon from "@mui/icons-material/Close";
 import UploadIcon from "@mui/icons-material/UploadFile";
 import MapIcon from "@mui/icons-material/PinDrop";
 import FlagIcon from "@mui/icons-material/Flag";
+import BlockIcon from "@mui/icons-material/Block";
+import Tooltip from "@mui/material/Tooltip";
 import ReportModal from "../components/ReportModal";
+import { supabase } from "../../backend/supabaseClient";
 import ItemDetailModal from "../components/ItemDetailModal";
 import apiFetch from "../utils/apiFetch";
 import { containsProfanity, stripInvisible } from "../utils/profanityFilter";
@@ -129,7 +132,7 @@ function ImageUpload({ image, onChange, isDark = false }) {
 }
 
 // --- ItemCard ---
-function ItemCard({ item, onClick, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
+function ItemCard({ item, onClick, isDark = false, timeZone = DEFAULT_TIME_ZONE, isBlocked = false, onBlock, onUnblock, currentUserId }) {
   return (
     <Paper
       elevation={1}
@@ -181,9 +184,22 @@ function ItemCard({ item, onClick, isDark = false, timeZone = DEFAULT_TIME_ZONE 
             <Typography variant="caption" color={isDark ? "#B8BABD" : "text.secondary"} fontWeight={600} display="block">
               {item.locations?.name ?? "Unknown location"} · {item.found_at}
             </Typography>
-            <Typography variant="caption" sx={{ color: isDark ? "#818384" : "#aaa", fontWeight: 600 }}>
-              {item.poster_name} · {formatRelativeDate(item.date, timeZone)}
-            </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <Typography variant="caption" sx={{ color: isDark ? "#818384" : "#aaa", fontWeight: 600 }}>
+                {item.poster_name} · {formatRelativeDate(item.date, timeZone)}
+              </Typography>
+              {onBlock && item.poster_id && item.poster_id !== currentUserId && (
+                <Tooltip title={isBlocked ? "Unblock user" : "Block user"}>
+                  <IconButton
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); isBlocked ? onUnblock(item.poster_id) : onBlock(item.poster_id); }}
+                    sx={{ p: 0.25, color: isBlocked ? "error.main" : isDark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.2)", "&:hover": { color: isBlocked ? "error.dark" : "#A84D48" } }}
+                  >
+                    <BlockIcon sx={{ fontSize: 13 }} />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Box>
           </Box>
           <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0.75, flexShrink: 0 }}>
             <Chip
@@ -613,6 +629,28 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
   // "all" shows both found and lost listings. "found" / "lost" narrows to one type.
   const [listingTypeFilter, setListingTypeFilter] = useState("all");
   const [refreshing, setRefreshing] = useState(false);
+  const [blockedUsers, setBlockedUsers] = useState(new Set());
+
+  useEffect(() => {
+    if (!user || isDemoMode) return;
+    supabase.from("blocked_users").select("blocked_id")
+      .then(({ data }) => setBlockedUsers(new Set(data?.map(r => r.blocked_id) || [])))
+      .catch(() => {});
+  }, [user, isDemoMode]);
+
+  const handleBlock = async (userId) => {
+    try {
+      await apiFetch(`/api/users/${userId}/block`, { method: "POST" });
+      setBlockedUsers(prev => new Set([...prev, userId]));
+    } catch {}
+  };
+
+  const handleUnblock = async (userId) => {
+    try {
+      await apiFetch(`/api/users/${userId}/block`, { method: "DELETE" });
+      setBlockedUsers(prev => { const s = new Set(prev); s.delete(userId); return s; });
+    } catch {}
+  };
 
   const fetchItems = useCallback(async () => {
     setRefreshing(true);
@@ -638,6 +676,7 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
   const filtered = items
     .filter(i => selectedCampus === "all" || i.locations?.campus === selectedCampus)
     .filter(i => showResolved || !i.resolved)
+    .filter(i => !blockedUsers.has(i.poster_id))
     .filter(i => !showMyPosts || (user?.id && i.poster_id === user.id))
     .filter(i => category === "All" || i.category === category)
     // Only apply the type filter when the user has selected found or lost specifically.
@@ -846,7 +885,7 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
           : filtered.length === 0
             ? <Typography textAlign="center" color={isDark ? "#818384" : "text.disabled"} fontWeight={700} sx={{ mt: 8 }}>No items found.</Typography>
             : <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                {filtered.map(item => <ItemCard key={item.item_id} item={item} onClick={setSelected} isDark={isDark} timeZone={timeZone} />)}
+                {filtered.map(item => <ItemCard key={item.item_id} item={item} onClick={setSelected} isDark={isDark} timeZone={timeZone} isBlocked={blockedUsers.has(item.poster_id)} onBlock={!isDemoMode ? handleBlock : undefined} onUnblock={!isDemoMode ? handleUnblock : undefined} currentUserId={user?.id} />)}
               </Box>
         }
       </Box>

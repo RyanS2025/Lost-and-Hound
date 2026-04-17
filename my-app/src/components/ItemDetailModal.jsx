@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Box, Typography, Paper, Button, Chip, Modal, IconButton,
+  Box, Typography, Paper, Button, Chip, Modal, IconButton, Tooltip, CircularProgress,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import FlagIcon from "@mui/icons-material/Flag";
+import BlockIcon from "@mui/icons-material/Block";
+import { supabase } from "../../backend/supabaseClient";
 import ReportModal from "./ReportModal";
 import MapPinPicker from "./MapPinPicker";
 import { useAuth } from "../AuthContext";
@@ -39,7 +41,32 @@ export default function ItemDetailModal({ item, onClose, onClaim, isDark = false
   const [returning, setReturning] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blockLoading, setBlockLoading] = useState(false);
   const isOwner = user?.id && item?.poster_id === user.id;
+
+  useEffect(() => {
+    if (!user || !item?.poster_id || isOwner) return;
+    supabase.from("blocked_users").select("id")
+      .eq("blocker_id", user.id).eq("blocked_id", item.poster_id).maybeSingle()
+      .then(({ data }) => setIsBlocked(!!data)).catch(() => {});
+  }, [user, item?.poster_id, isOwner]);
+
+  const handleBlock = async () => {
+    setBlockLoading(true);
+    try {
+      await apiFetch(`/api/users/${item.poster_id}/block`, { method: "POST" });
+      setIsBlocked(true);
+    } catch {} finally { setBlockLoading(false); }
+  };
+
+  const handleUnblock = async () => {
+    setBlockLoading(true);
+    try {
+      await apiFetch(`/api/users/${item.poster_id}/block`, { method: "DELETE" });
+      setIsBlocked(false);
+    } catch {} finally { setBlockLoading(false); }
+  };
 
   if (!item) return null;
 
@@ -69,6 +96,16 @@ export default function ItemDetailModal({ item, onClose, onClaim, isDark = false
             <IconButton onClick={() => setReportOpen(true)} size="small" sx={{ color: isDark ? "#818384" : "#999", "&:hover": { color: "#A84D48" } }}>
               <FlagIcon fontSize="small" />
             </IconButton>
+            {!isOwner && item.poster_id && (
+              <Tooltip title={isBlocked ? "Unblock user" : "Block user"}>
+                <span>
+                  <IconButton size="small" onClick={isBlocked ? handleUnblock : handleBlock} disabled={blockLoading}
+                    sx={{ color: isBlocked ? "error.main" : isDark ? "#818384" : "#999", "&:hover": { color: isBlocked ? "error.dark" : "#A84D48" } }}>
+                    {blockLoading ? <CircularProgress size={16} /> : <BlockIcon fontSize="small" />}
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
             <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
           </Box>
         </Box>
