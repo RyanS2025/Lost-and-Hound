@@ -30,6 +30,7 @@ import {
   CircularProgress,
   IconButton,
   Chip,
+  Collapse,
 } from "@mui/material";
 import { useAuth } from "../AuthContext";
 import Avatar from "@mui/material/Avatar";
@@ -94,6 +95,7 @@ export default function SettingsPage({
   const [notifBroadcast, setNotifBroadcast] = useState(effectiveProfile?.broadcast_notifications_enabled ?? true);
 
   const [blockedUsers, setBlockedUsers] = useState([]);
+  const [blockedOpen, setBlockedOpen] = useState(false);
 
   useEffect(() => {
     if (!effectiveUser || isDemoMode) return;
@@ -894,35 +896,48 @@ export default function SettingsPage({
                 <Divider sx={{ my: 2.5, borderColor: BRAND.cardBorder }} />
 
                 {/* -- Blocked Users -- */}
-                <SectionLabel icon={BlockIcon}>Blocked Users</SectionLabel>
-                <Box sx={{ bgcolor: BRAND.maroonFaint, borderRadius: 2, px: 2, py: 1.5, mb: 2.5 }}>
-                  {blockedUsers.length === 0 ? (
-                    <Typography variant="body2" sx={{ color: BRAND.textSecondary }}>
-                      No blocked users.
+                <Box
+                  onClick={() => setBlockedOpen(o => !o)}
+                  sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", mb: 1.5 }}
+                >
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <BlockIcon sx={{ fontSize: 18, color: BRAND.maroon, opacity: 0.7 }} />
+                    <Typography variant="overline" sx={{ color: BRAND.textSecondary, letterSpacing: 1.5, fontWeight: 700, fontSize: "0.7rem" }}>
+                      Blocked Users {blockedUsers.length > 0 && `(${blockedUsers.length})`}
                     </Typography>
-                  ) : (
-                    <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                      {blockedUsers.map(u => (
-                        <Box key={u.id} sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                            <Avatar sx={{ width: 28, height: 28, bgcolor: BRAND.maroon, fontSize: 12, fontWeight: 700 }}>
-                              {u.first_name?.[0]}{u.last_name?.[0]}
-                            </Avatar>
-                            <Typography variant="body2" fontWeight={600} sx={{ color: BRAND.textPrimary }}>
-                              {u.first_name} {u.last_name}
-                            </Typography>
-                          </Box>
-                          <Chip
-                            label="Unblock"
-                            size="small"
-                            onClick={() => handleUnblockUser(u.id)}
-                            sx={{ fontWeight: 700, fontSize: 11, cursor: "pointer", bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)", "&:hover": { bgcolor: isDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.12)" } }}
-                          />
-                        </Box>
-                      ))}
-                    </Box>
-                  )}
+                  </Box>
+                  <Typography variant="caption" sx={{ color: BRAND.textSecondary, fontWeight: 600 }}>
+                    {blockedOpen ? "▲" : "▼"}
+                  </Typography>
                 </Box>
+                <Collapse in={blockedOpen}>
+                  <Box sx={{ bgcolor: BRAND.maroonFaint, borderRadius: 2, px: 2, py: 1.5, mb: 2.5 }}>
+                    {blockedUsers.length === 0 ? (
+                      <Typography variant="body2" sx={{ color: BRAND.textSecondary }}>No blocked users.</Typography>
+                    ) : (
+                      <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                        {blockedUsers.map(u => (
+                          <Box key={u.id} sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                              <Avatar sx={{ width: 28, height: 28, bgcolor: BRAND.maroon, fontSize: 12, fontWeight: 700 }}>
+                                {u.first_name?.[0]}{u.last_name?.[0]}
+                              </Avatar>
+                              <Typography variant="body2" fontWeight={600} sx={{ color: BRAND.textPrimary }}>
+                                {u.first_name} {u.last_name}
+                              </Typography>
+                            </Box>
+                            <Chip
+                              label="Unblock"
+                              size="small"
+                              onClick={() => handleUnblockUser(u.id)}
+                              sx={{ fontWeight: 700, fontSize: 11, cursor: "pointer", bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)", "&:hover": { bgcolor: isDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.12)" } }}
+                            />
+                          </Box>
+                        ))}
+                      </Box>
+                    )}
+                  </Box>
+                </Collapse>
 
                 <Divider sx={{ my: 2.5, borderColor: BRAND.cardBorder }} />
 
