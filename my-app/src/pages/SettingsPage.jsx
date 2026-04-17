@@ -165,10 +165,16 @@ export default function SettingsPage({
     if (key === "emailNotifications") setNotifEmail(value);
     else if (key === "pushNotifications") setNotifPush(value);
     else if (key === "broadcastNotifications") setNotifBroadcast(value);
-    await apiFetch("/api/settings/notifications", {
-      method: "PATCH",
-      body: JSON.stringify({ [key]: value }),
-    }).catch(() => {});
+    const dbKey = key === "emailNotifications" ? "email_notifications_enabled"
+      : key === "pushNotifications" ? "push_notifications_enabled"
+      : "broadcast_notifications_enabled";
+    try {
+      await apiFetch("/api/settings/notifications", {
+        method: "PATCH",
+        body: JSON.stringify({ [key]: value }),
+      });
+      updateProfile({ [dbKey]: value });
+    } catch {}
   };
 
   const handleSaveCampus = async (campusId) => {
