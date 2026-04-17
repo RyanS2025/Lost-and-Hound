@@ -59,6 +59,16 @@ const SERVICE_CONFIG = {
     fields: ["cost", "notes"],
     costLabel: "Monthly cost override ($)", costHint: "Monitor usage in Cloud Console — check often",
   },
+  onesignal: {
+    id: "onesignal", title: "OneSignal", billingCycle: "monthly",
+    Icon: PhoneIphoneIcon, color: "#e54b4b",
+    description: "Push notifications for the iOS app. Sends message alerts to users when they receive a new message.",
+    freeTier: "Free: 10,000 push notifications/month.",
+    paidInfo: "Growth: $9/mo (100K notifications). Professional: $99/mo (500K).",
+    links: [{ label: "Dashboard", url: "https://app.onesignal.com" }],
+    fields: ["cost", "notes"],
+    costLabel: "Monthly cost override ($)", costHint: "Set only if exceeding 10k free tier",
+  },
   mapsIos: {
     id: "mapsIos", title: "Maps SDK for iOS", billingCycle: "monthly",
     Icon: PhoneIphoneIcon, color: "#ea4335",
@@ -114,12 +124,13 @@ const SERVICE_CONFIG = {
   },
 };
 
-const SERVICE_ORDER = ["railway", "vision", "mapsWeb", "mapsIos", "gemini", "supabase", "resend", "domain"];
+const SERVICE_ORDER = ["railway", "vision", "onesignal", "mapsWeb", "mapsIos", "gemini", "supabase", "resend", "domain"];
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 const DEFAULT_OVERRIDES = {
-  railway:  { cost: null, plan: "",      renewalDate: null, notes: "" },
-  vision:   { cost: null, plan: null,    renewalDate: null, notes: "" },
+  railway:   { cost: null, plan: "",      renewalDate: null, notes: "" },
+  vision:    { cost: null, plan: null,    renewalDate: null, notes: "" },
+  onesignal: { cost: null, plan: null,    renewalDate: null, notes: "" },
   mapsWeb:  { cost: null, plan: null,    renewalDate: null, notes: "" },
   mapsIos:  { cost: null, plan: null,    renewalDate: null, notes: "" },
   gemini:   { cost: null, plan: null,    renewalDate: null, notes: "" },
@@ -193,7 +204,7 @@ function ServiceCard({ config, badge, cost, children, isDark, onClick }) {
 
 
 // ─── Service Modal ─────────────────────────────────────────────────────────────
-function ServiceModal({ config, override, onSave, onClose, isDark, liveData, railwayData, showProjected }) {
+function ServiceModal({ config, override, onSave, onClose, isDark, liveData, railwayData, pushData, showProjected }) {
   const [form, setForm] = useState({ cost: override.cost ?? "", plan: override.plan ?? "", renewalDate: override.renewalDate ?? "", notes: override.notes ?? "" });
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -311,6 +322,42 @@ function ServiceModal({ config, override, onSave, onClose, isDark, liveData, rai
                 <Typography variant="caption" color="text.secondary">0 calls</Typography>
                 <Typography variant="caption" fontWeight={700} sx={{ color: barColor }}>{pct.toFixed(1)}% of free tier</Typography>
                 <Typography variant="caption" color="text.secondary">1,000 calls</Typography>
+              </Box>
+              <LinearProgress variant="determinate" value={pct} sx={{
+                height: 10, borderRadius: 5, mb: 2,
+                backgroundColor: isDark ? "rgba(255,255,255,0.1)" : "#e5e7eb",
+                "& .MuiLinearProgress-bar": { backgroundColor: barColor, borderRadius: 5 },
+              }} />
+            </>
+          );
+        })()}
+
+        {/* OneSignal push live visual */}
+        {pushData && (() => {
+          const pct = Math.min((pushData.sentCount / pushData.freeLimit) * 100, 100);
+          const remaining = pushData.freeLimit - pushData.sentCount;
+          const barColor = pct >= 90 ? "#dc2626" : pct >= 70 ? "#f59e0b" : "#e54b4b";
+          return (
+            <>
+              <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 1.5 }}>
+                Usage — {pushData.month}
+              </Typography>
+              <Box sx={{ display: "flex", gap: 2, mb: 2 }}>
+                {[
+                  { label: "Sent", value: pushData.sentCount.toLocaleString(), color: barColor },
+                  { label: "Remaining", value: remaining.toLocaleString(), color: remaining < 500 ? "#dc2626" : "#16a34a" },
+                  { label: "Free limit", value: pushData.freeLimit.toLocaleString(), color: "text.secondary" },
+                ].map(({ label, value, color }) => (
+                  <Paper key={label} variant="outlined" sx={{ flex: 1, p: 1.5, borderRadius: 2, textAlign: "center", borderColor: isDark ? "rgba(255,255,255,0.1)" : "#e5e7eb" }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>{label}</Typography>
+                    <Typography variant="h6" fontWeight={700} sx={{ color, fontSize: 18 }}>{value}</Typography>
+                  </Paper>
+                ))}
+              </Box>
+              <Box sx={{ mb: 0.75, display: "flex", justifyContent: "space-between" }}>
+                <Typography variant="caption" color="text.secondary">0</Typography>
+                <Typography variant="caption" fontWeight={700} sx={{ color: barColor }}>{pct.toFixed(1)}% of free tier</Typography>
+                <Typography variant="caption" color="text.secondary">10,000</Typography>
               </Box>
               <LinearProgress variant="determinate" value={pct} sx={{
                 height: 10, borderRadius: 5, mb: 2,
@@ -616,6 +663,7 @@ export default function FinancesPage() {
   // Cost resolution
   const vision = summary?.vision;
   const railway = summary?.railway;
+  const push = summary?.push;
   const RAILWAY_HOBBY_CREDIT = 5;
 
   const getRailwayUsage = () => showProjected
@@ -652,7 +700,7 @@ export default function FinancesPage() {
   // Card rendering helpers
   const getCardBadge = (id) => {
     if (id === "mapsWeb" || id === "mapsIos" || id === "gemini") return "Check Often";
-    if (id === "vision" || id === "railway") return "Live";
+    if (id === "vision" || id === "railway" || id === "onesignal") return "Live";
     return null;
   };
 
@@ -730,6 +778,16 @@ export default function FinancesPage() {
                     </Box>
                   </>
                 ) : <Typography variant="body2" color="text.secondary">Add RAILWAY_API_TOKEN to enable live billing.</Typography>)}
+
+                {/* OneSignal live */}
+                {id === "onesignal" && (loading ? <CircularProgress size={14} /> : push ? (
+                  <>
+                    <UsageBar value={push.sentCount} max={push.freeLimit} label={`Push notifications — ${push.month}`} isDark={isDark} />
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
+                      {(push.freeLimit - push.sentCount).toLocaleString()} remaining before paid tier
+                    </Typography>
+                  </>
+                ) : null)}
 
                 {/* Vision live */}
                 {id === "vision" && (loading ? <CircularProgress size={14} /> : vision ? (
@@ -853,6 +911,7 @@ export default function FinancesPage() {
           isDark={isDark}
           liveData={openService === "vision" ? vision : null}
           railwayData={openService === "railway" ? railway : null}
+          pushData={openService === "onesignal" ? push : null}
           showProjected={showProjected}
         />
       )}

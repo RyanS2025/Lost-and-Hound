@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useOutletContext } from "react-router-dom";
 import { useAuth } from "../../AuthContext";
 import {
-  Box, Typography, Paper, Chip, Button,
+  Box, Typography, Paper, Chip, Button, CircularProgress,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
@@ -15,6 +15,7 @@ import SupportAgentIcon from "@mui/icons-material/SupportAgent";
 import AssignmentIcon from "@mui/icons-material/Assignment";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
+import CampaignIcon from "@mui/icons-material/Campaign";
 import apiFetch from "../../utils/apiFetch";
 import { summaryCache } from "../../utils/dashboardPrefetch";
 import { supabase } from "../../../backend/supabaseClient";
@@ -114,6 +115,8 @@ export default function DashboardOverviewPage() {
   const { profile } = useAuth();
   const [summary, setSummary] = useState(summaryCache.data);
   const [refreshing, setRefreshing] = useState(false);
+  const [broadcasting, setBroadcasting] = useState(false);
+  const [broadcastResult, setBroadcastResult] = useState(null);
   const mountedRef = useRef(true);
 
   const fetchSummary = useRef(() => {});
@@ -245,6 +248,19 @@ export default function DashboardOverviewPage() {
     }] : []),
   ];
 
+  const handleBroadcastLostItems = async () => {
+    setBroadcasting(true);
+    setBroadcastResult(null);
+    try {
+      const res = await apiFetch("/api/push/broadcast-lost-items", { method: "POST" });
+      setBroadcastResult({ ok: true, count: res.count });
+    } catch {
+      setBroadcastResult({ ok: false });
+    } finally {
+      setBroadcasting(false);
+    }
+  };
+
   return (
     <>
       <Box sx={{ position: "relative" }}>
@@ -278,6 +294,59 @@ export default function DashboardOverviewPage() {
             loading={!summary}
           />
         ))}
+
+        {profile?.is_owner && (
+          <Paper
+            variant="outlined"
+            sx={{
+              p: { xs: 2, sm: 2.5 }, borderRadius: 3,
+              borderColor: isDark ? "rgba(255,255,255,0.1)" : "#ecdcdc",
+              background: isDark ? "#1A1A1B" : "#fff",
+              display: "flex", flexDirection: "column", gap: 1.5,
+            }}
+          >
+            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+                <Box sx={{
+                  width: 38, height: 38, borderRadius: 2, flexShrink: 0,
+                  background: "rgba(234,88,12,0.12)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <CampaignIcon sx={{ color: "#ea580c", fontSize: 20 }} />
+                </Box>
+                <Typography fontWeight={800} fontSize={15} sx={{ color: isDark ? "#D7DADC" : "#1a1a1a" }}>
+                  Broadcasts
+                </Typography>
+              </Box>
+            </Box>
+
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: 13, lineHeight: 1.5 }}>
+              Push a notification to all users about active lost items.
+            </Typography>
+
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mt: "auto" }}>
+              {broadcastResult && (
+                <Typography fontSize={12} sx={{ color: broadcastResult.ok ? "#16a34a" : "#dc2626" }}>
+                  {broadcastResult.ok ? `✓ Sent — ${broadcastResult.count} lost items` : "Failed — try again"}
+                </Typography>
+              )}
+              <Button
+                variant="contained"
+                size="small"
+                disabled={broadcasting}
+                onClick={handleBroadcastLostItems}
+                startIcon={broadcasting ? <CircularProgress size={14} color="inherit" /> : <CampaignIcon sx={{ fontSize: 16 }} />}
+                sx={{
+                  background: "#ea580c", "&:hover": { background: "#c2410c" },
+                  textTransform: "none", fontWeight: 700, borderRadius: 2,
+                  alignSelf: "flex-start",
+                }}
+              >
+                {broadcasting ? "Sending…" : "Send Lost Items Alert"}
+              </Button>
+            </Box>
+          </Paper>
+        )}
       </Box>
     </>
   );

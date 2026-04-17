@@ -76,70 +76,69 @@ export default function AppFooter({ effectiveTheme = "light" }) {
           sx={{
             height: 56,
             px: { xs: 2, sm: 2 },
-            display: "flex",
+            display: { xs: "flex", md: "grid" },
+            gridTemplateColumns: { md: "1fr auto 1fr" },
             alignItems: "center",
-            justifyContent: { xs: "center", md: "space-between" },
-            gap: { xs: 0, sm: 1 },
+            justifyContent: { xs: "center" },
           }}
         >
-        <Typography
-          variant="caption"
-          sx={{
-            color: styles.text,
-            fontWeight: 700,
-            whiteSpace: "nowrap",
-            display: { xs: "none", md: "block" },
-          }}
-        >
-          Lost &amp; Hound · Oasis @ Northeastern
-        </Typography>
-
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            gap: 0,
-          }}
-        >
-          {[
-            { label: "Credits", action: () => setOpenModal("credits") },
-            { label: "Disclaimer", action: () => setOpenModal("disclaimer") },
-            { label: "Terms", action: () => setTermsOpen(true) },
-            { label: "Privacy", action: () => setOpenModal("privacy") },
-            { label: "Support", action: () => setSupportOpen(true) },
-          ].map((item, i, arr) => (
-            <Box key={item.label} sx={{ display: "flex", alignItems: "center" }}>
-              <Button
-                size="small"
-                sx={{
-                  color: styles.accent,
-                  fontWeight: 700,
-                  fontSize: 15,
-                  px: { xs: 1, sm: 1.25 },
-                  py: 0,
-                  minWidth: 0,
-                  lineHeight: 1,
-                }}
-                onClick={item.action}
-              >
-                {item.label}
-              </Button>
-              {i < arr.length - 1 && (
-                <Typography sx={{ color: styles.text, fontSize: 15, userSelect: "none", opacity: 0.6, lineHeight: 1 }}>·</Typography>
-              )}
-            </Box>
-          ))}
-        </Box>
-          <Button
-            size="small"
-            component="a"
-            href="https://www.northeastern.edu/"
-            target="_blank"
-            rel="noopener noreferrer"
-            sx={{ color: styles.accent, fontWeight: 700, display: { xs: "none", sm: "inline-flex" } }}
+          {/* Left — hidden on mobile */}
+          <Typography
+            variant="caption"
+            sx={{
+              color: styles.text,
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+              display: { xs: "none", md: "block" },
+            }}
           >
-            Northeastern
-          </Button>
+            Lost &amp; Hound · Oasis @ Northeastern
+          </Typography>
+
+          {/* Center — truly centered on desktop via grid, flex-center on mobile */}
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0, justifyContent: "center" }}>
+            {[
+              { label: "Credits", action: () => setOpenModal("credits") },
+              { label: "Disclaimer", action: () => setOpenModal("disclaimer") },
+              { label: "Terms", action: () => setTermsOpen(true) },
+              { label: "Privacy", action: () => setOpenModal("privacy") },
+              { label: "Support", action: () => setSupportOpen(true) },
+            ].map((item, i, arr) => (
+              <Box key={item.label} sx={{ display: "flex", alignItems: "center" }}>
+                <Button
+                  size="small"
+                  sx={{
+                    color: styles.accent,
+                    fontWeight: 700,
+                    fontSize: 15,
+                    px: { xs: 1, sm: 1.25 },
+                    py: 0.75,
+                    minWidth: 0,
+                    lineHeight: 1,
+                  }}
+                  onClick={item.action}
+                >
+                  {item.label}
+                </Button>
+                {i < arr.length - 1 && (
+                  <Typography sx={{ color: styles.text, fontSize: 15, userSelect: "none", opacity: 0.6, lineHeight: 1 }}>·</Typography>
+                )}
+              </Box>
+            ))}
+          </Box>
+
+          {/* Right — hidden on mobile */}
+          <Box sx={{ display: { xs: "none", md: "flex" }, justifyContent: "flex-end" }}>
+            <Button
+              component="a"
+              href="https://www.northeastern.edu/"
+              target="_blank"
+              rel="noopener noreferrer"
+              sx={{ color: styles.accent, fontWeight: 700, px: 1.5, py: 0.75, minWidth: 0, textTransform: "none", fontSize: 14 }}
+            >
+              Northeastern
+            </Button>
+          </Box>
         </Box>
       </Box>
 
