@@ -23,7 +23,7 @@ import { DEFAULT_TIME_ZONE, formatTime } from "../utils/timezone";
 
 const MESSAGE_MAX_LENGTH = 500;
 
-export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE, conversations, setConversations, profiles, setProfiles, listings, setListings, unreadCounts = {}, setUnreadCounts = () => {}, conversationsLoaded }) {
+export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFAULT_TIME_ZONE, conversations, setConversations, profiles, setProfiles, listings, setListings, unreadCounts = {}, setUnreadCounts = () => {}, conversationsLoaded, refreshConversations }) {
   const isDark = effectiveTheme === "dark";
   const isMobile = useMediaQuery("(max-width:900px)");
   const pageBg = isDark ? "#101214" : "#f9f5f4";
@@ -45,9 +45,15 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
   const [sending, setSending] = useState(false);
   const [msgProfane, setMsgProfane] = useState(false);
   const [reportTarget, setReportTarget] = useState(null);
-  const [isBlocked, setIsBlocked] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);        // I blocked them
+  const [isBlockedByThem, setIsBlockedByThem] = useState(false); // they blocked me
   const [blockLoading, setBlockLoading] = useState(false);
   const [searchParams] = useSearchParams();
+
+  // Refresh conversations whenever the user navigates to this page
+  useEffect(() => {
+    if (!isDemoMode) refreshConversations?.();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const overlayRef = useRef(null);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -216,27 +222,29 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
       setMsgHasMore(false);
       setMsgPage(1);
       setIsBlocked(false);
+      setIsBlockedByThem(false);
       return;
     }
     setIsClosed(false);
 
-    // Check if current user has blocked the other participant
+    const otherId = selectedConversation.participant_1 === currentUserId
+      ? selectedConversation.participant_2
+      : selectedConversation.participant_1;
+
+    // Check block status in both directions
     if (!isDemoMode) {
-      const otherId = selectedConversation.participant_1 === currentUserId
-        ? selectedConversation.participant_2
-        : selectedConversation.participant_1;
-      supabase
-        .from("blocked_users")
-        .select("id")
-        .eq("blocker_id", currentUserId)
-        .eq("blocked_id", otherId)
-        .maybeSingle()
-        .then(({ data }) => setIsBlocked(!!data))
-        .catch(() => setIsBlocked(false));
+      Promise.all([
+        supabase.from("blocked_users").select("id").eq("blocker_id", currentUserId).eq("blocked_id", otherId).maybeSingle(),
+        supabase.from("blocked_users").select("id").eq("blocker_id", otherId).eq("blocked_id", currentUserId).maybeSingle(),
+      ]).then(([myBlock, theirBlock]) => {
+        setIsBlocked(!!myBlock.data);
+        setIsBlockedByThem(!!theirBlock.data);
+      }).catch(() => { setIsBlocked(false); setIsBlockedByThem(false); });
     }
 
     let channel;
     let closedChannel;
+    let blockChannel;
     let active = true;
 
     // Show cached messages instantly if available
@@ -302,6 +310,19 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
           setConversations((prev) => prev.filter((c) => c.id !== selectedConversation.id));
         })
         .subscribe();
+
+      // Live block state — fires when either party blocks/unblocks the other mid-conversation
+      blockChannel = supabase
+        .channel(`block-convo-${selectedConversation.id}`)
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "blocked_users", filter: `blocker_id=eq.${currentUserId}` },
+          (p) => { if (p.new.blocked_id === otherId) setIsBlocked(true); })
+        .on("postgres_changes", { event: "DELETE", schema: "public", table: "blocked_users", filter: `blocker_id=eq.${currentUserId}` },
+          (p) => { if (p.old.blocked_id === otherId) setIsBlocked(false); })
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "blocked_users", filter: `blocked_id=eq.${currentUserId}` },
+          (p) => { if (p.new.blocker_id === otherId) setIsBlockedByThem(true); })
+        .on("postgres_changes", { event: "DELETE", schema: "public", table: "blocked_users", filter: `blocked_id=eq.${currentUserId}` },
+          (p) => { if (p.old.blocker_id === otherId) setIsBlockedByThem(false); })
+        .subscribe();
     };
 
     setup();
@@ -310,6 +331,7 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
       active = false;
       if (channel) supabase.removeChannel(channel);
       if (closedChannel) supabase.removeChannel(closedChannel);
+      if (blockChannel) supabase.removeChannel(blockChannel);
     };
   }, [selectedConversation]);
 
@@ -457,6 +479,12 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
         <Button size="small" onClick={handleUnblock} disabled={blockLoading} sx={{ textTransform: "none", color: "#A84D48", fontSize: 12, fontWeight: 700, p: 0, minWidth: 0 }}>
           Unblock
         </Button>
+      </Box>
+    ) : isBlockedByThem ? (
+      <Box sx={{ p: 2, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", textAlign: "center", flexShrink: 0 }}>
+        <Typography variant="caption" fontWeight={700} color={mutedTextColor}>
+          You can't reply to this conversation.
+        </Typography>
       </Box>
     ) : (
       <Box sx={{ display: "flex", alignItems: "center", p: 1.5, borderTop: isDark ? "1px solid rgba(255,255,255,0.14)" : "1.5px solid #ecdcdc", gap: 1, flexShrink: 0 }}>

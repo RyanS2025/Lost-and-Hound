@@ -168,6 +168,19 @@ export default function App() {
   const [msgUnreadCounts, setMsgUnreadCounts] = useState({});
   const [msgConversationsLoaded, setMsgConversationsLoaded] = useState(false);
 
+  const fetchConversations = useCallback(async () => {
+    try {
+      const result = await apiFetch("/api/conversations");
+      setMsgConversations(result?.conversations || []);
+      setMsgProfiles(result?.profiles || {});
+      setMsgListings(result?.listings || {});
+      setMsgUnreadCounts(result?.unreadCounts || {});
+    } catch (err) {
+      console.error("Fetch conversations error:", err);
+    }
+    setMsgConversationsLoaded(true);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (isDemoMode) {
       setMsgConversations(DEMO_CONVERSATIONS);
@@ -185,19 +198,8 @@ export default function App() {
       setMsgConversationsLoaded(false);
       return;
     }
-    const fetchConversations = async () => {
-      try {
-        const result = await apiFetch("/api/conversations");
-        setMsgConversations(result?.conversations || []);
-        setMsgProfiles(result?.profiles || {});
-        setMsgListings(result?.listings || {});
-        setMsgUnreadCounts(result?.unreadCounts || {});
-      } catch (err) {
-        console.error("Fetch conversations error:", err);
-      }
-      setMsgConversationsLoaded(true);
-    };
     fetchConversations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
 
     // Live update: refresh conversation list when new messages, conversations, or blocks change
     const convoChannel = supabase
@@ -890,7 +892,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<FeedPage effectiveTheme={effectiveTheme} timeZone={timeZone} sharedItems={sharedItems} setSharedItems={setSharedItems} sharedItemsLoaded={sharedItemsLoaded} refreshItems={fetchAllItems} />} />
             <Route path="/map" element={<MapPage effectiveTheme={effectiveTheme} timeZone={timeZone} sharedItems={sharedItems} setSharedItems={setSharedItems} sharedItemsLoaded={sharedItemsLoaded} refreshItems={fetchAllItems} />} />
-            <Route path="/messages" element={<MessagePage effectiveTheme={effectiveTheme} timeZone={timeZone} conversations={msgConversations} setConversations={setMsgConversations} profiles={msgProfiles} setProfiles={setMsgProfiles} listings={msgListings} setListings={setMsgListings} unreadCounts={msgUnreadCounts} setUnreadCounts={setMsgUnreadCounts} conversationsLoaded={msgConversationsLoaded} />} />
+            <Route path="/messages" element={<MessagePage effectiveTheme={effectiveTheme} timeZone={timeZone} conversations={msgConversations} setConversations={setMsgConversations} profiles={msgProfiles} setProfiles={setMsgProfiles} listings={msgListings} setListings={setMsgListings} unreadCounts={msgUnreadCounts} setUnreadCounts={setMsgUnreadCounts} conversationsLoaded={msgConversationsLoaded} refreshConversations={fetchConversations} />} />
             <Route
               path="/settings"
               element={
