@@ -180,17 +180,14 @@ app.get("/api/stats/overview", requireAuth, require2FA, requireModerator, async 
   }
 });
 
-// POST /api/referral — no auth; fire-and-forget from sign-up flow
+// POST /api/referral — no auth; logs source only (no profile writes on unauthenticated endpoint)
 app.post("/api/referral", strictLimiter, async (req, res) => {
-  const { source, userId } = req.body || {};
+  const { source } = req.body || {};
   if (!source || !REFERRAL_SOURCES.has(source)) {
     return res.status(400).json({ error: "Invalid source" });
   }
   const { error } = await supabase.from("referral_sources").insert({ source });
   if (error) return res.status(500).json({ error: "Failed to save referral" });
-  if (userId && typeof userId === "string") {
-    await supabase.from("profiles").update({ referral_answered: true }).eq("id", userId);
-  }
   res.json({ success: true });
 });
 
@@ -618,6 +615,18 @@ app.patch("/api/profile/campus", requireAuth, require2FA, async (req, res) => {
 
   if (error) return dbError(res, error, "PATCH /api/profile/campus");
   res.json({ default_campus });
+});
+
+app.patch("/api/settings/notifications", requireAuth, async (req, res) => {
+  const { emailNotifications, pushNotifications } = req.body;
+  const updates = {};
+  if (typeof emailNotifications === "boolean") updates.email_notifications_enabled = emailNotifications;
+  if (typeof pushNotifications  === "boolean") updates.push_notifications_enabled  = pushNotifications;
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No valid fields" });
+
+  const { error } = await supabase.from("profiles").update(updates).eq("id", req.user.id);
+  if (error) return dbError(res, error, "PATCH /api/settings/notifications");
+  res.json({ ok: true });
 });
 
 app.delete("/api/profile", strictLimiter, requireAuth, require2FA, async (req, res) => {
@@ -2562,7 +2571,7 @@ app.post("/api/support-tickets/:id/replies", requireAuth, require2FA, requireMod
   try {
     const { data: ticket, error: ticketError } = await supabase
       .from("support_tickets")
-      .select("id, status, claimed_by, email, name, ticket_title, ticket_code")
+      .select("id, status, claimed_by, email, name, ticket_title, ticket_code, user_id")
       .eq("id", req.params.id)
       .single();
 
@@ -2626,6 +2635,17 @@ app.post("/api/support-tickets/:id/replies", requireAuth, require2FA, requireMod
       });
     }
 
+    // Push notification to authenticated ticket owner on every mod reply
+    if (ticket.user_id) {
+      const replyPreview = safeMessage.length > 100 ? safeMessage.slice(0, 97) + "…" : safeMessage;
+      sendPushNotification(
+        ticket.user_id,
+        "Support reply from the team",
+        replyPreview,
+        { type: "support_reply", ticketId: ticket.id }
+      ).catch(() => {});
+    }
+
     res.status(201).json(data[0]);
   } catch (error) {
     dbError(res, error, "posting reply");
@@ -2636,65 +2656,101 @@ app.post("/api/support-tickets/:id/replies", requireAuth, require2FA, requireMod
 // PUSH NOTIFICATIONS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// Register or update an Expo push token for the current user.
-app.post("/api/push-tokens", requireAuth, require2FA, async (req, res) => {
-  const { expoPushToken, platform } = req.body;
-  if (!expoPushToken || typeof expoPushToken !== "string") {
-    return res.status(400).json({ error: "expoPushToken is required" });
+// Register or update a OneSignal player_id for the current user.
+app.post("/api/push-tokens", requireAuth, async (req, res) => {
+  const { playerId } = req.body;
+  if (!playerId || typeof playerId !== "string") {
+    console.error("[push-tokens] 400 body:", JSON.stringify(req.body));
+    return res.status(400).json({ error: "playerId is required" });
   }
 
   const { error } = await supabase
     .from("push_tokens")
     .upsert(
-      { user_id: req.user.id, expo_push_token: expoPushToken, platform: platform || "unknown" },
-      { onConflict: "user_id,expo_push_token" }
+      { user_id: req.user.id, player_id: playerId },
+      { onConflict: "user_id" }
     );
 
   if (error) return dbError(res, error, "POST /api/push-tokens");
   res.json({ ok: true });
 });
 
-// Remove a push token (e.g. on logout).
+// Remove push token on logout.
 app.delete("/api/push-tokens", requireAuth, async (req, res) => {
-  const { expoPushToken } = req.body;
-  if (!expoPushToken) return res.status(400).json({ error: "expoPushToken is required" });
-
-  await supabase
-    .from("push_tokens")
-    .delete()
-    .eq("user_id", req.user.id)
-    .eq("expo_push_token", expoPushToken);
-
+  await supabase.from("push_tokens").delete().eq("user_id", req.user.id);
   res.json({ ok: true });
 });
 
 // Send push notification to a user via Expo Push API.
 async function sendPushNotification(userId, title, body, data = {}) {
-  const { data: tokens } = await supabase
-    .from("push_tokens")
-    .select("expo_push_token")
-    .eq("user_id", userId);
+  const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+  const appId  = process.env.ONESIGNAL_APP_ID;
+  if (!apiKey || !appId) return;
 
-  if (!tokens || tokens.length === 0) return;
+  const [{ data: row }, { data: prefs }] = await Promise.all([
+    supabase.from("push_tokens").select("player_id").eq("user_id", userId).single(),
+    supabase.from("profiles").select("push_notifications_enabled").eq("id", userId).single(),
+  ]);
 
-  const messages = tokens.map((t) => ({
-    to: t.expo_push_token,
-    sound: "default",
-    title,
-    body,
-    data,
-  }));
+  if (!row?.player_id) return;
+  if (prefs?.push_notifications_enabled === false) return;
 
   try {
-    await fetch("https://exp.host/--/api/v2/push/send", {
+    await fetch("https://onesignal.com/api/v1/notifications", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(messages),
+      headers: { "Content-Type": "application/json", Authorization: `Basic ${apiKey}` },
+      body: JSON.stringify({
+        app_id: appId,
+        include_player_ids: [row.player_id],
+        headings: { en: title },
+        contents: { en: body },
+        data,
+      }),
     });
+    // Log every push for usage tracking (10k/mo free tier)
+    supabase.from("push_logs").insert({ user_id: userId }).catch(() => {});
   } catch (err) {
     console.error("Push notification error:", err);
   }
 }
+
+async function sendBroadcastPush(title, body, data = {}) {
+  const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+  const appId  = process.env.ONESIGNAL_APP_ID;
+  if (!apiKey || !appId) return;
+  try {
+    await fetch("https://onesignal.com/api/v1/notifications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Basic ${apiKey}` },
+      body: JSON.stringify({
+        app_id: appId,
+        included_segments: ["All"],
+        headings: { en: title },
+        contents: { en: body },
+        data,
+      }),
+    });
+  } catch (err) {
+    console.error("Broadcast push error:", err);
+  }
+}
+
+// Mod-only manual trigger for the daily lost items broadcast
+app.post("/api/push/broadcast-lost-items", requireAuth, require2FA, requireModerator, async (_req, res) => {
+  const { count } = await supabase
+    .from("listings")
+    .select("id", { count: "exact", head: true })
+    .eq("type", "lost")
+    .eq("is_resolved", false);
+
+  const n = count ?? 0;
+  await sendBroadcastPush(
+    "Lost & Hound",
+    `There are currently ${n} lost items that need help. Can you lend a paw? 🐾`,
+    { type: "broadcast_lost_items" }
+  );
+  res.json({ ok: true, count: n });
+});
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // FINANCES (owner-only)
@@ -2759,7 +2815,14 @@ app.get("/api/finances/summary", requireAuth, require2FA, requireOwner, async (_
     }
   }
 
-  res.json({ vision, railway });
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+  const { count: pushCount } = await supabase
+    .from("push_logs")
+    .select("*", { count: "exact", head: true })
+    .gte("created_at", monthStart);
+  const push = { month: month, sentCount: pushCount ?? 0, freeLimit: 10000 };
+
+  res.json({ vision, railway, push });
 });
 
 app.get("/api/finances/config", requireAuth, require2FA, requireOwner, async (_req, res) => {
@@ -2911,10 +2974,10 @@ async function processUnreadMessageNotifications() {
   const recipientIds = Object.keys(byRecipient);
   if (!recipientIds.length) return;
 
-  // 4. Fetch display names from profiles
+  // 4. Fetch display names + notification prefs from profiles
   const { data: profiles } = await supabase
     .from("profiles")
-    .select("id, first_name, last_name")
+    .select("id, first_name, last_name, email_notifications_enabled")
     .in("id", recipientIds);
   const profileMap = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
 
@@ -2928,6 +2991,8 @@ async function processUnreadMessageNotifications() {
       if (!email) continue;
 
       const profile = profileMap[recipientId];
+      if (profile?.email_notifications_enabled === false) continue;
+
       const name = profile ? `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || null : null;
 
       await sendUnreadMessageEmail({
@@ -2955,6 +3020,24 @@ cron.schedule("0 * * * *", () => {
   processUnreadMessageNotifications().catch((err) =>
     console.error("[UnreadNotif] Cron error:", err)
   );
+});
+
+// Daily lost items broadcast at 10am ET (15:00 UTC)
+cron.schedule("0 15 * * *", () => {
+  supabase
+    .from("listings")
+    .select("id", { count: "exact", head: true })
+    .eq("type", "lost")
+    .eq("is_resolved", false)
+    .then(({ count }) => {
+      if (!count || count === 0) return;
+      return sendBroadcastPush(
+        "Lost & Hound",
+        `There are currently ${count} lost items that need help. Can you lend a paw? 🐾`,
+        { type: "broadcast_lost_items" }
+      );
+    })
+    .catch((err) => console.error("[BroadcastCron]", err));
 });
 
 const PORT = process.env.PORT || 3001;
