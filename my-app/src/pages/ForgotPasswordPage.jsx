@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "../../backend/supabaseClient";
+import { dismissKeyboardOnEnter } from "../utils/keyboard";
 import {
   Paper,
   TextField,
@@ -174,6 +175,7 @@ export default function ForgotPasswordPage({ effectiveTheme = "light" }) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={submitted}
+            onKeyDown={dismissKeyboardOnEnter}
             sx={{ ...textFieldSx, mb: 3 }}
           />
 

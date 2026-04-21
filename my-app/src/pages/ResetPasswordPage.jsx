@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { supabase } from "../../backend/supabaseClient";
 import { API_BASE } from "../utils/apiFetch";
+import { dismissKeyboardOnEnter } from "../utils/keyboard";
 import {
   Paper,
   TextField,
@@ -207,6 +208,7 @@ export default function ResetPasswordPage({ effectiveTheme = "light", onComplete
               value={password}
               onChange={(e) => setPassword(e.target.value.slice(0, PASSWORD_MAX_LENGTH))}
               inputProps={{ minLength: PASSWORD_MIN_LENGTH, maxLength: PASSWORD_MAX_LENGTH }}
+              onKeyDown={dismissKeyboardOnEnter}
               slotProps={{
                 input: {
                   endAdornment: (
@@ -236,6 +238,7 @@ export default function ResetPasswordPage({ effectiveTheme = "light", onComplete
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value.slice(0, PASSWORD_MAX_LENGTH))}
               inputProps={{ minLength: PASSWORD_MIN_LENGTH, maxLength: PASSWORD_MAX_LENGTH }}
+              onKeyDown={dismissKeyboardOnEnter}
               slotProps={{
                 input: {
                   endAdornment: (

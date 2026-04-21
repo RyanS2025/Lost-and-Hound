@@ -11,6 +11,7 @@ import EditIcon from "@mui/icons-material/Edit";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import DeleteIcon from "@mui/icons-material/Delete";
 import apiFetch from "../../utils/apiFetch";
+import { dismissKeyboard } from "../../utils/keyboard";
 import {
   DEFAULT_TIME_ZONE,
   formatDateTime,
@@ -470,7 +471,7 @@ export default function TicketDetailModal({ ticket, onClose, onUpdateStatus, onD
                 <Box sx={{ px: 1.5, py: 1.25, borderTop: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid #f0e8e8", flexShrink: 0 }}>
                   {replyError && <Alert severity="error" sx={{ mb: 0.75, py: 0, fontSize: 12 }}>{replyError}</Alert>}
                   <Box sx={{ display: "flex", gap: 1, alignItems: "flex-end" }}>
-                    <TextField size="small" fullWidth multiline maxRows={4} placeholder="Reply as Support Team…" value={replyText} onChange={(e) => setReplyText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleReply(); } }} inputProps={{ maxLength: 1000 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: { xs: 16, md: 13 } } }} />
+                    <TextField size="small" fullWidth multiline maxRows={4} placeholder="Reply as Support Team…" value={replyText} onChange={(e) => setReplyText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleReply(); dismissKeyboard(); } }} inputProps={{ maxLength: 1000 }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: { xs: 16, md: 13 } } }} />
                     <IconButton onClick={handleReply} disabled={!replyText.trim() || replySubmitting} sx={{ bgcolor: accent, color: "#fff", borderRadius: 2, width: 38, height: 38, flexShrink: 0, "&:hover": { bgcolor: accentHover }, "&.Mui-disabled": { bgcolor: isDark ? "#37383A" : "#e0d6d6" } }}>
                       {replySubmitting ? <CircularProgress size={16} color="inherit" /> : <SendIcon sx={{ fontSize: 17 }} />}
                     </IconButton>

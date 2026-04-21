@@ -31,6 +31,7 @@ import AppFooter from "./components/AppFooter";
 import ReferralPollModal from "./components/ReferralPollModal";
 import { Capacitor } from "@capacitor/core";
 import { App as CapApp } from "@capacitor/app";
+import { dismissKeyboard } from "./utils/keyboard";
 import { AppBar, Toolbar, Button, IconButton, Typography, Container, Box, Paper, Badge, Chip, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, CircularProgress, TextField } from '@mui/material';
 import { BiometricAuth } from "@aparajita/capacitor-biometric-auth";
 import { Preferences } from "@capacitor/preferences";
@@ -1036,7 +1037,7 @@ export default function App() {
                   autoFocus fullWidth size="small" type="password"
                   label="Password" value={lockPassword}
                   onChange={(e) => setLockPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && lockPassword && unlockWithPassword()}
+                  onKeyDown={(e) => { if (e.key === "Enter" && lockPassword) { unlockWithPassword(); dismissKeyboard(); } }}
                   sx={{ "& .MuiOutlinedInput-root": { fontSize: { xs: 16, md: 13 } } }}
                 />
                 {lockError && (

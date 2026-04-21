@@ -12,8 +12,10 @@ import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import SupportAgentIcon from "@mui/icons-material/SupportAgent";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import apiFetch from "../utils/apiFetch";
+import { dismissKeyboard, dismissKeyboardOnEnter } from "../utils/keyboard";
 import SupportFAQ from "./SupportFAQ";
 import { useAuth } from "../AuthContext";
+import { useDemo } from "../contexts/DemoContext";
 import { stripInvisible } from "../utils/profanityFilter";
 
 const TICKET_TYPES = ["Support", "Bug Report", "Feedback"];
@@ -40,6 +42,7 @@ export default function SupportModal({ open, onClose }) {
   const isDark = theme.palette.mode === "dark";
   const isSmall = useMediaQuery("(max-width:780px)");
   const { user, profile } = useAuth();
+  const { isDemoMode } = useDemo();
   const userEmail = user?.email || "";
   const userName = profile ? `${profile.first_name || ""} ${profile.last_name || ""}`.trim() : "";
 
@@ -221,6 +224,7 @@ export default function SupportModal({ open, onClose }) {
 
   const handleSubmit = async () => {
     if (!ticketType || !category || !stripInvisible(subject) || !stripInvisible(description) || submitting || imageConverting) return;
+    if (isDemoMode) { setError("Cannot do this action in demo mode."); return; }
     setSubmitting(true);
     setError("");
     let imageUrl = undefined;
@@ -347,7 +351,7 @@ export default function SupportModal({ open, onClose }) {
                     {(CATEGORIES_BY_TYPE[ticketType] || []).map((c) => <MenuItem key={c} value={c}>{c}</MenuItem>)}
                   </Select>
                 </FormControl>
-                <TextField label="Subject" placeholder="Brief summary of your issue" value={subject} onChange={(e) => setSubject(e.target.value.slice(0, SUBJECT_MAX))} fullWidth size="small" inputProps={{ maxLength: SUBJECT_MAX }} helperText={`${stripInvisible(subject).length}/${SUBJECT_MAX}`} sx={{ mb: 2, "& .MuiOutlinedInput-root": { bgcolor: BRAND.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }} />
+                <TextField label="Subject" placeholder="Brief summary of your issue" value={subject} onChange={(e) => setSubject(e.target.value.slice(0, SUBJECT_MAX))} fullWidth size="small" inputProps={{ maxLength: SUBJECT_MAX }} onKeyDown={dismissKeyboardOnEnter} helperText={`${stripInvisible(subject).length}/${SUBJECT_MAX}`} sx={{ mb: 2, "& .MuiOutlinedInput-root": { bgcolor: BRAND.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }} />
                 <TextField label="Description" placeholder="Describe your issue in detail" value={description} onChange={(e) => setDescription(e.target.value.slice(0, DESC_MAX))} multiline rows={4} fullWidth size="small" inputProps={{ maxLength: DESC_MAX }} helperText={`${stripInvisible(description).length}/${DESC_MAX}`} sx={{ mb: 2, "& .MuiOutlinedInput-root": { bgcolor: BRAND.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }} />
                 {ticketType === "Bug Report" && (
                   <Box sx={{ mb: 2 }}>
@@ -573,7 +577,7 @@ export default function SupportModal({ open, onClose }) {
                       placeholder="Type a message…"
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); dismissKeyboard(); } }}
                       inputProps={{ maxLength: 1000 }}
                       helperText={`${stripInvisible(chatInput).length}/1000`}
                       sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: { xs: 16, md: 13 }, bgcolor: BRAND.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }}

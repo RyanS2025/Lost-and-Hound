@@ -8,6 +8,7 @@ import apiFetch from "../utils/apiFetch";
 import { useDemo } from "../contexts/DemoContext";
 import { DEMO_PROFILE } from "../demo/mockData";
 import { containsProfanity, stripInvisible } from "../utils/profanityFilter";
+import { dismissKeyboard, dismissKeyboardOnEnter } from "../utils/keyboard";
 import {
   Container,
   Paper,
@@ -203,7 +204,7 @@ export default function SettingsPage({
   };
 
   const handleChangePassword = async () => {
-    if (isDemoMode) { setMessage("Not available in demo mode."); return; }
+    if (isDemoMode) { setMessage("Cannot do this action in demo mode."); return; }
     if (!user?.email) return;
     setMessage("");
     const { error } = await forgotPassword(user.email);
@@ -217,7 +218,7 @@ export default function SettingsPage({
   const handleSaveName = async () => {
     if (nameProfane) return;
     setNameMessage("");
-    if (isDemoMode) { setNameMessage("Not available in demo mode."); return; }
+    if (isDemoMode) { setNameMessage("Cannot do this action in demo mode."); return; }
     if (!user?.id) return;
 
     if (
@@ -242,7 +243,7 @@ export default function SettingsPage({
   };
 
   const handleDeleteAccount = async () => {
-    if (isDemoMode) { setDeleteOpen(false); return; }
+    if (isDemoMode) { setDeleteMessage("Cannot do this action in demo mode."); setDeleteOpen(false); return; }
     if (!user?.id) return;
     setDeleteMessage("");
     try {
@@ -471,6 +472,7 @@ export default function SettingsPage({
                           }}
                           size="small"
                           inputProps={{ maxLength: NAME_MAX_LENGTH }}
+                          onKeyDown={dismissKeyboardOnEnter}
                           error={nameProfane && containsProfanity(firstName)}
                           helperText={nameProfane && containsProfanity(firstName) ? "Cannot use that word" : `${stripInvisible(firstName).length}/${NAME_MAX_LENGTH}`}
                           sx={{ flex: 1, borderRadius: 2, ...textFieldSx }}
@@ -485,6 +487,7 @@ export default function SettingsPage({
                           }}
                           size="small"
                           inputProps={{ maxLength: NAME_MAX_LENGTH }}
+                          onKeyDown={dismissKeyboardOnEnter}
                           error={nameProfane && containsProfanity(lastName)}
                           helperText={nameProfane && containsProfanity(lastName) ? "Cannot use that word" : `${stripInvisible(lastName).length}/${NAME_MAX_LENGTH}`}
                           sx={{ flex: 1, borderRadius: 2, ...textFieldSx }}
@@ -991,7 +994,7 @@ export default function SettingsPage({
             label="Password"
             value={faceIdPassword}
             onChange={(e) => setFaceIdPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && faceIdPassword && handleEnableFaceId()}
+            onKeyDown={(e) => { if (e.key === "Enter" && faceIdPassword) { handleEnableFaceId(); dismissKeyboard(); } }}
             sx={{ "& .MuiOutlinedInput-root": { fontSize: { xs: 16, md: 13 } }, ...textFieldSx }}
           />
           {faceIdError && <Alert severity="error" sx={{ mt: 1.5, py: 0.5, borderRadius: 2 }}>{faceIdError}</Alert>}
