@@ -1,0 +1,58 @@
+name: Deploy Lost & Hound
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Deploy target"
+        required: true
+        type: choice
+        options:
+          - vercel
+          - railway
+          - both
+      environment:
+        description: "Environment"
+        required: true
+        type: choice
+        options:
+          - production
+          - preview
+
+jobs:
+  deploy-vercel:
+    if: inputs.target == 'vercel' || inputs.target == 'both'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Vercel CLI
+        run: npm i -g vercel
+      - name: Deploy to Vercel
+        run: |
+          if [ "$DEPLOY_ENV" = "production" ]; then
+            vercel deploy --prod --token="$VERCEL_TOKEN" --yes
+          else
+            vercel deploy --token="$VERCEL_TOKEN" --yes
+          fi
+        working-directory: my-app
+        env:
+          DEPLOY_ENV: ${{ inputs.environment }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+  deploy-railway:
+    if: inputs.target == 'railway' || inputs.target == 'both'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli
+      - name: Deploy to Railway
+        run: railway up --detach
+        working-directory: my-app/backend
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
