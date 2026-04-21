@@ -45,6 +45,15 @@ const TEAM = [
     linkedin: "https://www.linkedin.com/in/liam-pulsifer-1b91773b9/",
     github: "https://github.com/LiamPulsifer",
   },
+  {
+    name: "Shamar Aitcheson",
+    role: "Co-Founder",
+    photo: "/team/shamar.jpg",
+    bio: "Cybersecurity, Northeastern University '29. Developer with a focus on interactive web design and user-interactive models. Also a music producer.",
+    linkedin: "https://www.linkedin.com/in/shamar-aitcheson-5309bb29a/",
+    github: "https://github.com/AitchesonS06",
+    website: "https://youtube.com/@martoonnabeat",
+  },
 ];
 
 export default function CreditsPage({ effectiveTheme = "light" }) {
