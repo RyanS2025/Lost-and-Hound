@@ -877,15 +877,18 @@ app.patch("/api/listings/:item_id/resolve", requireAuth, require2FA, requireNotB
     return res.status(403).json({ error: "Only the original poster can mark an item as returned" });
   }
 
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("listings")
     .update({ resolved: true })
-    .eq("item_id", req.params.item_id);
+    .eq("item_id", req.params.item_id)
+    .eq("resolved", false)
+    .select("item_id")
+    .maybeSingle();
 
   if (error) return dbError(res, error, "PATCH /api/listings/resolve");
 
-  if (!listing.resolved) {
-    awardPoints(req.user.id, "resolved", listing.item_id).catch(() => {});
+  if (updated) {
+    awardPoints(req.user.id, "resolved", updated.item_id).catch(() => {});
   }
 
   res.json({ success: true });
