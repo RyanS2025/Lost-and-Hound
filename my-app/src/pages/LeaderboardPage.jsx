@@ -12,6 +12,19 @@ import { CAMPUSES } from "../constants/campuses";
 const MEDAL_COLORS = { 1: "#FFD700", 2: "#C0C0C0", 3: "#CD7F32" };
 const MEDAL_BG = { 1: "rgba(255,215,0,0.12)", 2: "rgba(192,192,192,0.12)", 3: "rgba(205,127,50,0.12)" };
 
+const TIERS = [
+  { label: "Top Dog",    emoji: "🏆", min: 500, color: "#FFD700", bg: "rgba(255,215,0,0.13)"    },
+  { label: "Bloodhound", emoji: "🐶", min: 300, color: "#FF4500", bg: "rgba(255,69,0,0.12)"     },
+  { label: "Retriever",  emoji: "🦴", min: 150, color: "#7C3AED", bg: "rgba(124,58,237,0.12)"   },
+  { label: "Tracker",    emoji: "🔍", min: 75,  color: "#0891b2", bg: "rgba(8,145,178,0.12)"    },
+  { label: "Scout",      emoji: "🐕", min: 25,  color: "#16a34a", bg: "rgba(22,163,74,0.12)"    },
+  { label: "Pup",        emoji: "🐾", min: 0,   color: "#6b7280", bg: "rgba(107,114,128,0.10)"  },
+];
+
+function getTier(points) {
+  return TIERS.find((t) => (points ?? 0) >= t.min);
+}
+
 function rankLabel(rank) {
   if (rank === 1) return "🥇";
   if (rank === 2) return "🥈";
@@ -22,6 +35,7 @@ function rankLabel(rank) {
 function UserRow({ entry, isCurrentUser, effectiveTheme }) {
   const isDark = effectiveTheme === "dark";
   const isMedal = entry.rank <= 3;
+  const tier = getTier(entry.points);
   const name = `${entry.first_name ?? ""} ${entry.last_name ?? ""}`.trim() || "Unknown User";
   const initials = name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
 
@@ -90,11 +104,16 @@ function UserRow({ entry, isCurrentUser, effectiveTheme }) {
             </Typography>
           )}
         </Typography>
-        {entry.default_campus && (
-          <Typography variant="caption" color="text.secondary" noWrap>
-            {CAMPUSES.find((c) => c.id === entry.default_campus)?.name ?? entry.default_campus}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+          <Typography variant="caption" sx={{ color: tier.color, fontWeight: 700 }}>
+            {tier.emoji} {tier.label}
           </Typography>
-        )}
+          {entry.default_campus && (
+            <Typography variant="caption" color="text.secondary" noWrap>
+              · {CAMPUSES.find((c) => c.id === entry.default_campus)?.name ?? entry.default_campus}
+            </Typography>
+          )}
+        </Box>
       </Box>
 
       <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexShrink: 0 }}>
@@ -237,6 +256,32 @@ export default function LeaderboardPage({ effectiveTheme }) {
           </Box>
         )}
       </Paper>
+
+      {/* Tier legend */}
+      {!loading && !error && (
+        <Paper elevation={0} sx={{ mt: 3, p: 2, borderRadius: 2, border: cardBorder, background: cardBg, boxShadow: cardShadow }}>
+          <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ mb: 1.5, display: "block", textTransform: "uppercase", letterSpacing: 0.8 }}>
+            Ranks
+          </Typography>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+            {TIERS.map((tier) => (
+              <Box key={tier.label} sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <Box sx={{ width: 28, height: 28, borderRadius: 1.5, bgcolor: tier.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>
+                    {tier.emoji}
+                  </Box>
+                  <Typography variant="body2" fontWeight={700} sx={{ color: tier.color }}>
+                    {tier.label}
+                  </Typography>
+                </Box>
+                <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                  {tier.min === 500 ? "500+ pts" : tier.min === 0 ? "0 – 24 pts" : `${tier.min} – ${TIERS[TIERS.indexOf(tier) - 1].min - 1} pts`}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        </Paper>
+      )}
 
       {/* Current user's rank when outside top 50 */}
       {!loading && !error && currentUser && !isCurrentUserInTop && (
