@@ -220,6 +220,26 @@ Lost & Hound is built on a production-grade stack chosen for real-time performan
 
 ---
 
+## Deployment
+
+Auto-deploy from git pushes is **disabled**. All deploys are triggered manually via GitHub Actions.
+
+**To deploy:**
+1. Go to the **Actions** tab in GitHub
+2. Select **Deploy Lost & Hound**
+3. Click **Run workflow**
+4. Choose target (`vercel`, `railway`, or `both`) and environment (`production` or `preview`)
+
+**Required secrets** (set in repo Settings > Secrets and variables > Actions):
+| Secret | Description |
+|--------|-------------|
+| `VERCEL_TOKEN` | Vercel personal access token |
+| `VERCEL_ORG_ID` | Vercel team/org ID |
+| `VERCEL_PROJECT_ID` | Vercel project ID |
+| `RAILWAY_TOKEN` | Railway project token |
+
+---
+
 ## Disclaimer
 
 Lost & Hound is an independent student project and is **not officially affiliated with or endorsed by Northeastern University**.
