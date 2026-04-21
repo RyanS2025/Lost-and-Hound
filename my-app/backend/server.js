@@ -891,21 +891,11 @@ app.patch("/api/listings/:item_id/resolve", requireAuth, require2FA, requireNotB
   res.json({ success: true });
 });
 
-// GET /api/leaderboard?campus=boston — top 50 by points; optional campus filter
+// GET /api/leaderboard?campus=boston — top 50 confirmed users by points; optional campus filter
 app.get("/api/leaderboard", requireAuth, require2FA, async (req, res) => {
-  const campus = req.query.campus;
+  const campus = req.query.campus || null;
 
-  let query = supabase
-    .from("profiles")
-    .select("id, first_name, last_name, points, default_campus")
-    .order("points", { ascending: false })
-    .limit(50);
-
-  if (campus && campus !== "global") {
-    query = query.eq("default_campus", campus);
-  }
-
-  const { data, error } = await query;
+  const { data, error } = await supabase.rpc("get_leaderboard", { campus_filter: campus });
   if (error) return dbError(res, error, "GET /api/leaderboard");
 
   const ranked = (data || []).map((u, i) => ({ ...u, rank: i + 1 }));
@@ -919,11 +909,8 @@ app.get("/api/leaderboard", requireAuth, require2FA, async (req, res) => {
       .eq("id", req.user.id)
       .single();
     if (myProfile) {
-      const { count: ahead } = await supabase
-        .from("profiles")
-        .select("*", { count: "exact", head: true })
-        .gt("points", myProfile.points);
-      currentUser = { ...myProfile, rank: (ahead ?? 0) + 1 };
+      const { data: aheadCount } = await supabase.rpc("get_rank_of_user", { uid: req.user.id, campus_filter: campus });
+      currentUser = { ...myProfile, rank: (aheadCount ?? 0) + 1 };
     }
   }
 
