@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard } from "@capacitor/keyboard";
+import { dismissKeyboard } from "../utils/keyboard";
 import { Box, Typography, Paper, TextField, IconButton, Button, CircularProgress } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import SendIcon from "@mui/icons-material/Send";
@@ -492,7 +493,7 @@ export default function MessagesPage({ effectiveTheme = "light", timeZone = DEFA
           fullWidth size="small" placeholder="Type a message..."
           value={newMessage}
           onChange={(e) => { const v = e.target.value.slice(0, MESSAGE_MAX_LENGTH); setNewMessage(v); setMsgProfane(containsProfanity(v)); }}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !sending) { e.preventDefault(); sendMessage(); } }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !sending) { e.preventDefault(); sendMessage(); dismissKeyboard(); } }}
           error={msgProfane}
           helperText={msgProfane ? "Cannot use that word" : `${stripInvisible(newMessage).length}/${MESSAGE_MAX_LENGTH}`}
           inputProps={{ maxLength: MESSAGE_MAX_LENGTH }}

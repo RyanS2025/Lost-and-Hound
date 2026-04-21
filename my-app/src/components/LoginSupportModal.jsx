@@ -11,6 +11,7 @@ import SendIcon from "@mui/icons-material/Send";
 import SupportAgentIcon from "@mui/icons-material/SupportAgent";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import SupportFAQ from "./SupportFAQ";
+import { dismissKeyboard, dismissKeyboardOnEnter } from "../utils/keyboard";
 import { stripInvisible } from "../utils/profanityFilter";
 
 const STATUS_LABEL = { open: "Open", in_progress: "In Progress", resolved: "Resolved", closed: "Closed" };
@@ -583,7 +584,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                             placeholder="Type a message…"
                             value={chatInput}
                             onChange={(e) => setChatInput(e.target.value)}
-                            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendGuestMessage())}
+                            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendGuestMessage(), dismissKeyboard())}
                             inputProps={{ maxLength: 1000 }}
                             helperText={`${stripInvisible(chatInput).length}/1000`}
                             sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: { xs: 16, md: 13 }, bgcolor: styles.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }}
@@ -611,6 +612,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                   onChange={(e) => setStatusEmail(e.target.value)}
                   fullWidth
                   size="small"
+                  onKeyDown={dismissKeyboardOnEnter}
                   sx={{ mb: 1.5, "& .MuiOutlinedInput-root": { bgcolor: styles.inputBg } }}
                 />
                 <TextField
@@ -620,6 +622,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                   onChange={(e) => setStatusTicketCode(e.target.value.replace(/\D/g, "").slice(0, 5))}
                   fullWidth
                   size="small"
+                  onKeyDown={dismissKeyboardOnEnter}
                   sx={{ mb: 2, "& .MuiOutlinedInput-root": { bgcolor: styles.inputBg } }}
                 />
                 {statusError && <Alert severity="error" sx={{ mb: 2 }}>{statusError}</Alert>}
@@ -650,6 +653,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                   fullWidth
                   size="small"
                   inputProps={{ maxLength: NAME_MAX }}
+                  onKeyDown={dismissKeyboardOnEnter}
                   helperText={`${stripInvisible(name).length}/${NAME_MAX}`}
                   sx={{ "& .MuiOutlinedInput-root": { bgcolor: styles.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }}
                 />
@@ -661,6 +665,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                   onChange={(e) => setEmail(e.target.value.slice(0, NAME_MAX))}
                   fullWidth
                   size="small"
+                  onKeyDown={dismissKeyboardOnEnter}
                   sx={{ "& .MuiOutlinedInput-root": { bgcolor: styles.inputBg } }}
                 />
               </Box>
@@ -704,6 +709,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                 fullWidth
                 size="small"
                 inputProps={{ maxLength: SUBJECT_MAX }}
+                onKeyDown={dismissKeyboardOnEnter}
                 helperText={`${stripInvisible(subject).length}/${SUBJECT_MAX}`}
                 sx={{
                   mb: 2,
@@ -886,7 +892,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                       placeholder="Type a message…"
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendGuestMessage(); } }}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendGuestMessage(); dismissKeyboard(); } }}
                       inputProps={{ maxLength: 1000 }}
                       helperText={`${stripInvisible(chatInput).length}/1000`}
                       sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: { xs: 16, md: 13 }, bgcolor: styles.inputBg }, "& .MuiFormHelperText-root": { textAlign: "right", mr: 0.5 } }}

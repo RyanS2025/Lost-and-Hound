@@ -7,6 +7,7 @@ import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import apiFetch from "../utils/apiFetch";
 import { stripInvisible } from "../utils/profanityFilter";
+import { useDemo } from "../contexts/DemoContext";
 
 const REPORT_REASON_MAX_LENGTH = 50;
 const REPORT_DETAILS_MAX_LENGTH = 250;
@@ -32,6 +33,7 @@ const USER_REASONS = [
 export default function ReportModal({ open, onClose, type, targetId, targetLabel }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
+  const { isDemoMode } = useDemo();
 
   const BRAND = {
     accent: isDark ? "#C96E47" : "#A84D48",
@@ -55,6 +57,7 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
 
   const handleSubmit = async () => {
     if (!reason) return;
+    if (isDemoMode) { setError("Cannot do this action in demo mode."); return; }
     const normalizedCustomReason = customReason.trim();
     if (isOtherReason && !normalizedCustomReason) {
       setError("Please enter a reason.");

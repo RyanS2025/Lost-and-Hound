@@ -18,6 +18,7 @@ import { supabase } from "../../backend/supabaseClient";
 import ItemDetailModal from "../components/ItemDetailModal";
 import apiFetch from "../utils/apiFetch";
 import { containsProfanity, stripInvisible } from "../utils/profanityFilter";
+import { dismissKeyboardOnEnter } from "../utils/keyboard";
 import { useAuth } from "../AuthContext";
 import { useDemo } from "../contexts/DemoContext";
 import MapPinPicker from "../components/MapPinPicker";
@@ -280,6 +281,7 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
 
   const handleSubmit = async () => {
     if (!valid) return;
+    if (isDemoMode) { setUploadError("Cannot do this action in demo mode."); return; }
     setSubmitting(true);
 
     let image_url = null;
@@ -448,6 +450,7 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           fullWidth
           sx={{ mb: 2 }}
           inputProps={{ maxLength: LIMITS.title }}
+          onKeyDown={dismissKeyboardOnEnter}
           error={profaneFields.title}
           helperText={profaneFields.title ? "Cannot use that word" : `${stripInvisible(form.title).length}/${LIMITS.title}`}
         />
@@ -518,6 +521,7 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           fullWidth
           sx={{ mb: 2 }}
           inputProps={{ maxLength: LIMITS.found_at }}
+          onKeyDown={dismissKeyboardOnEnter}
           error={profaneFields.found_at}
           helperText={profaneFields.found_at ? "Cannot use that word" : `${stripInvisible(form.found_at).length}/${LIMITS.found_at}`}
         />
@@ -760,6 +764,7 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
           <TextField
             fullWidth placeholder="Search items, locations, descriptions..."
             value={search} onChange={e => setSearch(e.target.value)}
+            onKeyDown={dismissKeyboardOnEnter}
             InputProps={{
               startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: isDark ? "#B8BABD" : "#a07070" }} /></InputAdornment>,
               sx: { background: isDark ? "#2D2D2E" : "#fff", color: isDark ? "#D7DADC" : "inherit" },

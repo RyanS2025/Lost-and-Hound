@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard } from "@capacitor/keyboard";
+import { dismissKeyboardOnEnter } from "../utils/keyboard";
 import { BiometricAuth } from "@aparajita/capacitor-biometric-auth";
 import { Preferences } from "@capacitor/preferences";
 import { useDemo } from "../contexts/DemoContext";
@@ -870,6 +871,7 @@ export default function LoginPage({
                   value={otpCode}
                   onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                   inputProps={{ maxLength: 6, inputMode: "numeric", pattern: "\\d{6}" }}
+                  onKeyDown={dismissKeyboardOnEnter}
                   autoFocus
                   sx={{ ...autofillTextFieldSx, mb: 2 }}
                 />
@@ -1037,6 +1039,7 @@ export default function LoginPage({
                             value={firstName}
                             onChange={(e) => setFirstName(e.target.value.slice(0, NAME_MAX_LENGTH))}
                             inputProps={{ maxLength: NAME_MAX_LENGTH, autoCapitalize: "words" }}
+                            onKeyDown={dismissKeyboardOnEnter}
                             helperText={`${stripInvisible(firstName).length}/${NAME_MAX_LENGTH}`}
                             sx={autofillTextFieldSx}
                           />
@@ -1048,6 +1051,7 @@ export default function LoginPage({
                             value={lastName}
                             onChange={(e) => setLastName(e.target.value.slice(0, NAME_MAX_LENGTH))}
                             inputProps={{ maxLength: NAME_MAX_LENGTH, autoCapitalize: "words" }}
+                            onKeyDown={dismissKeyboardOnEnter}
                             helperText={`${stripInvisible(lastName).length}/${NAME_MAX_LENGTH}`}
                             sx={autofillTextFieldSx}
                           />
@@ -1100,6 +1104,7 @@ export default function LoginPage({
                       onChange={(e) => setEmail(e.target.value)}
                       autoComplete="email"
                       inputProps={{ autoCapitalize: "none" }}
+                      onKeyDown={dismissKeyboardOnEnter}
                       sx={{ ...autofillTextFieldSx, mb: 1.5 }}
                     />
 
@@ -1115,6 +1120,7 @@ export default function LoginPage({
                       onChange={(e) => setPassword(e.target.value.slice(0, PASSWORD_MAX_LENGTH))}
                       autoComplete="current-password"
                       inputProps={{ minLength: 6, maxLength: PASSWORD_MAX_LENGTH, autoCapitalize: "none" }}
+                      onKeyDown={dismissKeyboardOnEnter}
                       sx={{ ...autofillTextFieldSx, mb: 3 }}
                     />
 
