@@ -577,7 +577,7 @@ export default function LoginPage({
 
       <Box
         sx={{
-          ...(!isSignUp && {
+          ...(!isSignUp && isNative && {
             position: { xs: "fixed", md: "static" },
             top: 0, left: 0, right: 0, bottom: 0,
           }),
@@ -605,7 +605,7 @@ export default function LoginPage({
             maxWidth: 880,
             width: "100%",
             borderRadius: { xs: 0, md: 4 },
-            overflow: "hidden",
+            overflow: { xs: isNative ? "hidden" : "auto", md: "hidden" },
             background: BRAND.paper,
             border: { xs: "none", md: `1.5px solid ${BRAND.border}` },
             boxShadow: {
@@ -637,7 +637,7 @@ export default function LoginPage({
               background: BRAND.leftPanelGradient,
               position: "relative",
               overflow: "hidden",
-              minHeight: { xs: isSignUp ? 180 : 240, md: "auto" },
+              minHeight: "auto",
             }}
           >
             <Box
