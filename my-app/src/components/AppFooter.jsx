@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard } from "@capacitor/keyboard";
 import {
@@ -16,13 +17,6 @@ import CloseIcon from "@mui/icons-material/Close";
 import TermsModal from "./TermsModal";
 import SupportModal from "./SupportModal";
 const MODAL_CONTENT = {
-  credits: {
-    title: "Credits",
-    body: [
-      "Lost & Hound was built by Nahom Hailemelekot, Benjamin Hailu, Liam Pulsifer, and Ryan Sinha.",
-      "Project context: Oasis @ Northeastern University.",
-    ],
-  },
   disclaimer: {
     title: "Disclaimer",
     body: [
@@ -30,17 +24,10 @@ const MODAL_CONTENT = {
       "This project is not affiliated with, endorsed by, or related to Northeastern University. It is an independent student initiative.",
     ],
   },
-  privacy: {
-    title: "Privacy & Data",
-    body: [
-      "We store account profile information and app content needed to operate Lost & Hound, including listings and messages.",
-      "Data may be reviewed by moderators only when reports are submitted or policy enforcement is required.",
-      "You can request account removal from Settings, subject to moderation and legal retention requirements.",
-    ],
-  },
 };
 
 export default function AppFooter({ effectiveTheme = "light" }) {
+  const navigate = useNavigate();
   const [openModal, setOpenModal] = useState(null);
   const [termsOpen, setTermsOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
@@ -119,10 +106,10 @@ export default function AppFooter({ effectiveTheme = "light" }) {
           {/* Center — truly centered on desktop via grid, flex-center on mobile */}
           <Box sx={{ display: "flex", alignItems: "center", gap: 0, justifyContent: "center" }}>
             {[
-              { label: "Credits", action: () => setOpenModal("credits") },
+              { label: "Credits", action: () => navigate("/credits") },
               { label: "Disclaimer", action: () => setOpenModal("disclaimer") },
               { label: "Terms", action: () => setTermsOpen(true) },
-              { label: "Privacy", action: () => setOpenModal("privacy") },
+              { label: "Privacy", action: () => navigate("/privacy") },
               { label: "Support", action: () => setSupportOpen(true) },
             ].map((item, i, arr) => (
               <Box key={item.label} sx={{ display: "flex", alignItems: "center" }}>
