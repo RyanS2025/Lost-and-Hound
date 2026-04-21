@@ -37,7 +37,6 @@ jobs:
           else
             vercel deploy --token="$VERCEL_TOKEN" --yes
           fi
-        working-directory: my-app
         env:
           DEPLOY_ENV: ${{ inputs.environment }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -52,7 +51,7 @@ jobs:
       - name: Install Railway CLI
         run: npm i -g @railway/cli
       - name: Deploy to Railway
-        run: railway up --detach
+        run: railway up --detach --service "Lost & Hound Backend"
         working-directory: my-app/backend
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
