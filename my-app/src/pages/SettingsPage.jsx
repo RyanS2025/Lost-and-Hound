@@ -1,5 +1,6 @@
 // --- SettingsPage: User account settings UI ---
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
 import { BiometricAuth } from "@aparajita/capacitor-biometric-auth";
 import { Preferences } from "@capacitor/preferences";
@@ -72,6 +73,7 @@ export default function SettingsPage({
     inputBg: isDark ? "#2D2D2E" : "#fff",
   };
 
+  const navigate = useNavigate();
   const { user, profile, updateProfile, logout, forgotPassword } = useAuth();
   const { isDemoMode, exitDemo } = useDemo();
   const effectiveUser = isDemoMode ? { id: 'demo-user-id', email: 'demo@northeastern.edu' } : user;
@@ -624,7 +626,7 @@ export default function SettingsPage({
                 <Button
                   variant="outlined"
                   sx={{ ...btnOutline, width: "100%" }}
-                  onClick={isDemoMode ? exitDemo : logout}
+                  onClick={isDemoMode ? exitDemo : async () => { await logout(); navigate("/"); }}
                   startIcon={<LogoutOutlinedIcon />}
                 >
                   {isDemoMode ? "Exit Demo" : "Log Out"}

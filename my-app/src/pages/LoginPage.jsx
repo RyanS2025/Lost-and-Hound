@@ -25,6 +25,11 @@ import {
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import LockResetIcon from "@mui/icons-material/LockReset";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
+import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
+import FaceIcon from "@mui/icons-material/Face";
 import TermsModal from "../components/TermsModal";
 import LoginSupportModal from "../components/LoginSupportModal";
 import DemoModal from "../components/DemoModal";
@@ -1144,58 +1149,42 @@ export default function LoginPage({
                 )}
 
                 {!isSignUp && (
-                  <Box sx={{ display: "flex", justifyContent: "center", gap: 2, mt: 2 }}>
-                    <MuiLink
-                      component="button"
-                      variant="body2"
-                      onClick={() => navigate("/forgot-password")}
-                      sx={{
-                        cursor: "pointer",
-                        color: BRAND.accent,
-                        fontWeight: 600,
-                      }}
-                    >
-                      Forgot password?
-                    </MuiLink>
-                    <Typography variant="body2" sx={{ color: "text.secondary" }}>·</Typography>
-                    <MuiLink
-                      component="button"
-                      variant="body2"
-                      onClick={() => setSupportOpen(true)}
-                      sx={{
-                        cursor: "pointer",
-                        color: BRAND.accent,
-                        fontWeight: 600,
-                      }}
-                    >
-                      Need Help?
-                    </MuiLink>
-                    <Typography variant="body2" sx={{ color: "text.secondary" }}>·</Typography>
-                    <MuiLink
-                      component="button"
-                      variant="body2"
-                      onClick={() => navigate("/privacy")}
-                      sx={{
-                        cursor: "pointer",
-                        color: BRAND.accent,
-                        fontWeight: 600,
-                      }}
-                    >
-                      Privacy Policy
-                    </MuiLink>
-                    {manualMode && biometryAvailable && storedBiometricEmail && (
-                      <>
-                        <Typography variant="body2" sx={{ color: "text.secondary" }}>·</Typography>
-                        <MuiLink
-                          component="button"
-                          variant="body2"
-                          onClick={() => setManualMode(false)}
-                          sx={{ cursor: "pointer", color: BRAND.accent, fontWeight: 600 }}
-                        >
-                          Use Face ID
-                        </MuiLink>
-                      </>
-                    )}
+                  <Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 1, mt: 2.5 }}>
+                    {[
+                      { label: "Forgot Password", icon: <LockResetIcon sx={{ fontSize: 18 }} />, action: () => navigate("/forgot-password") },
+                      { label: "Support", icon: <HelpOutlineIcon sx={{ fontSize: 18 }} />, action: () => setSupportOpen(true) },
+                      ...(manualMode && biometryAvailable && storedBiometricEmail
+                        ? [{ label: "Use Face ID", icon: <FaceIcon sx={{ fontSize: 18 }} />, action: () => setManualMode(false) }]
+                        : []),
+                    ].map((item) => (
+                      <Box
+                        key={item.label}
+                        onClick={item.action}
+                        sx={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 0.75,
+                          px: 2,
+                          py: 0.85,
+                          borderRadius: 2,
+                          cursor: "pointer",
+                          border: `1px solid ${BRAND.border}`,
+                          bgcolor: isDark ? "rgba(255,255,255,0.04)" : "rgba(168,77,72,0.04)",
+                          color: BRAND.accent,
+                          fontSize: 14,
+                          fontWeight: 700,
+                          transition: "all 0.2s",
+                          "&:hover": {
+                            bgcolor: isDark ? "rgba(255,69,0,0.1)" : "rgba(168,77,72,0.1)",
+                            borderColor: BRAND.accent,
+                            transform: "translateY(-1px)",
+                          },
+                        }}
+                      >
+                        {item.icon}
+                        {item.label}
+                      </Box>
+                    ))}
                   </Box>
                 )}
 
@@ -1292,23 +1281,59 @@ export default function LoginPage({
               </>
             )}
 
-            {!loginTransition && !demoLaunching && <Typography
-              variant="caption"
-              onClick={() => setDemoOpen(true)}
-              sx={{
-                display: "block",
-                mt: 3,
-                textAlign: "center",
-                color: BRAND.accent,
-                cursor: "pointer",
-                fontWeight: 700,
-                textDecoration: "underline",
-                textUnderlineOffset: 3,
-                "&:hover": { opacity: 0.75 },
-              }}
-            >
-              Want to preview our project?
-            </Typography>}
+            {!loginTransition && !demoLaunching && (
+              <Box sx={{ mt: 3, textAlign: "center" }}>
+                <Box sx={{ display: "flex", justifyContent: "center", gap: 1, mb: 2 }}>
+                  {[
+                    { label: "Privacy", icon: <ShieldOutlinedIcon sx={{ fontSize: 15 }} />, action: () => navigate("/privacy") },
+                    { label: "Credits", icon: <PeopleAltOutlinedIcon sx={{ fontSize: 15 }} />, action: () => navigate("/credits") },
+                  ].map((item) => (
+                    <Box
+                      key={item.label}
+                      onClick={item.action}
+                      sx={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 0.5,
+                        px: 1.5,
+                        py: 0.5,
+                        borderRadius: 2,
+                        cursor: "pointer",
+                        border: `1px solid ${BRAND.border}`,
+                        bgcolor: isDark ? "rgba(255,255,255,0.04)" : "rgba(168,77,72,0.04)",
+                        color: BRAND.accent,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        transition: "all 0.2s",
+                        "&:hover": {
+                          bgcolor: isDark ? "rgba(255,69,0,0.1)" : "rgba(168,77,72,0.1)",
+                          borderColor: BRAND.accent,
+                          transform: "translateY(-1px)",
+                        },
+                      }}
+                    >
+                      {item.icon}
+                      {item.label}
+                    </Box>
+                  ))}
+                </Box>
+                <Typography
+                  variant="caption"
+                  onClick={() => setDemoOpen(true)}
+                  sx={{
+                    display: "block",
+                    color: BRAND.accent,
+                    cursor: "pointer",
+                    fontWeight: 700,
+                    textDecoration: "underline",
+                    textUnderlineOffset: 3,
+                    "&:hover": { opacity: 0.75 },
+                  }}
+                >
+                  Want to preview our project?
+                </Typography>
+              </Box>
+            )}
           </Box>
         </Paper>
       </Box>

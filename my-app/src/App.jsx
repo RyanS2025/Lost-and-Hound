@@ -5,6 +5,7 @@ import { useAuth } from "./AuthContext";
 import LoginPage from "./pages/LoginPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
+import CreditsPage from "./pages/CreditsPage";
 import FeedPage from './pages/FeedPage';
 import MapPage from "./pages/MapPage";
 import MessagePage from "./pages/MessagePage";
@@ -141,10 +142,11 @@ export default function App() {
     }
   }, [profile?.is_moderator]);
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
     clearDashboardCache();
-    logout();
-  }, [logout]);
+    await logout();
+    navigate("/");
+  }, [logout, navigate]);
 
   const handleExitDemo = useCallback(() => {
     exitDemo();
@@ -335,6 +337,7 @@ export default function App() {
     document.body.style.backgroundColor = bg;
     document.body.style.backgroundImage = `radial-gradient(circle, ${dot} 1px, transparent 1px)`;
     document.body.style.backgroundSize = "24px 24px";
+    document.body.style.backgroundAttachment = "fixed";
   }, [effectiveTheme]);
 
   const navBg = effectiveTheme === "dark" ? "#1A1A1B" : "#A84D48";
@@ -651,6 +654,10 @@ export default function App() {
               element={<PrivacyPage effectiveTheme={effectiveTheme} />}
             />
             <Route
+              path="/credits"
+              element={<CreditsPage effectiveTheme={effectiveTheme} />}
+            />
+            <Route
               path="/forgot-password"
               element={<ForgotPasswordPage effectiveTheme={effectiveTheme} />}
             />
@@ -919,6 +926,8 @@ export default function App() {
                 {effectiveProfile?.is_owner && <Route path="finances" element={<FinancesPage />} />}
               </Route>
             )}
+            <Route path="/credits" element={<CreditsPage effectiveTheme={effectiveTheme} />} />
+            <Route path="/privacy" element={<PrivacyPage effectiveTheme={effectiveTheme} />} />
             <Route path="*" element={<NotFoundPage effectiveTheme={effectiveTheme} />} />
           </Routes>
         </Box>
