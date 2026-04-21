@@ -19,6 +19,7 @@ import SupportPage from "./pages/dashboard/SupportPage";
 import MyWorkPage from "./pages/dashboard/MyWorkPage";
 import StatsPage from "./pages/dashboard/StatsPage";
 import FinancesPage from "./pages/dashboard/FinancesPage";
+import LeaderboardPage from "./pages/LeaderboardPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import PrivacyPage from "./pages/PrivacyPage";
 import NoteCard from "./components/NoteCard";
@@ -48,6 +49,7 @@ import BrightnessAutoIcon from '@mui/icons-material/BrightnessAuto';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MessageIcon from '@mui/icons-material/Message';
 import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
+import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/timezone';
@@ -840,6 +842,11 @@ export default function App() {
           ) : (
             <Button color="inherit" component={Link} to="/messages" startIcon={<Badge badgeContent={unreadCount} color="error" max={99}><MessageIcon /></Badge>} sx={{ minWidth: 0 }}>Messages</Button>
           )}
+          {isCompactNav ? (
+            <IconButton color="inherit" component={Link} to="/leaderboard" sx={{ mr: 0.5 }}><EmojiEventsIcon /></IconButton>
+          ) : (
+            <Button color="inherit" component={Link} to="/leaderboard" startIcon={<EmojiEventsIcon />} sx={{ mr: 1, minWidth: 0 }}>Leaderboard</Button>
+          )}
           <Box sx={{ flexGrow: 1 }} />
           {!isDemoMode && !Capacitor.isNativePlatform() && effectiveProfile?.is_moderator && (
             <Button
@@ -926,6 +933,7 @@ export default function App() {
                 {effectiveProfile?.is_owner && <Route path="finances" element={<FinancesPage />} />}
               </Route>
             )}
+            <Route path="/leaderboard" element={<LeaderboardPage effectiveTheme={effectiveTheme} />} />
             <Route path="/credits" element={<CreditsPage effectiveTheme={effectiveTheme} />} />
             <Route path="/privacy" element={<PrivacyPage effectiveTheme={effectiveTheme} />} />
             <Route path="*" element={<NotFoundPage effectiveTheme={effectiveTheme} />} />
