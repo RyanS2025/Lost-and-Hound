@@ -758,6 +758,19 @@ app.get("/api/listings", requireAuth, require2FA, async (req, res) => {
   res.json({ data: data || [], page, limit, total: count ?? 0, hasMore: offset + limit < (count ?? 0) });
 });
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LEADERBOARD — POINTS HELPER
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const POINT_VALUES = { post_found: 15, post_lost: 5, resolved: 25 };
+
+async function awardPoints(userId, eventType, listingId = null) {
+  const points = POINT_VALUES[eventType];
+  if (!points) return;
+  await supabase.from("point_events").insert([{ user_id: userId, event_type: eventType, points, listing_id: listingId }]);
+  await supabase.rpc("increment_user_points", { uid: userId, delta: points });
+}
+
 app.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBanned, async (req, res) => {
   const title = sanitize(req.body.title, 50);
   const category = sanitize(req.body.category, 50);
@@ -843,6 +856,9 @@ app.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBanne
     .single();
 
   if (error) return dbError(res, error, "POST /api/listings");
+
+  awardPoints(req.user.id, listing_type === "found" ? "post_found" : "post_lost", data.item_id).catch(() => {});
+
   res.json(data);
 });
 
@@ -861,13 +877,47 @@ app.patch("/api/listings/:item_id/resolve", requireAuth, require2FA, requireNotB
     return res.status(403).json({ error: "Only the original poster can mark an item as returned" });
   }
 
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("listings")
     .update({ resolved: true })
-    .eq("item_id", req.params.item_id);
+    .eq("item_id", req.params.item_id)
+    .eq("resolved", false)
+    .select("item_id")
+    .maybeSingle();
 
   if (error) return dbError(res, error, "PATCH /api/listings/resolve");
+
+  if (updated) {
+    awardPoints(req.user.id, "resolved", updated.item_id).catch(() => {});
+  }
+
   res.json({ success: true });
+});
+
+// GET /api/leaderboard?campus=boston — top 50 confirmed users by points; optional campus filter
+app.get("/api/leaderboard", requireAuth, require2FA, async (req, res) => {
+  const campus = req.query.campus || null;
+
+  const { data, error } = await supabase.rpc("get_leaderboard", { campus_filter: campus });
+  if (error) return dbError(res, error, "GET /api/leaderboard");
+
+  const ranked = (data || []).map((u, i) => ({ ...u, rank: i + 1 }));
+
+  // If the current user isn't in the top 50, fetch their rank separately
+  let currentUser = ranked.find(u => u.id === req.user.id) || null;
+  if (!currentUser) {
+    const { data: myProfile } = await supabase
+      .from("profiles")
+      .select("id, first_name, last_name, points, default_campus")
+      .eq("id", req.user.id)
+      .single();
+    if (myProfile) {
+      const { data: aheadCount } = await supabase.rpc("get_rank_of_user", { uid: req.user.id, campus_filter: campus });
+      currentUser = { ...myProfile, rank: (aheadCount ?? 0) + 1 };
+    }
+  }
+
+  res.json({ leaderboard: ranked, currentUser });
 });
 
 app.delete("/api/listings/:item_id", requireAuth, require2FA, requireModerator, async (req, res) => {

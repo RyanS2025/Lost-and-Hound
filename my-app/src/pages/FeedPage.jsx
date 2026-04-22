@@ -24,6 +24,7 @@ import { useDemo } from "../contexts/DemoContext";
 import MapPinPicker from "../components/MapPinPicker";
 import { CAMPUSES } from "../constants/campuses";
 import { DEFAULT_TIME_ZONE, formatRelativeDate } from "../utils/timezone";
+import LeaderboardSidebar from "../components/LeaderboardSidebar";
 
 // --- Constants ---
 const CATEGORIES = ["All", "Husky Card", "Jacket", "Wallet/Purse", "Bag", "Keys", "Electronics", "Other"];
@@ -722,6 +723,7 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
           px: { xs: 1.25, sm: 2, md: 3 },
           py: { xs: 1.25, sm: 2, md: 3 },
           color: isDark ? "#D7DADC" : "inherit",
+          position: "relative",
         }}
       >
       <Box sx={{ width: "100%", maxWidth: 680 }}>
@@ -910,6 +912,17 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
 
       <ItemDetailModal item={selected} onClose={() => setSelected(null)} onClaim={handleClaim} isDark={isDark} timeZone={timeZone} />
       <NewItemModal open={showNew} onClose={() => setShowNew(false)} onAdd={item => setItems(prev => [item, ...prev])} isDark={isDark} />
+      </Box>
+
+      {/* Leaderboard sidebar — desktop only, floats right without pushing feed */}
+      <Box sx={{
+        display: { xs: "none", lg: "block" },
+        width: 280,
+        position: "fixed",
+        top: 100,
+        right: 24,
+      }}>
+        <LeaderboardSidebar effectiveTheme={effectiveTheme} />
       </Box>
     </>
   );

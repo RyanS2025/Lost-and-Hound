@@ -47,6 +47,7 @@ import LightModeIcon from '@mui/icons-material/LightMode';
 import BrightnessAutoIcon from '@mui/icons-material/BrightnessAuto';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MessageIcon from '@mui/icons-material/Message';
+import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
@@ -54,6 +55,7 @@ import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/
 import apiFetch from './utils/apiFetch';
 import { prefetchDashboard, clearDashboardCache } from './utils/dashboardPrefetch';
 import usePushNotifications from './hooks/usePushNotifications';
+import LeaderboardSidebar from './components/LeaderboardSidebar';
 
 const LOADER_MESSAGES = [
   "Sniffing for lost items...",
@@ -129,6 +131,7 @@ export default function App() {
   const location = useLocation();
   const darkBg = "#101214";
   const isCompactNav = useMediaQuery("(max-width:1100px)");
+  const leaderboardRef = useRef();
 
   // Scroll to top on route change
   useEffect(() => {
@@ -840,6 +843,13 @@ export default function App() {
           ) : (
             <Button color="inherit" component={Link} to="/messages" startIcon={<Badge badgeContent={unreadCount} color="error" max={99}><MessageIcon /></Badge>} sx={{ minWidth: 0 }}>Messages</Button>
           )}
+          <IconButton
+            color="inherit"
+            onClick={() => leaderboardRef.current?.openModal()}
+            sx={{ display: { xs: "inline-flex", lg: "none" }, mr: 0.5 }}
+          >
+            <EmojiEventsIcon />
+          </IconButton>
           <Box sx={{ flexGrow: 1 }} />
           {!isDemoMode && !Capacitor.isNativePlatform() && effectiveProfile?.is_moderator && (
             <Button
@@ -934,6 +944,8 @@ export default function App() {
       </Box>
 
       <AppFooter effectiveTheme={effectiveTheme} />
+
+      <LeaderboardSidebar ref={leaderboardRef} effectiveTheme={effectiveTheme} modalOnly />
 
       <ReferralPollModal
         open={!isDemoMode && !!profile && !profile.referral_answered && !referralPending}

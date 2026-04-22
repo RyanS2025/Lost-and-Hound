@@ -82,6 +82,14 @@ Found something? Message the owner directly through Lost & Hound. Conversations 
 - **Unread badge** — a live counter in the nav bar shows how many messages are waiting
 - **Conversation management** — close or hide threads once resolved
 
+### Leaderboard
+
+- **Points system** — earn points for contributing: +15 for posting a found item, +25 for marking an item returned, +5 for posting a lost item
+- **Live sidebar** — top 10 players displayed alongside the feed on desktop, with your rank shown if you're outside the top 10
+- **Full leaderboard modal** — view the top 50 players, points breakdown, and rank tiers from a single expandable view
+- **Rank tiers** — six progression tiers from Pup (0 pts) to Top Dog (500+ pts), each with a unique badge
+- **Mobile access** — trophy icon in the navbar opens the full leaderboard on smaller screens
+
 ### Reporting & Safety
 
 - **Report listings or users** — flag anything inappropriate directly from the feed or map

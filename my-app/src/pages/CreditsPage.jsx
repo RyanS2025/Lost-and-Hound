@@ -45,6 +45,15 @@ const TEAM = [
     linkedin: "https://www.linkedin.com/in/liam-pulsifer-1b91773b9/",
     github: "https://github.com/LiamPulsifer",
   },
+  {
+    name: "Shamar Aitcheson",
+    role: "Co-Founder",
+    photo: "/team/shamar.jpg",
+    bio: "Cybersecurity, Northeastern University '29. Developer with a focus on interactive web design and user-interactive models. Also a music producer.",
+    linkedin: "https://www.linkedin.com/in/shamar-aitcheson-5309bb29a/",
+    github: "https://github.com/AitchesonS06",
+    website: "https://youtube.com/@martoonnabeat",
+  },
 ];
 
 export default function CreditsPage({ effectiveTheme = "light" }) {
@@ -135,8 +144,9 @@ export default function CreditsPage({ effectiveTheme = "light" }) {
 
         {/* Team grid */}
         <Box sx={{
-          display: "grid",
-          gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+          display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "center",
           gap: 3,
           mb: 3,
         }}>
@@ -146,6 +156,7 @@ export default function CreditsPage({ effectiveTheme = "light" }) {
                 elevation={0}
                 onClick={() => setSelected(member)}
                 sx={{
+                  width: { xs: "100%", sm: "calc(50% - 12px)" },
                   p: { xs: 3, md: 3.5 },
                   borderRadius: 3,
                   border: `1px solid ${BRAND.border}`,
