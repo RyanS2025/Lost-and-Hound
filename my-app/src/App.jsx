@@ -5,6 +5,7 @@ import { useAuth } from "./AuthContext";
 import LoginPage from "./pages/LoginPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
+import CreditsPage from "./pages/CreditsPage";
 import FeedPage from './pages/FeedPage';
 import MapPage from "./pages/MapPage";
 import MessagePage from "./pages/MessagePage";
@@ -46,6 +47,7 @@ import LightModeIcon from '@mui/icons-material/LightMode';
 import BrightnessAutoIcon from '@mui/icons-material/BrightnessAuto';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MessageIcon from '@mui/icons-material/Message';
+import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
@@ -53,6 +55,7 @@ import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/
 import apiFetch from './utils/apiFetch';
 import { prefetchDashboard, clearDashboardCache } from './utils/dashboardPrefetch';
 import usePushNotifications from './hooks/usePushNotifications';
+import LeaderboardSidebar from './components/LeaderboardSidebar';
 
 const LOADER_MESSAGES = [
   "Sniffing for lost items...",
@@ -128,6 +131,7 @@ export default function App() {
   const location = useLocation();
   const darkBg = "#101214";
   const isCompactNav = useMediaQuery("(max-width:1100px)");
+  const leaderboardRef = useRef();
 
   // Scroll to top on route change
   useEffect(() => {
@@ -141,10 +145,11 @@ export default function App() {
     }
   }, [profile?.is_moderator]);
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
     clearDashboardCache();
-    logout();
-  }, [logout]);
+    await logout();
+    navigate("/");
+  }, [logout, navigate]);
 
   const handleExitDemo = useCallback(() => {
     exitDemo();
@@ -335,6 +340,7 @@ export default function App() {
     document.body.style.backgroundColor = bg;
     document.body.style.backgroundImage = `radial-gradient(circle, ${dot} 1px, transparent 1px)`;
     document.body.style.backgroundSize = "24px 24px";
+    document.body.style.backgroundAttachment = "fixed";
   }, [effectiveTheme]);
 
   const navBg = effectiveTheme === "dark" ? "#1A1A1B" : "#A84D48";
@@ -651,6 +657,10 @@ export default function App() {
               element={<PrivacyPage effectiveTheme={effectiveTheme} />}
             />
             <Route
+              path="/credits"
+              element={<CreditsPage effectiveTheme={effectiveTheme} />}
+            />
+            <Route
               path="/forgot-password"
               element={<ForgotPasswordPage effectiveTheme={effectiveTheme} />}
             />
@@ -833,6 +843,13 @@ export default function App() {
           ) : (
             <Button color="inherit" component={Link} to="/messages" startIcon={<Badge badgeContent={unreadCount} color="error" max={99}><MessageIcon /></Badge>} sx={{ minWidth: 0 }}>Messages</Button>
           )}
+          <IconButton
+            color="inherit"
+            onClick={() => leaderboardRef.current?.openModal()}
+            sx={{ display: { xs: "inline-flex", lg: "none" }, mr: 0.5 }}
+          >
+            <EmojiEventsIcon />
+          </IconButton>
           <Box sx={{ flexGrow: 1 }} />
           {!isDemoMode && !Capacitor.isNativePlatform() && effectiveProfile?.is_moderator && (
             <Button
@@ -919,12 +936,16 @@ export default function App() {
                 {effectiveProfile?.is_owner && <Route path="finances" element={<FinancesPage />} />}
               </Route>
             )}
+            <Route path="/credits" element={<CreditsPage effectiveTheme={effectiveTheme} />} />
+            <Route path="/privacy" element={<PrivacyPage effectiveTheme={effectiveTheme} />} />
             <Route path="*" element={<NotFoundPage effectiveTheme={effectiveTheme} />} />
           </Routes>
         </Box>
       </Box>
 
       <AppFooter effectiveTheme={effectiveTheme} />
+
+      <LeaderboardSidebar ref={leaderboardRef} effectiveTheme={effectiveTheme} modalOnly />
 
       <ReferralPollModal
         open={!isDemoMode && !!profile && !profile.referral_answered && !referralPending}

@@ -25,6 +25,12 @@ import {
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import LockResetIcon from "@mui/icons-material/LockReset";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
+import AppleIcon from "@mui/icons-material/Apple";
+import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
+import FaceIcon from "@mui/icons-material/Face";
 import TermsModal from "../components/TermsModal";
 import LoginSupportModal from "../components/LoginSupportModal";
 import DemoModal from "../components/DemoModal";
@@ -572,7 +578,7 @@ export default function LoginPage({
 
       <Box
         sx={{
-          ...(!isSignUp && {
+          ...(!isSignUp && isNative && {
             position: { xs: "fixed", md: "static" },
             top: 0, left: 0, right: 0, bottom: 0,
           }),
@@ -600,7 +606,7 @@ export default function LoginPage({
             maxWidth: 880,
             width: "100%",
             borderRadius: { xs: 0, md: 4 },
-            overflow: "hidden",
+            overflow: { xs: isNative ? "hidden" : "auto", md: "hidden" },
             background: BRAND.paper,
             border: { xs: "none", md: `1.5px solid ${BRAND.border}` },
             boxShadow: {
@@ -632,7 +638,7 @@ export default function LoginPage({
               background: BRAND.leftPanelGradient,
               position: "relative",
               overflow: "hidden",
-              minHeight: { xs: isSignUp ? 180 : 240, md: "auto" },
+              minHeight: "auto",
             }}
           >
             <Box
@@ -730,11 +736,45 @@ export default function LoginPage({
               </Box>
             </Box>
 
+            <Box
+              component="a"
+              href="https://apps.apple.com/app/id6762494274"
+              target="_blank"
+              rel="noopener noreferrer"
+              sx={{
+                mt: 3,
+                display: "flex",
+                alignItems: "center",
+                gap: 1,
+                background: "rgba(255,255,255,0.12)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: 2,
+                px: 2,
+                py: 1,
+                backdropFilter: "blur(6px)",
+                textDecoration: "none",
+                position: "relative",
+                zIndex: 1,
+                transition: "background 0.2s",
+                "&:hover": { background: "rgba(255,255,255,0.18)" },
+              }}
+            >
+              <AppleIcon sx={{ color: "#fff", fontSize: 22 }} />
+              <Box>
+                <Typography sx={{ color: "rgba(255,255,255,0.6)", fontSize: 10, fontWeight: 600, lineHeight: 1 }}>
+                  Available on the
+                </Typography>
+                <Typography sx={{ color: "#fff", fontSize: 14, fontWeight: 800, lineHeight: 1.3 }}>
+                  App Store
+                </Typography>
+              </Box>
+            </Box>
+
             <Typography
               variant="caption"
               sx={{
                 color: BRAND.leftPanelCaption,
-                mt: 4,
+                mt: 2,
                 position: "relative",
                 zIndex: 1,
               }}
@@ -1144,58 +1184,42 @@ export default function LoginPage({
                 )}
 
                 {!isSignUp && (
-                  <Box sx={{ display: "flex", justifyContent: "center", gap: 2, mt: 2 }}>
-                    <MuiLink
-                      component="button"
-                      variant="body2"
-                      onClick={() => navigate("/forgot-password")}
-                      sx={{
-                        cursor: "pointer",
-                        color: BRAND.accent,
-                        fontWeight: 600,
-                      }}
-                    >
-                      Forgot password?
-                    </MuiLink>
-                    <Typography variant="body2" sx={{ color: "text.secondary" }}>·</Typography>
-                    <MuiLink
-                      component="button"
-                      variant="body2"
-                      onClick={() => setSupportOpen(true)}
-                      sx={{
-                        cursor: "pointer",
-                        color: BRAND.accent,
-                        fontWeight: 600,
-                      }}
-                    >
-                      Need Help?
-                    </MuiLink>
-                    <Typography variant="body2" sx={{ color: "text.secondary" }}>·</Typography>
-                    <MuiLink
-                      component="button"
-                      variant="body2"
-                      onClick={() => navigate("/privacy")}
-                      sx={{
-                        cursor: "pointer",
-                        color: BRAND.accent,
-                        fontWeight: 600,
-                      }}
-                    >
-                      Privacy Policy
-                    </MuiLink>
-                    {manualMode && biometryAvailable && storedBiometricEmail && (
-                      <>
-                        <Typography variant="body2" sx={{ color: "text.secondary" }}>·</Typography>
-                        <MuiLink
-                          component="button"
-                          variant="body2"
-                          onClick={() => setManualMode(false)}
-                          sx={{ cursor: "pointer", color: BRAND.accent, fontWeight: 600 }}
-                        >
-                          Use Face ID
-                        </MuiLink>
-                      </>
-                    )}
+                  <Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 1, mt: 2.5 }}>
+                    {[
+                      { label: "Forgot Password", icon: <LockResetIcon sx={{ fontSize: 18 }} />, action: () => navigate("/forgot-password") },
+                      { label: "Support", icon: <HelpOutlineIcon sx={{ fontSize: 18 }} />, action: () => setSupportOpen(true) },
+                      ...(manualMode && biometryAvailable && storedBiometricEmail
+                        ? [{ label: "Use Face ID", icon: <FaceIcon sx={{ fontSize: 18 }} />, action: () => setManualMode(false) }]
+                        : []),
+                    ].map((item) => (
+                      <Box
+                        key={item.label}
+                        onClick={item.action}
+                        sx={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 0.75,
+                          px: 2,
+                          py: 0.85,
+                          borderRadius: 2,
+                          cursor: "pointer",
+                          border: `1px solid ${BRAND.border}`,
+                          bgcolor: isDark ? "rgba(255,255,255,0.04)" : "rgba(168,77,72,0.04)",
+                          color: BRAND.accent,
+                          fontSize: 14,
+                          fontWeight: 700,
+                          transition: "all 0.2s",
+                          "&:hover": {
+                            bgcolor: isDark ? "rgba(255,69,0,0.1)" : "rgba(168,77,72,0.1)",
+                            borderColor: BRAND.accent,
+                            transform: "translateY(-1px)",
+                          },
+                        }}
+                      >
+                        {item.icon}
+                        {item.label}
+                      </Box>
+                    ))}
                   </Box>
                 )}
 
@@ -1292,23 +1316,59 @@ export default function LoginPage({
               </>
             )}
 
-            {!loginTransition && !demoLaunching && <Typography
-              variant="caption"
-              onClick={() => setDemoOpen(true)}
-              sx={{
-                display: "block",
-                mt: 3,
-                textAlign: "center",
-                color: BRAND.accent,
-                cursor: "pointer",
-                fontWeight: 700,
-                textDecoration: "underline",
-                textUnderlineOffset: 3,
-                "&:hover": { opacity: 0.75 },
-              }}
-            >
-              Want to preview our project?
-            </Typography>}
+            {!loginTransition && !demoLaunching && (
+              <Box sx={{ mt: 3, textAlign: "center" }}>
+                <Box sx={{ display: "flex", justifyContent: "center", gap: 1, mb: 2 }}>
+                  {[
+                    { label: "Privacy", icon: <ShieldOutlinedIcon sx={{ fontSize: 15 }} />, action: () => navigate("/privacy") },
+                    { label: "Credits", icon: <PeopleAltOutlinedIcon sx={{ fontSize: 15 }} />, action: () => navigate("/credits") },
+                  ].map((item) => (
+                    <Box
+                      key={item.label}
+                      onClick={item.action}
+                      sx={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 0.5,
+                        px: 1.5,
+                        py: 0.5,
+                        borderRadius: 2,
+                        cursor: "pointer",
+                        border: `1px solid ${BRAND.border}`,
+                        bgcolor: isDark ? "rgba(255,255,255,0.04)" : "rgba(168,77,72,0.04)",
+                        color: BRAND.accent,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        transition: "all 0.2s",
+                        "&:hover": {
+                          bgcolor: isDark ? "rgba(255,69,0,0.1)" : "rgba(168,77,72,0.1)",
+                          borderColor: BRAND.accent,
+                          transform: "translateY(-1px)",
+                        },
+                      }}
+                    >
+                      {item.icon}
+                      {item.label}
+                    </Box>
+                  ))}
+                </Box>
+                <Typography
+                  variant="caption"
+                  onClick={() => setDemoOpen(true)}
+                  sx={{
+                    display: "block",
+                    color: BRAND.accent,
+                    cursor: "pointer",
+                    fontWeight: 700,
+                    textDecoration: "underline",
+                    textUnderlineOffset: 3,
+                    "&:hover": { opacity: 0.75 },
+                  }}
+                >
+                  Want to preview our project?
+                </Typography>
+              </Box>
+            )}
           </Box>
         </Paper>
       </Box>
