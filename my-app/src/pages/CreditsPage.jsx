@@ -144,8 +144,9 @@ export default function CreditsPage({ effectiveTheme = "light" }) {
 
         {/* Team grid */}
         <Box sx={{
-          display: "grid",
-          gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+          display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "center",
           gap: 3,
           mb: 3,
         }}>
@@ -155,6 +156,7 @@ export default function CreditsPage({ effectiveTheme = "light" }) {
                 elevation={0}
                 onClick={() => setSelected(member)}
                 sx={{
+                  width: { xs: "100%", sm: "calc(50% - 12px)" },
                   p: { xs: 3, md: 3.5 },
                   borderRadius: 3,
                   border: `1px solid ${BRAND.border}`,

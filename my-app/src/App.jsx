@@ -19,7 +19,6 @@ import SupportPage from "./pages/dashboard/SupportPage";
 import MyWorkPage from "./pages/dashboard/MyWorkPage";
 import StatsPage from "./pages/dashboard/StatsPage";
 import FinancesPage from "./pages/dashboard/FinancesPage";
-import LeaderboardPage from "./pages/LeaderboardPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import PrivacyPage from "./pages/PrivacyPage";
 import NoteCard from "./components/NoteCard";
@@ -48,14 +47,15 @@ import LightModeIcon from '@mui/icons-material/LightMode';
 import BrightnessAutoIcon from '@mui/icons-material/BrightnessAuto';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MessageIcon from '@mui/icons-material/Message';
-import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
+import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/timezone';
 import apiFetch from './utils/apiFetch';
 import { prefetchDashboard, clearDashboardCache } from './utils/dashboardPrefetch';
 import usePushNotifications from './hooks/usePushNotifications';
+import LeaderboardSidebar from './components/LeaderboardSidebar';
 
 const LOADER_MESSAGES = [
   "Sniffing for lost items...",
@@ -131,6 +131,7 @@ export default function App() {
   const location = useLocation();
   const darkBg = "#101214";
   const isCompactNav = useMediaQuery("(max-width:1100px)");
+  const leaderboardRef = useRef();
 
   // Scroll to top on route change
   useEffect(() => {
@@ -842,11 +843,13 @@ export default function App() {
           ) : (
             <Button color="inherit" component={Link} to="/messages" startIcon={<Badge badgeContent={unreadCount} color="error" max={99}><MessageIcon /></Badge>} sx={{ minWidth: 0 }}>Messages</Button>
           )}
-          {isCompactNav ? (
-            <IconButton color="inherit" component={Link} to="/leaderboard" sx={{ mr: 0.5 }}><EmojiEventsIcon /></IconButton>
-          ) : (
-            <Button color="inherit" component={Link} to="/leaderboard" startIcon={<EmojiEventsIcon />} sx={{ mr: 1, minWidth: 0 }}>Leaderboard</Button>
-          )}
+          <IconButton
+            color="inherit"
+            onClick={() => leaderboardRef.current?.openModal()}
+            sx={{ display: { xs: "inline-flex", lg: "none" }, mr: 0.5 }}
+          >
+            <EmojiEventsIcon />
+          </IconButton>
           <Box sx={{ flexGrow: 1 }} />
           {!isDemoMode && !Capacitor.isNativePlatform() && effectiveProfile?.is_moderator && (
             <Button
@@ -933,7 +936,6 @@ export default function App() {
                 {effectiveProfile?.is_owner && <Route path="finances" element={<FinancesPage />} />}
               </Route>
             )}
-            <Route path="/leaderboard" element={<LeaderboardPage effectiveTheme={effectiveTheme} />} />
             <Route path="/credits" element={<CreditsPage effectiveTheme={effectiveTheme} />} />
             <Route path="/privacy" element={<PrivacyPage effectiveTheme={effectiveTheme} />} />
             <Route path="*" element={<NotFoundPage effectiveTheme={effectiveTheme} />} />
@@ -942,6 +944,8 @@ export default function App() {
       </Box>
 
       <AppFooter effectiveTheme={effectiveTheme} />
+
+      <LeaderboardSidebar ref={leaderboardRef} effectiveTheme={effectiveTheme} modalOnly />
 
       <ReferralPollModal
         open={!isDemoMode && !!profile && !profile.referral_answered && !referralPending}
