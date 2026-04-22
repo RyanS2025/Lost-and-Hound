@@ -28,6 +28,7 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import LockResetIcon from "@mui/icons-material/LockReset";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
+import AppleIcon from "@mui/icons-material/Apple";
 import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import FaceIcon from "@mui/icons-material/Face";
 import TermsModal from "../components/TermsModal";
@@ -735,11 +736,45 @@ export default function LoginPage({
               </Box>
             </Box>
 
+            <Box
+              component="a"
+              href="https://apps.apple.com/app/id6762494274"
+              target="_blank"
+              rel="noopener noreferrer"
+              sx={{
+                mt: 3,
+                display: "flex",
+                alignItems: "center",
+                gap: 1,
+                background: "rgba(255,255,255,0.12)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: 2,
+                px: 2,
+                py: 1,
+                backdropFilter: "blur(6px)",
+                textDecoration: "none",
+                position: "relative",
+                zIndex: 1,
+                transition: "background 0.2s",
+                "&:hover": { background: "rgba(255,255,255,0.18)" },
+              }}
+            >
+              <AppleIcon sx={{ color: "#fff", fontSize: 22 }} />
+              <Box>
+                <Typography sx={{ color: "rgba(255,255,255,0.6)", fontSize: 10, fontWeight: 600, lineHeight: 1 }}>
+                  Available on the
+                </Typography>
+                <Typography sx={{ color: "#fff", fontSize: 14, fontWeight: 800, lineHeight: 1.3 }}>
+                  App Store
+                </Typography>
+              </Box>
+            </Box>
+
             <Typography
               variant="caption"
               sx={{
                 color: BRAND.leftPanelCaption,
-                mt: 4,
+                mt: 2,
                 position: "relative",
                 zIndex: 1,
               }}
