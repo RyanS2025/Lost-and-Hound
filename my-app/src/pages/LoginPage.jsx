@@ -476,7 +476,7 @@ export default function LoginPage({
       });
       if (otpError) throw otpError;
       if (result.deviceToken) {
-        localStorage.setItem("deviceToken", result.deviceToken);
+        localStorage.setItem("device_token", result.deviceToken);
       }
       onLoginSuccess?.();
     } catch (err) {
