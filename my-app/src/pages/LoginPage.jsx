@@ -463,7 +463,10 @@ export default function LoginPage({
     setPasskeyLoading(true);
     setError("");
     try {
-      const options = await apiFetch("/api/passkeys/authenticate/options", { method: "POST" });
+      const options = await apiFetch("/api/passkeys/authenticate/options", {
+        method: "POST",
+        body: JSON.stringify({ email: passkeyEmail }),
+      });
       const assertionResp = await startAuthentication({ optionsJSON: options });
       const result = await apiFetch("/api/passkeys/authenticate/verify", {
         method: "POST",

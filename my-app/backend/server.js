@@ -515,15 +515,15 @@ const PASSKEY_ORIGIN  = process.env.PASSKEY_ORIGIN  || "http://localhost:5173";
 
 // In-memory challenge store — challenge -> { userId/email, expiry }
 // TTL of 5 minutes per challenge.
-const passkeyChalllenges = new Map();
+const paskeyChallenges = new Map();
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
 function storeChallenge(key, challenge) {
-  passkeyChalllenges.set(key, { challenge, expiry: Date.now() + CHALLENGE_TTL_MS });
+  paskeyChallenges.set(key, { challenge, expiry: Date.now() + CHALLENGE_TTL_MS });
 }
 function consumeChallenge(key) {
-  const entry = passkeyChalllenges.get(key);
-  passkeyChalllenges.delete(key);
+  const entry = paskeyChallenges.get(key);
+  paskeyChallenges.delete(key);
   if (!entry || Date.now() > entry.expiry) return null;
   return entry.challenge;
 }
