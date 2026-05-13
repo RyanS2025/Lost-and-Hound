@@ -12,7 +12,8 @@ import { API_BASE } from "../utils/apiFetch";
 
 function QuestionInput({ question, value, onChange, isDark }) {
   const accent = isDark ? "#FF4500" : "#A84D48";
-  const { question_type: type, options, scale_min, scale_max } = question;
+  const { question_type: type, options: rawOptions, scale_min, scale_max } = question;
+  const options = typeof rawOptions === "string" ? JSON.parse(rawOptions) : rawOptions;
 
   if (type === "short_answer") {
     return (
@@ -20,6 +21,8 @@ function QuestionInput({ question, value, onChange, isDark }) {
         fullWidth size="small" placeholder="Your answer"
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
+        inputProps={{ maxLength: 200 }}
+        helperText={`${(value || "").length}/200`}
       />
     );
   }
@@ -30,6 +33,8 @@ function QuestionInput({ question, value, onChange, isDark }) {
         fullWidth multiline rows={3} placeholder="Your answer"
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
+        inputProps={{ maxLength: 1000 }}
+        helperText={`${(value || "").length}/1000`}
       />
     );
   }

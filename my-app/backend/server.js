@@ -3280,17 +3280,46 @@ function generateSlug(title) {
   return `${base}-${suffix}`;
 }
 
+const VALID_QUESTION_TYPES = ["short_answer", "paragraph", "multiple_choice", "checkbox", "dropdown", "linear_scale"];
+
 // POST /api/polls — create a new poll (moderator only)
 app.post("/api/polls", requireAuth, require2FA, requireModerator, async (req, res) => {
   const { title, description, delivery_type, random_login_probability, batch_type, batch_size, questions } = req.body;
 
   if (!title?.trim()) return res.status(400).json({ error: "Title is required" });
+  if (title.length > 120) return res.status(400).json({ error: "Title must be 120 characters or fewer" });
+  if (description && description.length > 400) return res.status(400).json({ error: "Description must be 400 characters or fewer" });
   if (!Array.isArray(questions) || questions.length === 0)
     return res.status(400).json({ error: "At least one question is required" });
+  if (questions.length > 50) return res.status(400).json({ error: "Maximum 50 questions per poll" });
 
   const validDelivery = ["link", "first_login", "random_login"];
   if (!validDelivery.includes(delivery_type))
     return res.status(400).json({ error: "Invalid delivery_type" });
+  if (delivery_type === "random_login" && random_login_probability != null) {
+    if (typeof random_login_probability !== "number" || random_login_probability < 0 || random_login_probability > 1)
+      return res.status(400).json({ error: "random_login_probability must be a number between 0 and 1" });
+  }
+  const validBatch = ["everyone", "random_group"];
+  if (batch_type && !validBatch.includes(batch_type))
+    return res.status(400).json({ error: "Invalid batch_type" });
+  if (batch_type === "random_group" && batch_size != null) {
+    const size = parseInt(batch_size, 10);
+    if (isNaN(size) || size < 1 || size > 100000)
+      return res.status(400).json({ error: "batch_size must be between 1 and 100,000" });
+  }
+
+  for (const q of questions) {
+    if (!q.question_text || typeof q.question_text !== "string" || q.question_text.length > 300)
+      return res.status(400).json({ error: "Each question must have text (300 chars max)" });
+    if (!VALID_QUESTION_TYPES.includes(q.question_type))
+      return res.status(400).json({ error: `Invalid question type: ${q.question_type}` });
+    if (Array.isArray(q.options)) {
+      if (q.options.length > 20) return res.status(400).json({ error: "Maximum 20 options per question" });
+      if (q.options.some((o) => typeof o !== "string" || o.length > 100))
+        return res.status(400).json({ error: "Each option must be a string of 100 chars or fewer" });
+    }
+  }
 
   // Only one poll may use first_login delivery at a time
   if (delivery_type === "first_login") {
@@ -3325,9 +3354,9 @@ app.post("/api/polls", requireAuth, require2FA, requireModerator, async (req, re
 
   const questionRows = questions.map((q, idx) => ({
     poll_id: poll.id,
-    question_text: q.question_text,
+    question_text: q.question_text.slice(0, 300),
     question_type: q.question_type,
-    options: q.options ? JSON.stringify(q.options) : null,
+    options: q.options || null,
     scale_min: q.scale_min ?? 1,
     scale_max: q.scale_max ?? 5,
     required: q.required ?? false,
@@ -3356,14 +3385,21 @@ app.get("/api/polls/for-me", requireAuth, require2FA, async (req, res) => {
   const { type } = req.query; // 'first_login' or 'random_login'
   if (!type) return res.json({ poll: null });
 
-  const { data: activePoll } = await supabase
+  const { data: activePolls } = await supabase
     .from("polls")
     .select("id, title, description, slug, delivery_type, random_login_probability, batch_type, batch_size")
     .eq("delivery_type", type)
     .eq("is_active", true)
-    .maybeSingle();
+    .order("created_at", { ascending: false })
+    .limit(1);
 
+  const activePoll = activePolls?.[0];
   if (!activePoll) return res.json({ poll: null });
+
+  // Apply random probability for random_login delivery
+  if (type === "random_login" && Math.random() > (activePoll.random_login_probability ?? 0.25)) {
+    return res.json({ poll: null });
+  }
 
   // Check if user already responded
   const { data: response } = await supabase
@@ -3427,6 +3463,9 @@ app.get("/api/polls/:slug", async (req, res) => {
 app.post("/api/polls/:slug/respond", requireAuth, require2FA, async (req, res) => {
   const { answers } = req.body;
   if (!answers || typeof answers !== "object") return res.status(400).json({ error: "Missing answers" });
+  const answersStr = JSON.stringify(answers);
+  if (answersStr.length > 50000) return res.status(400).json({ error: "Response payload too large" });
+  if (Array.isArray(answers)) return res.status(400).json({ error: "Answers must be an object, not an array" });
 
   const { data: poll } = await supabase
     .from("polls")

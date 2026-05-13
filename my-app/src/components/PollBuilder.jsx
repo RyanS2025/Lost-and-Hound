@@ -86,6 +86,7 @@ function QuestionCard({ q, idx, total, onChange, onDelete, onMove, isDark }) {
             value={q.question_text}
             onChange={(e) => onChange({ ...q, question_text: e.target.value })}
             sx={{ flex: 1, minWidth: 180 }}
+            inputProps={{ maxLength: 300 }}
           />
           <FormControl size="small" sx={{ minWidth: 170 }}>
             <Select
@@ -120,7 +121,7 @@ function QuestionCard({ q, idx, total, onChange, onDelete, onMove, isDark }) {
                   value={opt}
                   onChange={(e) => updateOption(oi, e.target.value)}
                   sx={{ flex: 1 }}
-                  inputProps={{ style: { fontSize: 13 } }}
+                  inputProps={{ style: { fontSize: 13 }, maxLength: 100 }}
                 />
                 <IconButton size="small" onClick={() => removeOption(oi)} sx={{ color: "text.disabled", "&:hover": { color: "error.main" } }}>
                   <DeleteOutlineIcon sx={{ fontSize: 14 }} />

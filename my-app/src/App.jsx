@@ -471,7 +471,7 @@ export default function App() {
   const [passkeyModalOpen, setPasskeyModalOpen] = useState(false);
   const [activePollSlug, setActivePollSlug] = useState(null);
 
-  // Poll delivery — check for first_login poll after fresh login, random_login on every login
+  // Poll delivery — check for first_login poll after fresh login, random_login with 3-login cooldown
   useEffect(() => {
     if (!user || !profile || isDemoMode) return;
     const checkPolls = async () => {
@@ -481,9 +481,20 @@ export default function App() {
           if (d?.poll?.slug) { setActivePollSlug(d.poll.slug); return; }
         } catch { /* ignore */ }
       }
+
+      const cooldownKey = `random_poll_cooldown_${user.id}`;
+      const remaining = parseInt(localStorage.getItem(cooldownKey) || "0", 10);
+      if (remaining > 0) {
+        localStorage.setItem(cooldownKey, String(remaining - 1));
+        return;
+      }
+
       try {
         const d = await apiFetch("/api/polls/for-me?type=random_login");
-        if (d?.poll?.slug) setActivePollSlug(d.poll.slug);
+        if (d?.poll?.slug) {
+          localStorage.setItem(cooldownKey, "3");
+          setActivePollSlug(d.poll.slug);
+        }
       } catch { /* ignore */ }
     };
     const t = setTimeout(checkPolls, 2000);

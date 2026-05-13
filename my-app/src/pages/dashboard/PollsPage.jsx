@@ -28,8 +28,9 @@ const BATCH_OPTIONS = [
   { value: "random_group", label: "Random group of X users" },
 ];
 
-function PollRow({ poll, onDelete, isDark }) {
+function PollRow({ poll, onDelete, onToggleActive, isDark }) {
   const [deleting, setDeleting] = useState(false);
+  const [toggling, setToggling] = useState(false);
   const [copied, setCopied] = useState(false);
   const url = `${PROD_BASE}/polls/${poll.slug}`;
 
@@ -49,6 +50,21 @@ function PollRow({ poll, onDelete, isDark }) {
       alert(err.message || "Failed to delete poll");
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleToggle = async () => {
+    setToggling(true);
+    try {
+      const updated = await apiFetch(`/api/polls/${poll.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_active: !poll.is_active }),
+      });
+      onToggleActive(poll.id, updated.poll.is_active);
+    } catch (err) {
+      alert(err.message || "Failed to update poll");
+    } finally {
+      setToggling(false);
     }
   };
 
@@ -92,6 +108,19 @@ function PollRow({ poll, onDelete, isDark }) {
         </Box>
       </Box>
       <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexShrink: 0 }}>
+        <Button
+          size="small"
+          onClick={handleToggle}
+          disabled={toggling}
+          sx={{
+            textTransform: "none", fontSize: 12, fontWeight: 700, borderRadius: 1.5, px: 1.5,
+            color: poll.is_active ? "#dc2626" : "#16a34a",
+            border: `1px solid ${poll.is_active ? "#dc262640" : "#16a34a40"}`,
+            "&:hover": { bgcolor: poll.is_active ? "rgba(220,38,38,0.08)" : "rgba(22,163,74,0.08)" },
+          }}
+        >
+          {toggling ? <CircularProgress size={12} color="inherit" /> : (poll.is_active ? "Deactivate" : "Activate")}
+        </Button>
         <Button
           size="small"
           startIcon={<ContentCopyIcon sx={{ fontSize: 13 }} />}
@@ -392,6 +421,7 @@ export default function PollsPage() {
               key={poll.id}
               poll={poll}
               onDelete={(id) => setPolls((prev) => prev.filter((p) => p.id !== id))}
+              onToggleActive={(id, isActive) => setPolls((prev) => prev.map((p) => p.id === id ? { ...p, is_active: isActive } : p))}
               isDark={isDark}
             />
           ))}
