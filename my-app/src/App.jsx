@@ -19,6 +19,8 @@ import SupportPage from "./pages/dashboard/SupportPage";
 import MyWorkPage from "./pages/dashboard/MyWorkPage";
 import StatsPage from "./pages/dashboard/StatsPage";
 import FinancesPage from "./pages/dashboard/FinancesPage";
+import PollsPage from "./pages/dashboard/PollsPage";
+import PollPage from "./pages/PollPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import PrivacyPage from "./pages/PrivacyPage";
 import NoteCard from "./components/NoteCard";
@@ -134,6 +136,33 @@ export default function App() {
     const t = setTimeout(() => setPasskeyModalOpen(true), 1500);
     return () => clearTimeout(t);
   }, [user?.id, !!profile]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Poll delivery — check for first_login poll after fresh login, random_login on every login
+  useEffect(() => {
+    if (!user || !profile || isDemoMode) return;
+    const checkPolls = async () => {
+      // first_login: only on a fresh login session
+      if (justLoggedIn.current) {
+        try {
+          const d = await apiFetch("/api/polls/for-me?type=first_login");
+          if (d?.poll?.slug) { setActivePollSlug(d.poll.slug); return; }
+        } catch { /* ignore */ }
+      }
+      // random_login: every session, server decides based on probability
+      try {
+        const d = await apiFetch("/api/polls/for-me?type=random_login");
+        if (d?.poll?.slug) setActivePollSlug(d.poll.slug);
+      } catch { /* ignore */ }
+    };
+    const t = setTimeout(checkPolls, 2000);
+    return () => clearTimeout(t);
+  }, [user?.id, !!profile]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Navigate to poll page when one becomes available
+  useEffect(() => {
+    if (!activePollSlug) return;
+    navigate(`/polls/${activePollSlug}`);
+  }, [activePollSlug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const demoDisclaimerOpen = isDemoMode && !demoDismissed;
 
@@ -467,6 +496,7 @@ export default function App() {
 
   const justLoggedIn = useRef(false);
   const [passkeyModalOpen, setPasskeyModalOpen] = useState(false);
+  const [activePollSlug, setActivePollSlug] = useState(null);
 
   const onLoginSuccess = useCallback(() => {
     justLoggedIn.current = true;
@@ -947,8 +977,10 @@ export default function App() {
                 <Route path="my-work"  element={<MyWorkPage />} />
                 <Route path="stats"    element={<StatsPage />} />
                 {effectiveProfile?.is_owner && <Route path="finances" element={<FinancesPage />} />}
+                <Route path="polls" element={<PollsPage />} />
               </Route>
             )}
+            <Route path="/polls/:slug" element={<PollPage effectiveTheme={effectiveTheme} />} />
             <Route path="/credits" element={<CreditsPage effectiveTheme={effectiveTheme} />} />
             <Route path="/privacy" element={<PrivacyPage effectiveTheme={effectiveTheme} />} />
             <Route path="*" element={<NotFoundPage effectiveTheme={effectiveTheme} />} />

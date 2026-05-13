@@ -3265,6 +3265,241 @@ app.delete("/api/finances/expenses/:id", requireAuth, require2FA, requireOwner, 
 });
 
 // Catch-all: log any request that didn't match a route
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// POLLS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function generateSlug(title) {
+  const base = title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .slice(0, 40);
+  const suffix = crypto.randomBytes(3).toString("hex");
+  return `${base}-${suffix}`;
+}
+
+// POST /api/polls — create a new poll (moderator only)
+app.post("/api/polls", requireAuth, require2FA, requireModerator, async (req, res) => {
+  const { title, description, delivery_type, random_login_probability, batch_type, batch_size, questions } = req.body;
+
+  if (!title?.trim()) return res.status(400).json({ error: "Title is required" });
+  if (!Array.isArray(questions) || questions.length === 0)
+    return res.status(400).json({ error: "At least one question is required" });
+
+  const validDelivery = ["link", "first_login", "random_login"];
+  if (!validDelivery.includes(delivery_type))
+    return res.status(400).json({ error: "Invalid delivery_type" });
+
+  // Only one poll may use first_login delivery at a time
+  if (delivery_type === "first_login") {
+    const { data: existing } = await supabase
+      .from("polls")
+      .select("id")
+      .eq("delivery_type", "first_login")
+      .eq("is_active", true)
+      .maybeSingle();
+    if (existing) return res.status(409).json({ error: "Another poll already holds the first-login slot. Deactivate it first." });
+  }
+
+  const slug = generateSlug(title);
+
+  const { data: poll, error: pollErr } = await supabase
+    .from("polls")
+    .insert({
+      title: title.trim(),
+      description: description?.trim() || null,
+      slug,
+      delivery_type,
+      random_login_probability: delivery_type === "random_login" ? (random_login_probability ?? 0.25) : 0.25,
+      batch_type: batch_type || "everyone",
+      batch_size: batch_type === "random_group" ? (batch_size || null) : null,
+      is_active: false,
+      created_by: req.user.id,
+    })
+    .select()
+    .single();
+
+  if (pollErr) return dbError(res, pollErr, "POST /api/polls");
+
+  const questionRows = questions.map((q, idx) => ({
+    poll_id: poll.id,
+    question_text: q.question_text,
+    question_type: q.question_type,
+    options: q.options ? JSON.stringify(q.options) : null,
+    scale_min: q.scale_min ?? 1,
+    scale_max: q.scale_max ?? 5,
+    required: q.required ?? false,
+    position: idx,
+  }));
+
+  const { error: qErr } = await supabase.from("poll_questions").insert(questionRows);
+  if (qErr) return dbError(res, qErr, "POST /api/polls (questions)");
+
+  res.status(201).json({ poll });
+});
+
+// GET /api/polls — list all polls (moderator only, for Liam's viewer)
+app.get("/api/polls", requireAuth, require2FA, requireModerator, async (req, res) => {
+  const { data, error } = await supabase
+    .from("polls")
+    .select("id, title, slug, delivery_type, batch_type, batch_size, is_active, created_at, random_login_probability")
+    .order("created_at", { ascending: false });
+
+  if (error) return dbError(res, error, "GET /api/polls");
+  res.json({ polls: data || [] });
+});
+
+// GET /api/polls/for-me — returns the active poll the current user should see (delivery logic)
+app.get("/api/polls/for-me", requireAuth, require2FA, async (req, res) => {
+  const { type } = req.query; // 'first_login' or 'random_login'
+  if (!type) return res.json({ poll: null });
+
+  const { data: activePoll } = await supabase
+    .from("polls")
+    .select("id, title, description, slug, delivery_type, random_login_probability, batch_type, batch_size")
+    .eq("delivery_type", type)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (!activePoll) return res.json({ poll: null });
+
+  // Check if user already responded
+  const { data: response } = await supabase
+    .from("poll_responses")
+    .select("id")
+    .eq("poll_id", activePoll.id)
+    .eq("user_id", req.user.id)
+    .maybeSingle();
+  if (response) return res.json({ poll: null });
+
+  // Check if user already got an impression (was shown but didn't complete)
+  const { data: impression } = await supabase
+    .from("poll_impressions")
+    .select("completed")
+    .eq("poll_id", activePoll.id)
+    .eq("user_id", req.user.id)
+    .maybeSingle();
+  if (impression) return res.json({ poll: null });
+
+  // For random_group batching — check if user is in the target group
+  if (activePoll.batch_type === "random_group" && activePoll.batch_size) {
+    const { count } = await supabase
+      .from("poll_impressions")
+      .select("*", { count: "exact", head: true })
+      .eq("poll_id", activePoll.id);
+    if ((count || 0) >= activePoll.batch_size) return res.json({ poll: null });
+  }
+
+  // Record the impression
+  await supabase.from("poll_impressions").upsert({
+    poll_id: activePoll.id,
+    user_id: req.user.id,
+    shown_at: new Date().toISOString(),
+    completed: false,
+  }, { onConflict: "poll_id,user_id" });
+
+  res.json({ poll: activePoll });
+});
+
+// GET /api/polls/:slug — get poll with questions (public)
+app.get("/api/polls/:slug", async (req, res) => {
+  const { data: poll, error } = await supabase
+    .from("polls")
+    .select("id, title, description, slug, is_active")
+    .eq("slug", req.params.slug)
+    .maybeSingle();
+
+  if (error || !poll) return res.status(404).json({ error: "Poll not found" });
+  if (!poll.is_active) return res.status(403).json({ error: "This poll is not active" });
+
+  const { data: questions } = await supabase
+    .from("poll_questions")
+    .select("id, question_text, question_type, options, scale_min, scale_max, required, position")
+    .eq("poll_id", poll.id)
+    .order("position");
+
+  res.json({ poll: { ...poll, questions: questions || [] } });
+});
+
+// POST /api/polls/:slug/respond — submit a response (authenticated)
+app.post("/api/polls/:slug/respond", requireAuth, require2FA, async (req, res) => {
+  const { answers } = req.body;
+  if (!answers || typeof answers !== "object") return res.status(400).json({ error: "Missing answers" });
+
+  const { data: poll } = await supabase
+    .from("polls")
+    .select("id, is_active")
+    .eq("slug", req.params.slug)
+    .maybeSingle();
+
+  if (!poll) return res.status(404).json({ error: "Poll not found" });
+  if (!poll.is_active) return res.status(403).json({ error: "This poll is not active" });
+
+  // Prevent duplicate responses
+  const { data: existing } = await supabase
+    .from("poll_responses")
+    .select("id")
+    .eq("poll_id", poll.id)
+    .eq("user_id", req.user.id)
+    .maybeSingle();
+  if (existing) return res.status(409).json({ error: "You have already responded to this poll" });
+
+  const { error } = await supabase.from("poll_responses").insert({
+    poll_id: poll.id,
+    user_id: req.user.id,
+    answers,
+  });
+  if (error) return dbError(res, error, "POST /api/polls/:slug/respond");
+
+  // Mark impression as completed
+  await supabase.from("poll_impressions").upsert({
+    poll_id: poll.id,
+    user_id: req.user.id,
+    completed: true,
+  }, { onConflict: "poll_id,user_id" });
+
+  res.json({ success: true });
+});
+
+// DELETE /api/polls/:id — delete a poll (moderator only)
+app.delete("/api/polls/:id", requireAuth, require2FA, requireModerator, async (req, res) => {
+  const { error } = await supabase.from("polls").delete().eq("id", req.params.id);
+  if (error) return dbError(res, error, "DELETE /api/polls/:id");
+  res.json({ success: true });
+});
+
+// PATCH /api/polls/:id — update poll active state or metadata (for Liam's activate/deactivate)
+app.patch("/api/polls/:id", requireAuth, require2FA, requireModerator, async (req, res) => {
+  const allowed = ["is_active", "title", "description"];
+  const updates = {};
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) updates[key] = req.body[key];
+  }
+  if (!Object.keys(updates).length) return res.status(400).json({ error: "No valid fields to update" });
+
+  // Enforce single first_login poll rule when activating
+  if (updates.is_active === true) {
+    const { data: poll } = await supabase.from("polls").select("delivery_type").eq("id", req.params.id).maybeSingle();
+    if (poll?.delivery_type === "first_login") {
+      const { data: existing } = await supabase
+        .from("polls")
+        .select("id")
+        .eq("delivery_type", "first_login")
+        .eq("is_active", true)
+        .neq("id", req.params.id)
+        .maybeSingle();
+      if (existing) return res.status(409).json({ error: "Another poll already holds the first-login slot. Deactivate it first." });
+    }
+  }
+
+  updates.updated_at = new Date().toISOString();
+  const { data, error } = await supabase.from("polls").update(updates).eq("id", req.params.id).select().single();
+  if (error) return dbError(res, error, "PATCH /api/polls/:id");
+  res.json({ poll: data });
+});
+
 app.use((req, res) => {
   console.log(`[404] No route matched: ${req.method} ${req.path}`);
   res.status(404).json({ error: "Not found" });
