@@ -137,33 +137,6 @@ export default function App() {
     return () => clearTimeout(t);
   }, [user?.id, !!profile]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Poll delivery — check for first_login poll after fresh login, random_login on every login
-  useEffect(() => {
-    if (!user || !profile || isDemoMode) return;
-    const checkPolls = async () => {
-      // first_login: only on a fresh login session
-      if (justLoggedIn.current) {
-        try {
-          const d = await apiFetch("/api/polls/for-me?type=first_login");
-          if (d?.poll?.slug) { setActivePollSlug(d.poll.slug); return; }
-        } catch { /* ignore */ }
-      }
-      // random_login: every session, server decides based on probability
-      try {
-        const d = await apiFetch("/api/polls/for-me?type=random_login");
-        if (d?.poll?.slug) setActivePollSlug(d.poll.slug);
-      } catch { /* ignore */ }
-    };
-    const t = setTimeout(checkPolls, 2000);
-    return () => clearTimeout(t);
-  }, [user?.id, !!profile]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Navigate to poll page when one becomes available
-  useEffect(() => {
-    if (!activePollSlug) return;
-    navigate(`/polls/${activePollSlug}`);
-  }, [activePollSlug]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const demoDisclaimerOpen = isDemoMode && !demoDismissed;
 
   useEffect(() => {
@@ -497,6 +470,31 @@ export default function App() {
   const justLoggedIn = useRef(false);
   const [passkeyModalOpen, setPasskeyModalOpen] = useState(false);
   const [activePollSlug, setActivePollSlug] = useState(null);
+
+  // Poll delivery — check for first_login poll after fresh login, random_login on every login
+  useEffect(() => {
+    if (!user || !profile || isDemoMode) return;
+    const checkPolls = async () => {
+      if (justLoggedIn.current) {
+        try {
+          const d = await apiFetch("/api/polls/for-me?type=first_login");
+          if (d?.poll?.slug) { setActivePollSlug(d.poll.slug); return; }
+        } catch { /* ignore */ }
+      }
+      try {
+        const d = await apiFetch("/api/polls/for-me?type=random_login");
+        if (d?.poll?.slug) setActivePollSlug(d.poll.slug);
+      } catch { /* ignore */ }
+    };
+    const t = setTimeout(checkPolls, 2000);
+    return () => clearTimeout(t);
+  }, [user?.id, !!profile]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Navigate to poll page when one becomes available
+  useEffect(() => {
+    if (!activePollSlug) return;
+    navigate(`/polls/${activePollSlug}`);
+  }, [activePollSlug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onLoginSuccess = useCallback(() => {
     justLoggedIn.current = true;
