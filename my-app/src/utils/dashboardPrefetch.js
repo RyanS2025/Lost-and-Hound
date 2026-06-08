@@ -10,8 +10,10 @@ export const ticketCache    = {};               // useTicketList (keyed by ticke
 export const reportsCache   = { reports: null, stolen: null }; // ReportsPage
 export const myWorkCache    = { data: null };   // MyWorkPage
 export const moderatorsCache = { data: null };  // DashboardPage
+export const proctorCache   = { items: null, counts: null }; // ProctorDashboard (default Unclaimed tab)
 
 let prefetchStarted = false;
+let proctorPrefetchStarted = false;
 
 /**
  * Called by App.jsx as soon as profile.is_moderator is confirmed.
@@ -49,6 +51,22 @@ export async function prefetchDashboard() {
   ]);
 }
 
+/**
+ * Called by App.jsx as soon as profile.is_proctor is confirmed.
+ * Warms the default (Unclaimed) tab + toggle counts so /proctor opens instantly.
+ */
+export async function prefetchProctor() {
+  if (proctorPrefetchStarted) return;
+  proctorPrefetchStarted = true;
+
+  await apiFetch("/api/proctor/items?status=unclaimed&page=1")
+    .then((d) => {
+      proctorCache.items = { items: d?.items || [], hasMore: d?.hasMore ?? false };
+      proctorCache.counts = d?.counts || null;
+    })
+    .catch(() => {});
+}
+
 /** Call this on logout so the next moderator starts fresh */
 export function clearDashboardCache() {
   summaryCache.data    = null;
@@ -56,6 +74,9 @@ export function clearDashboardCache() {
   myWorkCache.data     = null;
   reportsCache.reports = null;
   reportsCache.stolen  = null;
+  proctorCache.items   = null;
+  proctorCache.counts  = null;
   Object.keys(ticketCache).forEach((k) => delete ticketCache[k]);
   prefetchStarted = false;
+  proctorPrefetchStarted = false;
 }

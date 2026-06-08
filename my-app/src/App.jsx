@@ -11,6 +11,7 @@ import MapPage from "./pages/MapPage";
 import MessagePage from "./pages/MessagePage";
 import SettingsPage from "./pages/SettingsPage";
 import DashboardPage from "./pages/DashboardPage";
+import ProctorDashboard from "./pages/ProctorDashboard";
 import DashboardOverviewPage from "./pages/dashboard/DashboardOverviewPage";
 import ReportsPage from "./pages/dashboard/ReportsPage";
 import FeedbackPage from "./pages/dashboard/FeedbackPage";
@@ -52,11 +53,12 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import MessageIcon from '@mui/icons-material/Message';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
+import Inventory2Icon from '@mui/icons-material/Inventory2';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/timezone';
 import apiFetch from './utils/apiFetch';
-import { prefetchDashboard, clearDashboardCache } from './utils/dashboardPrefetch';
+import { prefetchDashboard, prefetchProctor, clearDashboardCache } from './utils/dashboardPrefetch';
 import usePushNotifications from './hooks/usePushNotifications';
 import LeaderboardSidebar from './components/LeaderboardSidebar';
 
@@ -158,6 +160,13 @@ export default function App() {
       prefetchDashboard();
     }
   }, [profile?.is_moderator]);
+
+  // Background prefetch — fire as soon as we know the user is a proctor
+  useEffect(() => {
+    if (profile?.is_proctor) {
+      prefetchProctor();
+    }
+  }, [profile?.is_proctor]);
 
   const handleLogout = useCallback(async () => {
     clearDashboardCache();
@@ -913,6 +922,16 @@ export default function App() {
               <SupervisorAccountIcon />
             </Button>
           )}
+          {!isDemoMode && !Capacitor.isNativePlatform() && effectiveProfile?.is_proctor && (
+            <Button
+              color="inherit"
+              component={Link}
+              to="/proctor"
+              sx={{ minWidth: 0, mr: 0.5 }}
+            >
+              <Inventory2Icon />
+            </Button>
+          )}
           <Typography variant="body1" sx={{ mr: 1, display: { xs: "none", md: "block" } }}>
             {effectiveProfile?.first_name && effectiveProfile?.last_name
               ? effectiveProfile.first_name + " " + effectiveProfile.last_name
@@ -988,6 +1007,9 @@ export default function App() {
                 {effectiveProfile?.is_owner && <Route path="finances" element={<FinancesPage />} />}
                 <Route path="polls" element={<PollsPage />} />
               </Route>
+            )}
+            {!isDemoMode && !Capacitor.isNativePlatform() && effectiveProfile?.is_proctor && (
+              <Route path="/proctor" element={<ProctorDashboard effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
             )}
             <Route path="/polls/:slug" element={<PollPage effectiveTheme={effectiveTheme} />} />
             <Route path="/credits" element={<CreditsPage effectiveTheme={effectiveTheme} />} />

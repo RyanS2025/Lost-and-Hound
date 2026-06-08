@@ -384,6 +384,23 @@ async function requireOwner(req, res, next) {
   next();
 }
 
+// Building proctors who staff a front-desk and return dropped-off items.
+// Stashes the proctor's profile (incl. proctor_location_id) on req for the handler.
+async function requireProctor(req, res, next) {
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("is_proctor, proctor_location_id")
+    .eq("id", req.user.id)
+    .single();
+
+  if (!profile?.is_proctor) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  req.proctorProfile = profile;
+  next();
+}
+
 // Block banned users from taking actions (creating posts, sending messages, etc.)
 // Does NOT block reading data — banned users can still view the feed
 async function requireNotBanned(req, res, next) {
@@ -766,7 +783,7 @@ const CLEANUP_COOLDOWN = 60 * 60 * 1000; // 1 hour
 app.get("/api/profile", requireAuth, require2FA, async (req, res) => {
   const { data, error } = await supabase
     .from("profiles")
-    .select("first_name, last_name, default_campus, is_moderator, is_owner, banned_until, ban_reason, referral_answered")
+    .select("first_name, last_name, default_campus, is_moderator, is_owner, is_proctor, proctor_location_id, banned_until, ban_reason, referral_answered")
     .eq("id", req.user.id)
     .single();
 
@@ -785,7 +802,7 @@ app.get("/api/profile", requireAuth, require2FA, async (req, res) => {
           },
           { onConflict: "id" }
         )
-        .select("first_name, last_name, default_campus, is_moderator, is_owner, banned_until, ban_reason, referral_answered")
+        .select("first_name, last_name, default_campus, is_moderator, is_owner, is_proctor, proctor_location_id, banned_until, ban_reason, referral_answered")
         .single();
 
       if (upsertErr) return res.status(500).json({ error: "Failed to create profile" });
@@ -821,7 +838,7 @@ app.patch("/api/profile", requireAuth, require2FA, async (req, res) => {
     .from("profiles")
     .update({ first_name, last_name })
     .eq("id", req.user.id)
-    .select("first_name, last_name, default_campus, is_moderator, is_owner")
+    .select("first_name, last_name, default_campus, is_moderator, is_owner, is_proctor, proctor_location_id")
     .single();
 
   if (error) return dbError(res, error, "PATCH /api/profile");
@@ -1123,6 +1140,236 @@ app.patch("/api/listings/:item_id/resolve", requireAuth, require2FA, requireNotB
   }
 
   res.json({ success: true });
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PROCTOR DESK ROUTES
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Building front-desk staff manage found items dropped off at their desk.
+// Lifecycle (all states derived from these columns, never stored as an enum):
+//   received_at set, owner_id null,     delivered_at null  → "unclaimed"
+//   received_at set, owner_id set,      delivered_at null  → "pending"
+//   delivered_at set                                       → "delivered"
+// An owner self-designates in the app (claim-ownership) which mints the
+// 4-digit pickup PIN; the proctor verifies that PIN at the desk to deliver.
+
+const PROCTOR_STATUSES = new Set(["unclaimed", "pending", "delivered"]);
+const PICKUP_PIN_RE = /^\d{4}$/;
+
+// Random 4-digit pickup code (1000–9999) shown to the owner in-app
+function generatePickupPin() {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+// Narrow a listings query to a single derived proctor status
+function applyProctorStatus(query, status) {
+  if (status === "unclaimed") return query.is("owner_id", null).is("delivered_at", null);
+  if (status === "pending")   return query.not("owner_id", "is", null).is("delivered_at", null);
+  return query.not("delivered_at", "is", null); // delivered
+}
+
+// GET /api/proctor/items?status=unclaimed|pending|delivered&search=&page=
+// Items received at THIS proctor's desk, filtered by derived status, plus counts for the toggles.
+app.get("/api/proctor/items", requireAuth, require2FA, requireProctor, async (req, res) => {
+  const deskLoc = req.proctorProfile.proctor_location_id;
+  if (!deskLoc) {
+    return res.json({ items: [], total: 0, hasMore: false, counts: { unclaimed: 0, pending: 0, delivered: 0 } });
+  }
+
+  const status = PROCTOR_STATUSES.has(req.query.status) ? req.query.status : "unclaimed";
+  const search = sanitize(req.query.search, 50);
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = 100;
+  const offset = (page - 1) * limit;
+  const orderCol = status === "delivered" ? "delivered_at" : "received_at";
+
+  let query = supabase
+    .from("listings")
+    .select(
+      "item_id, title, category, image_url, description, listing_type, importance, found_at, poster_name, owner_name, owner_id, received_at, delivered_at, locations(name, campus)",
+      { count: "exact" }
+    )
+    .eq("desk_location_id", deskLoc)
+    .not("received_at", "is", null);
+
+  query = applyProctorStatus(query, status);
+  if (search) query = query.ilike("title", `%${search}%`);
+  query = query.order(orderCol, { ascending: false }).range(offset, offset + limit - 1);
+
+  const { data, error, count } = await query;
+  if (error) return dbError(res, error, "GET /api/proctor/items");
+
+  // Per-status counts for the toggle badges
+  const countFor = async (s) => {
+    let q = supabase
+      .from("listings")
+      .select("item_id", { count: "exact", head: true })
+      .eq("desk_location_id", deskLoc)
+      .not("received_at", "is", null);
+    q = applyProctorStatus(q, s);
+    const { count: c } = await q;
+    return c ?? 0;
+  };
+  const [unclaimed, pending, delivered] = await Promise.all([
+    countFor("unclaimed"), countFor("pending"), countFor("delivered"),
+  ]);
+
+  res.json({
+    items: data || [],
+    total: count ?? 0,
+    hasMore: offset + limit < (count ?? 0),
+    counts: { unclaimed, pending, delivered },
+  });
+});
+
+// GET /api/proctor/receivable?search= — found items not yet received at any desk,
+// so a proctor can confirm one a finder just handed in. Searched by title.
+app.get("/api/proctor/receivable", requireAuth, require2FA, requireProctor, async (req, res) => {
+  const search = sanitize(req.query.search, 50);
+
+  let query = supabase
+    .from("listings")
+    .select("item_id, title, category, image_url, poster_name, found_at, date, locations(name, campus)")
+    .eq("listing_type", "found")
+    .eq("resolved", false)
+    .is("received_at", null)
+    .order("date", { ascending: false })
+    .limit(100);
+
+  if (search) query = query.ilike("title", `%${search}%`);
+
+  const { data, error } = await query;
+  if (error) return dbError(res, error, "GET /api/proctor/receivable");
+  res.json({ items: data || [] });
+});
+
+// POST /api/proctor/items/:item_id/receive — log that a finder handed this item in at the desk
+app.post("/api/proctor/items/:item_id/receive", requireAuth, require2FA, requireProctor, async (req, res) => {
+  const deskLoc = req.proctorProfile.proctor_location_id;
+  if (!deskLoc) return res.status(400).json({ error: "Your proctor account is not assigned to a building desk." });
+
+  const { data: listing } = await supabase
+    .from("listings")
+    .select("item_id, received_at")
+    .eq("item_id", req.params.item_id)
+    .maybeSingle();
+
+  if (!listing) return res.status(404).json({ error: "Listing not found" });
+  if (listing.received_at) return res.status(409).json({ error: "Item already received at a desk." });
+
+  const { data: updated, error } = await supabase
+    .from("listings")
+    .update({ received_at: new Date().toISOString(), received_by: req.user.id, desk_location_id: deskLoc })
+    .eq("item_id", req.params.item_id)
+    .is("received_at", null)
+    .select("item_id, owner_id, title")
+    .maybeSingle();
+
+  if (error) return dbError(res, error, "POST /api/proctor/items/receive");
+  if (!updated) return res.status(409).json({ error: "Item already received at a desk." });
+
+  // If an owner has already claimed it, let them know it's ready for pickup
+  if (updated.owner_id) {
+    sendPushNotification(
+      updated.owner_id,
+      "Your item is ready for pickup",
+      `"${updated.title}" is now at the desk. Show your pickup PIN to collect it.`,
+      { type: "item_received", itemId: updated.item_id }
+    ).catch(() => {});
+  }
+
+  res.json({ success: true });
+});
+
+// POST /api/proctor/items/:item_id/deliver { pin } — verify the owner's PIN and hand the item over
+app.post("/api/proctor/items/:item_id/deliver", requireAuth, require2FA, requireProctor, async (req, res) => {
+  const deskLoc = req.proctorProfile.proctor_location_id;
+  const pin = typeof req.body.pin === "string" ? req.body.pin.trim() : "";
+  if (!PICKUP_PIN_RE.test(pin)) return res.status(400).json({ error: "PIN must be a 4-digit number." });
+
+  const { data: listing } = await supabase
+    .from("listings")
+    .select("item_id, title, received_at, owner_id, delivered_at, pickup_pin, desk_location_id")
+    .eq("item_id", req.params.item_id)
+    .maybeSingle();
+
+  if (!listing) return res.status(404).json({ error: "Listing not found" });
+  if (deskLoc && listing.desk_location_id && listing.desk_location_id !== deskLoc) {
+    return res.status(403).json({ error: "This item is held at a different desk." });
+  }
+  if (!listing.received_at) return res.status(400).json({ error: "Item has not been received at a desk yet." });
+  if (!listing.owner_id) return res.status(400).json({ error: "No owner has claimed this item yet." });
+  if (listing.delivered_at) return res.status(409).json({ error: "Item already delivered." });
+  // Generic message on mismatch — don't reveal whether a PIN exists
+  if (!listing.pickup_pin || listing.pickup_pin !== pin) {
+    return res.status(400).json({ error: "Incorrect PIN" });
+  }
+
+  const { data: updated, error } = await supabase
+    .from("listings")
+    .update({ delivered_at: new Date().toISOString(), delivered_by: req.user.id, resolved: true })
+    .eq("item_id", req.params.item_id)
+    .is("delivered_at", null)
+    .select("item_id")
+    .maybeSingle();
+
+  if (error) return dbError(res, error, "POST /api/proctor/items/deliver");
+  if (!updated) return res.status(409).json({ error: "Item already delivered." });
+
+  // Pickup confirmation / receipt for the owner
+  sendPushNotification(
+    listing.owner_id,
+    "Item picked up",
+    `You collected "${listing.title}" from the desk.`,
+    { type: "item_delivered", itemId: listing.item_id }
+  ).catch(() => {});
+
+  res.json({ success: true });
+});
+
+// POST /api/listings/:item_id/claim-ownership — a user designates themselves the owner of a
+// found item (the "owner designated on app" step). Mints + returns the 4-digit pickup PIN.
+app.post("/api/listings/:item_id/claim-ownership", requireAuth, require2FA, requireNotBanned, async (req, res) => {
+  const { data: listing } = await supabase
+    .from("listings")
+    .select("item_id, poster_id, listing_type, owner_id, pickup_pin")
+    .eq("item_id", req.params.item_id)
+    .maybeSingle();
+
+  if (!listing) return res.status(404).json({ error: "Listing not found" });
+  if (listing.listing_type !== "found") {
+    return res.status(400).json({ error: "Only found items can be claimed for desk pickup." });
+  }
+  if (listing.poster_id === req.user.id) {
+    return res.status(403).json({ error: "You posted this item — you can't claim it as the owner." });
+  }
+  // Idempotent: same user re-claiming gets their existing PIN back
+  if (listing.owner_id === req.user.id && listing.pickup_pin) {
+    return res.json({ pickup_pin: listing.pickup_pin, alreadyClaimed: true });
+  }
+  if (listing.owner_id) {
+    return res.status(409).json({ error: "Someone has already claimed this item." });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("first_name, last_name")
+    .eq("id", req.user.id)
+    .single();
+  const owner_name = profile ? `${profile.first_name} ${profile.last_name}` : req.user.email;
+  const pickup_pin = generatePickupPin();
+
+  const { data: updated, error } = await supabase
+    .from("listings")
+    .update({ owner_id: req.user.id, owner_name, pickup_pin })
+    .eq("item_id", req.params.item_id)
+    .is("owner_id", null)
+    .select("item_id")
+    .maybeSingle();
+
+  if (error) return dbError(res, error, "POST /api/listings/claim-ownership");
+  if (!updated) return res.status(409).json({ error: "Someone has already claimed this item." });
+  res.json({ pickup_pin });
 });
 
 // GET /api/leaderboard?campus=boston — top 50 confirmed users by points; optional campus filter
