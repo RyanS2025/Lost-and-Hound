@@ -1186,7 +1186,7 @@ app.get("/api/proctor/items", requireAuth, require2FA, requireProctor, async (re
   let query = supabase
     .from("listings")
     .select(
-      "item_id, title, category, image_url, description, listing_type, importance, found_at, poster_name, owner_name, owner_id, received_at, delivered_at, locations(name, campus)",
+      "item_id, title, category, image_url, description, listing_type, importance, found_at, poster_name, owner_name, owner_id, received_at, delivered_at, locations!location_id(name, campus)",
       { count: "exact" }
     )
     .eq("desk_location_id", deskLoc)
@@ -1229,7 +1229,7 @@ app.get("/api/proctor/receivable", requireAuth, require2FA, requireProctor, asyn
 
   let query = supabase
     .from("listings")
-    .select("item_id, title, category, image_url, poster_name, found_at, date, locations(name, campus)")
+    .select("item_id, title, category, image_url, poster_name, found_at, date, locations!location_id(name, campus)")
     .eq("listing_type", "found")
     .eq("resolved", false)
     .is("received_at", null)
