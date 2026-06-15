@@ -861,15 +861,63 @@ app.patch("/api/settings/notifications", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Deletes listings (by item_id) together with the rows that depend on them.
+// conversations.listing_id has a foreign key to listings with no ON DELETE
+// cascade, so a listing referenced by any conversation can't be deleted until
+// that conversation (and its messages / hidden_conversations rows) is gone.
+// Returns { error } — the first error encountered, or null on success.
+async function deleteListingsWithDependents(itemIds) {
+  const ids = (itemIds || []).filter(Boolean);
+  if (ids.length === 0) return { error: null };
+
+  const { data: convos, error: convoSelErr } = await supabase
+    .from("conversations")
+    .select("id")
+    .in("listing_id", ids);
+  if (convoSelErr) return { error: convoSelErr };
+
+  if (convos && convos.length > 0) {
+    const convoIds = convos.map((c) => c.id);
+
+    const { error: msgErr } = await supabase
+      .from("messages")
+      .delete()
+      .in("conversation_id", convoIds);
+    if (msgErr) return { error: msgErr };
+
+    const { error: hidErr } = await supabase
+      .from("hidden_conversations")
+      .delete()
+      .in("conversation_id", convoIds);
+    if (hidErr) return { error: hidErr };
+
+    const { error: convoDelErr } = await supabase
+      .from("conversations")
+      .delete()
+      .in("id", convoIds);
+    if (convoDelErr) return { error: convoDelErr };
+  }
+
+  const { error: listingErr } = await supabase
+    .from("listings")
+    .delete()
+    .in("item_id", ids);
+  return { error: listingErr };
+}
+
 app.delete("/api/profile", strictLimiter, requireAuth, require2FA, async (req, res) => {
   const userId = req.user.id;
   const errors = [];
 
-  // 1. Delete user's listings
-  const { error: listingsErr } = await supabase
+  // 1. Delete user's listings (and any conversations that reference them, so
+  //    the conversations_listing_id_fkey constraint doesn't block the delete)
+  const { data: userListings } = await supabase
     .from("listings")
-    .delete()
+    .select("item_id")
     .eq("poster_id", userId);
+  const { error: listingsErr } = await deleteListingsWithDependents(
+    (userListings || []).map((l) => l.item_id)
+  );
   if (listingsErr) errors.push({ step: "listings", message: listingsErr.message });
 
   // 2. Delete messages in conversations the user is part of, then the conversations
@@ -974,7 +1022,7 @@ app.get("/api/listings", requireAuth, require2FA, async (req, res) => {
 
   let query = supabase
     .from("listings")
-    .select("*, locations(name, coordinates, campus)", { count: "exact" })
+    .select("*, locations!location_id(name, coordinates, campus)", { count: "exact" })
     .order("date", { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -1083,7 +1131,7 @@ app.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBanne
   const { data, error } = await supabase
     .from("listings")
     .insert([insertData])
-    .select("*, locations(name, coordinates, campus)")
+    .select("*, locations!location_id(name, coordinates, campus)")
     .single();
 
   if (error) return dbError(res, error, "POST /api/listings");
@@ -1159,10 +1207,7 @@ app.delete("/api/listings/:item_id", requireAuth, require2FA, requireModerator, 
     .eq("item_id", req.params.item_id)
     .maybeSingle();
 
-  const { error } = await supabase
-    .from("listings")
-    .delete()
-    .eq("item_id", req.params.item_id);
+  const { error } = await deleteListingsWithDependents([req.params.item_id]);
 
   if (error) return dbError(res, error, "DELETE /api/listings");
 
@@ -1192,23 +1237,25 @@ app.post("/api/listings/cleanup", requireAuth, require2FA, async (req, res) => {
   const resolvedCutoff   = new Date(now - 10 * 86400000).toISOString();
   const unresolvedCutoff = new Date(now - 30 * 86400000).toISOString();
 
-  const { error: resolvedError } = await supabase
+  // Collect the listings that have expired, then delete them along with their
+  // dependent conversations (otherwise conversations_listing_id_fkey blocks it).
+  const { data: expired, error: selectError } = await supabase
     .from("listings")
-    .delete()
-    .eq("resolved", true)
-    .lt("date", resolvedCutoff);
+    .select("item_id")
+    .or(
+      `and(resolved.eq.true,date.lt.${resolvedCutoff}),` +
+      `and(resolved.eq.false,date.lt.${unresolvedCutoff})`
+    );
 
-  if (resolvedError) return dbError(res, resolvedError, "POST /api/listings/cleanup");
+  if (selectError) return dbError(res, selectError, "POST /api/listings/cleanup");
 
-  const { error: unresolvedError } = await supabase
-    .from("listings")
-    .delete()
-    .eq("resolved", false)
-    .lt("date", unresolvedCutoff);
+  const { error: deleteError } = await deleteListingsWithDependents(
+    (expired || []).map((l) => l.item_id)
+  );
 
-  if (unresolvedError) return dbError(res, unresolvedError, "POST /api/listings/cleanup");
+  if (deleteError) return dbError(res, deleteError, "POST /api/listings/cleanup");
 
-  res.json({ success: true });
+  res.json({ success: true, deleted: (expired || []).length });
 });
 
 app.post("/api/upload-url", writeLimiter, requireAuth, require2FA, requireNotBanned, async (req, res) => {
@@ -1851,7 +1898,7 @@ app.get("/api/reports", requireAuth, require2FA, requireModerator, async (req, r
   if (listingIds.length > 0) {
     const { data: listingsData } = await supabase
       .from("listings")
-      .select("*, locations(name, coordinates, campus)")
+      .select("*, locations!location_id(name, coordinates, campus)")
       .in("item_id", listingIds);
     (listingsData || []).forEach((l) => { listingMap[l.item_id] = l; });
   }
@@ -2069,7 +2116,7 @@ app.post("/api/reports/:id/decision", requireAuth, require2FA, requireModerator,
   }
 
   if (isPost && report.reported_listing_id) {
-    await supabase.from("listings").delete().eq("item_id", report.reported_listing_id);
+    await deleteListingsWithDependents([report.reported_listing_id]);
   } else if (!isPost && report.reporter_id && report.reported_user_id) {
     const { data: convos } = await supabase
       .from("conversations")
