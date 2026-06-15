@@ -10,8 +10,11 @@
 --
 --   2. "Could not embed because more than one relationship was found for
 --       'listings' and 'locations'"
---      → PostgREST/Supabase found 2+ FK paths between listings and locations,
---        so `select=*,locations(...)` is ambiguous.
+--      → listings has TWO real foreign keys to locations (confirmed via the
+--        STEP 0 query below): location_id (listings_location_id_fkey) and
+--        desk_location_id (listings_desk_location_id_fkey). Because both are
+--        valid, `select=*,locations(...)` is ambiguous and must name a column.
+--        The app pins to location_id, which is the one the listing feed means.
 --
 -- The application code already works around both (it pre-deletes dependent
 -- conversations, and pins embeds to `locations!location_id`). This migration
@@ -25,10 +28,12 @@
 
 -- ----------------------------------------------------------------------------
 -- STEP 0 (READ-ONLY): inspect every FK between listings and locations.
--- This tells you WHY there are two relationships:
---   * Two rows on different columns  → two real FKs (keep the embed hint).
---   * Two rows on the SAME column    → a duplicate constraint; drop one (below)
---                                       and you won't even need the code hint.
+-- CONFIRMED RESULT (2026-06): two rows on DIFFERENT columns —
+--   listings_location_id_fkey      (location_id)      ← used by the app
+--   listings_desk_location_id_fkey (desk_location_id) ← separate "desk" link
+-- Both are legitimate, so there is nothing to drop; the code's
+-- `locations!location_id` hint is the correct and complete fix. Re-run this
+-- only if a future schema change makes the embed ambiguous again.
 -- ----------------------------------------------------------------------------
 SELECT
   con.conname                        AS constraint_name,
@@ -45,16 +50,14 @@ WHERE con.contype = 'f'
   AND tgt.relname = 'locations'
 ORDER BY con.conname, k.ord;
 
--- If STEP 0 shows a DUPLICATE constraint on location_id, drop the extra one
--- (replace <duplicate_constraint_name> with the redundant row's name):
---
---   ALTER TABLE listings DROP CONSTRAINT <duplicate_constraint_name>;
-
 
 -- ----------------------------------------------------------------------------
 -- STEP 1 (READ-ONLY): confirm the conversations → listings FK and its current
 -- delete behavior (confdeltype: 'a' = NO ACTION, 'r' = RESTRICT, 'c' = CASCADE,
--- 'n' = SET NULL). It is almost certainly 'a' today, which is what blocks deletes.
+-- 'n' = SET NULL).
+-- CONFIRMED RESULT (2026-06): confdeltype = 'a' (NO ACTION) — the database does
+-- nothing on listing delete, which is exactly what blocks deleting a listing
+-- that still has a conversation. STEP 2 below is the optional permanent fix.
 -- ----------------------------------------------------------------------------
 SELECT conname, confdeltype
 FROM pg_constraint
