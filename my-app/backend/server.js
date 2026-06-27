@@ -384,6 +384,23 @@ async function requireOwner(req, res, next) {
   next();
 }
 
+// Building proctors who staff a front-desk and return dropped-off items.
+// Stashes the proctor's profile (incl. proctor_location_id) on req for the handler.
+async function requireProctor(req, res, next) {
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("is_proctor, proctor_location_id")
+    .eq("id", req.user.id)
+    .single();
+
+  if (!profile?.is_proctor) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  req.proctorProfile = profile;
+  next();
+}
+
 // Block banned users from taking actions (creating posts, sending messages, etc.)
 // Does NOT block reading data — banned users can still view the feed
 async function requireNotBanned(req, res, next) {
@@ -766,7 +783,7 @@ const CLEANUP_COOLDOWN = 60 * 60 * 1000; // 1 hour
 app.get("/api/profile", requireAuth, require2FA, async (req, res) => {
   const { data, error } = await supabase
     .from("profiles")
-    .select("first_name, last_name, default_campus, is_moderator, is_owner, banned_until, ban_reason, referral_answered")
+    .select("first_name, last_name, default_campus, is_moderator, is_owner, is_proctor, proctor_location_id, banned_until, ban_reason, referral_answered")
     .eq("id", req.user.id)
     .single();
 
@@ -785,7 +802,7 @@ app.get("/api/profile", requireAuth, require2FA, async (req, res) => {
           },
           { onConflict: "id" }
         )
-        .select("first_name, last_name, default_campus, is_moderator, is_owner, banned_until, ban_reason, referral_answered")
+        .select("first_name, last_name, default_campus, is_moderator, is_owner, is_proctor, proctor_location_id, banned_until, ban_reason, referral_answered")
         .single();
 
       if (upsertErr) return res.status(500).json({ error: "Failed to create profile" });
@@ -821,7 +838,7 @@ app.patch("/api/profile", requireAuth, require2FA, async (req, res) => {
     .from("profiles")
     .update({ first_name, last_name })
     .eq("id", req.user.id)
-    .select("first_name, last_name, default_campus, is_moderator, is_owner")
+    .select("first_name, last_name, default_campus, is_moderator, is_owner, is_proctor, proctor_location_id")
     .single();
 
   if (error) return dbError(res, error, "PATCH /api/profile");
@@ -1171,6 +1188,236 @@ app.patch("/api/listings/:item_id/resolve", requireAuth, require2FA, requireNotB
   }
 
   res.json({ success: true });
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PROCTOR DESK ROUTES
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Building front-desk staff manage found items dropped off at their desk.
+// Lifecycle (all states derived from these columns, never stored as an enum):
+//   received_at set, owner_id null,     delivered_at null  → "unclaimed"
+//   received_at set, owner_id set,      delivered_at null  → "pending"
+//   delivered_at set                                       → "delivered"
+// An owner self-designates in the app (claim-ownership) which mints the
+// 4-digit pickup PIN; the proctor verifies that PIN at the desk to deliver.
+
+const PROCTOR_STATUSES = new Set(["unclaimed", "pending", "delivered"]);
+const PICKUP_PIN_RE = /^\d{4}$/;
+
+// Random 4-digit pickup code (1000–9999) shown to the owner in-app
+function generatePickupPin() {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+// Narrow a listings query to a single derived proctor status
+function applyProctorStatus(query, status) {
+  if (status === "unclaimed") return query.is("owner_id", null).is("delivered_at", null);
+  if (status === "pending")   return query.not("owner_id", "is", null).is("delivered_at", null);
+  return query.not("delivered_at", "is", null); // delivered
+}
+
+// GET /api/proctor/items?status=unclaimed|pending|delivered&search=&page=
+// Items received at THIS proctor's desk, filtered by derived status, plus counts for the toggles.
+app.get("/api/proctor/items", requireAuth, require2FA, requireProctor, async (req, res) => {
+  const deskLoc = req.proctorProfile.proctor_location_id;
+  if (!deskLoc) {
+    return res.json({ items: [], total: 0, hasMore: false, counts: { unclaimed: 0, pending: 0, delivered: 0 } });
+  }
+
+  const status = PROCTOR_STATUSES.has(req.query.status) ? req.query.status : "unclaimed";
+  const search = sanitize(req.query.search, 50);
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = 100;
+  const offset = (page - 1) * limit;
+  const orderCol = status === "delivered" ? "delivered_at" : "received_at";
+
+  let query = supabase
+    .from("listings")
+    .select(
+      "item_id, title, category, image_url, description, listing_type, importance, found_at, poster_name, owner_name, owner_id, received_at, delivered_at, locations!location_id(name, campus)",
+      { count: "exact" }
+    )
+    .eq("desk_location_id", deskLoc)
+    .not("received_at", "is", null);
+
+  query = applyProctorStatus(query, status);
+  if (search) query = query.ilike("title", `%${search}%`);
+  query = query.order(orderCol, { ascending: false }).range(offset, offset + limit - 1);
+
+  const { data, error, count } = await query;
+  if (error) return dbError(res, error, "GET /api/proctor/items");
+
+  // Per-status counts for the toggle badges
+  const countFor = async (s) => {
+    let q = supabase
+      .from("listings")
+      .select("item_id", { count: "exact", head: true })
+      .eq("desk_location_id", deskLoc)
+      .not("received_at", "is", null);
+    q = applyProctorStatus(q, s);
+    const { count: c } = await q;
+    return c ?? 0;
+  };
+  const [unclaimed, pending, delivered] = await Promise.all([
+    countFor("unclaimed"), countFor("pending"), countFor("delivered"),
+  ]);
+
+  res.json({
+    items: data || [],
+    total: count ?? 0,
+    hasMore: offset + limit < (count ?? 0),
+    counts: { unclaimed, pending, delivered },
+  });
+});
+
+// GET /api/proctor/receivable?search= — found items not yet received at any desk,
+// so a proctor can confirm one a finder just handed in. Searched by title.
+app.get("/api/proctor/receivable", requireAuth, require2FA, requireProctor, async (req, res) => {
+  const search = sanitize(req.query.search, 50);
+
+  let query = supabase
+    .from("listings")
+    .select("item_id, title, category, image_url, poster_name, found_at, date, locations!location_id(name, campus)")
+    .eq("listing_type", "found")
+    .eq("resolved", false)
+    .is("received_at", null)
+    .order("date", { ascending: false })
+    .limit(100);
+
+  if (search) query = query.ilike("title", `%${search}%`);
+
+  const { data, error } = await query;
+  if (error) return dbError(res, error, "GET /api/proctor/receivable");
+  res.json({ items: data || [] });
+});
+
+// POST /api/proctor/items/:item_id/receive — log that a finder handed this item in at the desk
+app.post("/api/proctor/items/:item_id/receive", requireAuth, require2FA, requireProctor, async (req, res) => {
+  const deskLoc = req.proctorProfile.proctor_location_id;
+  if (!deskLoc) return res.status(400).json({ error: "Your proctor account is not assigned to a building desk." });
+
+  const { data: listing } = await supabase
+    .from("listings")
+    .select("item_id, received_at")
+    .eq("item_id", req.params.item_id)
+    .maybeSingle();
+
+  if (!listing) return res.status(404).json({ error: "Listing not found" });
+  if (listing.received_at) return res.status(409).json({ error: "Item already received at a desk." });
+
+  const { data: updated, error } = await supabase
+    .from("listings")
+    .update({ received_at: new Date().toISOString(), received_by: req.user.id, desk_location_id: deskLoc })
+    .eq("item_id", req.params.item_id)
+    .is("received_at", null)
+    .select("item_id, owner_id, title")
+    .maybeSingle();
+
+  if (error) return dbError(res, error, "POST /api/proctor/items/receive");
+  if (!updated) return res.status(409).json({ error: "Item already received at a desk." });
+
+  // If an owner has already claimed it, let them know it's ready for pickup
+  if (updated.owner_id) {
+    sendPushNotification(
+      updated.owner_id,
+      "Your item is ready for pickup",
+      `"${updated.title}" is now at the desk. Show your pickup PIN to collect it.`,
+      { type: "item_received", itemId: updated.item_id }
+    ).catch(() => {});
+  }
+
+  res.json({ success: true });
+});
+
+// POST /api/proctor/items/:item_id/deliver { pin } — verify the owner's PIN and hand the item over
+app.post("/api/proctor/items/:item_id/deliver", requireAuth, require2FA, requireProctor, async (req, res) => {
+  const deskLoc = req.proctorProfile.proctor_location_id;
+  const pin = typeof req.body.pin === "string" ? req.body.pin.trim() : "";
+  if (!PICKUP_PIN_RE.test(pin)) return res.status(400).json({ error: "PIN must be a 4-digit number." });
+
+  const { data: listing } = await supabase
+    .from("listings")
+    .select("item_id, title, received_at, owner_id, delivered_at, pickup_pin, desk_location_id")
+    .eq("item_id", req.params.item_id)
+    .maybeSingle();
+
+  if (!listing) return res.status(404).json({ error: "Listing not found" });
+  if (deskLoc && listing.desk_location_id && listing.desk_location_id !== deskLoc) {
+    return res.status(403).json({ error: "This item is held at a different desk." });
+  }
+  if (!listing.received_at) return res.status(400).json({ error: "Item has not been received at a desk yet." });
+  if (!listing.owner_id) return res.status(400).json({ error: "No owner has claimed this item yet." });
+  if (listing.delivered_at) return res.status(409).json({ error: "Item already delivered." });
+  // Generic message on mismatch — don't reveal whether a PIN exists
+  if (!listing.pickup_pin || listing.pickup_pin !== pin) {
+    return res.status(400).json({ error: "Incorrect PIN" });
+  }
+
+  const { data: updated, error } = await supabase
+    .from("listings")
+    .update({ delivered_at: new Date().toISOString(), delivered_by: req.user.id, resolved: true })
+    .eq("item_id", req.params.item_id)
+    .is("delivered_at", null)
+    .select("item_id")
+    .maybeSingle();
+
+  if (error) return dbError(res, error, "POST /api/proctor/items/deliver");
+  if (!updated) return res.status(409).json({ error: "Item already delivered." });
+
+  // Pickup confirmation / receipt for the owner
+  sendPushNotification(
+    listing.owner_id,
+    "Item picked up",
+    `You collected "${listing.title}" from the desk.`,
+    { type: "item_delivered", itemId: listing.item_id }
+  ).catch(() => {});
+
+  res.json({ success: true });
+});
+
+// POST /api/listings/:item_id/claim-ownership — a user designates themselves the owner of a
+// found item (the "owner designated on app" step). Mints + returns the 4-digit pickup PIN.
+app.post("/api/listings/:item_id/claim-ownership", requireAuth, require2FA, requireNotBanned, async (req, res) => {
+  const { data: listing } = await supabase
+    .from("listings")
+    .select("item_id, poster_id, listing_type, owner_id, pickup_pin")
+    .eq("item_id", req.params.item_id)
+    .maybeSingle();
+
+  if (!listing) return res.status(404).json({ error: "Listing not found" });
+  if (listing.listing_type !== "found") {
+    return res.status(400).json({ error: "Only found items can be claimed for desk pickup." });
+  }
+  if (listing.poster_id === req.user.id) {
+    return res.status(403).json({ error: "You posted this item — you can't claim it as the owner." });
+  }
+  // Idempotent: same user re-claiming gets their existing PIN back
+  if (listing.owner_id === req.user.id && listing.pickup_pin) {
+    return res.json({ pickup_pin: listing.pickup_pin, alreadyClaimed: true });
+  }
+  if (listing.owner_id) {
+    return res.status(409).json({ error: "Someone has already claimed this item." });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("first_name, last_name")
+    .eq("id", req.user.id)
+    .single();
+  const owner_name = profile ? `${profile.first_name} ${profile.last_name}` : req.user.email;
+  const pickup_pin = generatePickupPin();
+
+  const { data: updated, error } = await supabase
+    .from("listings")
+    .update({ owner_id: req.user.id, owner_name, pickup_pin })
+    .eq("item_id", req.params.item_id)
+    .is("owner_id", null)
+    .select("item_id")
+    .maybeSingle();
+
+  if (error) return dbError(res, error, "POST /api/listings/claim-ownership");
+  if (!updated) return res.status(409).json({ error: "Someone has already claimed this item." });
+  res.json({ pickup_pin });
 });
 
 // GET /api/leaderboard?campus=boston — top 50 confirmed users by points; optional campus filter
@@ -3312,6 +3559,280 @@ app.delete("/api/finances/expenses/:id", requireAuth, require2FA, requireOwner, 
 });
 
 // Catch-all: log any request that didn't match a route
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// POLLS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function generateSlug(title) {
+  const base = title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .slice(0, 40);
+  const suffix = crypto.randomBytes(3).toString("hex");
+  return `${base}-${suffix}`;
+}
+
+const VALID_QUESTION_TYPES = ["short_answer", "paragraph", "multiple_choice", "checkbox", "dropdown", "linear_scale"];
+
+// POST /api/polls — create a new poll (moderator only)
+app.post("/api/polls", requireAuth, require2FA, requireModerator, async (req, res) => {
+  const { title, description, delivery_type, random_login_probability, batch_type, batch_size, questions } = req.body;
+
+  if (!title?.trim()) return res.status(400).json({ error: "Title is required" });
+  if (title.length > 120) return res.status(400).json({ error: "Title must be 120 characters or fewer" });
+  if (description && description.length > 400) return res.status(400).json({ error: "Description must be 400 characters or fewer" });
+  if (!Array.isArray(questions) || questions.length === 0)
+    return res.status(400).json({ error: "At least one question is required" });
+  if (questions.length > 50) return res.status(400).json({ error: "Maximum 50 questions per poll" });
+
+  const validDelivery = ["link", "first_login", "random_login"];
+  if (!validDelivery.includes(delivery_type))
+    return res.status(400).json({ error: "Invalid delivery_type" });
+  if (delivery_type === "random_login" && random_login_probability != null) {
+    if (typeof random_login_probability !== "number" || random_login_probability < 0 || random_login_probability > 1)
+      return res.status(400).json({ error: "random_login_probability must be a number between 0 and 1" });
+  }
+  const validBatch = ["everyone", "random_group"];
+  if (batch_type && !validBatch.includes(batch_type))
+    return res.status(400).json({ error: "Invalid batch_type" });
+  if (batch_type === "random_group" && batch_size != null) {
+    const size = parseInt(batch_size, 10);
+    if (isNaN(size) || size < 1 || size > 100000)
+      return res.status(400).json({ error: "batch_size must be between 1 and 100,000" });
+  }
+
+  for (const q of questions) {
+    if (!q.question_text || typeof q.question_text !== "string" || q.question_text.length > 300)
+      return res.status(400).json({ error: "Each question must have text (300 chars max)" });
+    if (!VALID_QUESTION_TYPES.includes(q.question_type))
+      return res.status(400).json({ error: `Invalid question type: ${q.question_type}` });
+    if (Array.isArray(q.options)) {
+      if (q.options.length > 20) return res.status(400).json({ error: "Maximum 20 options per question" });
+      if (q.options.some((o) => typeof o !== "string" || o.length > 100))
+        return res.status(400).json({ error: "Each option must be a string of 100 chars or fewer" });
+    }
+  }
+
+  // Only one poll may use first_login delivery at a time
+  if (delivery_type === "first_login") {
+    const { data: existing } = await supabase
+      .from("polls")
+      .select("id")
+      .eq("delivery_type", "first_login")
+      .eq("is_active", true)
+      .maybeSingle();
+    if (existing) return res.status(409).json({ error: "Another poll already holds the first-login slot. Deactivate it first." });
+  }
+
+  const slug = generateSlug(title);
+
+  const { data: poll, error: pollErr } = await supabase
+    .from("polls")
+    .insert({
+      title: title.trim(),
+      description: description?.trim() || null,
+      slug,
+      delivery_type,
+      random_login_probability: delivery_type === "random_login" ? (random_login_probability ?? 0.25) : 0.25,
+      batch_type: batch_type || "everyone",
+      batch_size: batch_type === "random_group" ? (batch_size || null) : null,
+      is_active: false,
+      created_by: req.user.id,
+    })
+    .select()
+    .single();
+
+  if (pollErr) return dbError(res, pollErr, "POST /api/polls");
+
+  const questionRows = questions.map((q, idx) => ({
+    poll_id: poll.id,
+    question_text: q.question_text.slice(0, 300),
+    question_type: q.question_type,
+    options: q.options || null,
+    scale_min: q.scale_min ?? 1,
+    scale_max: q.scale_max ?? 5,
+    required: q.required ?? false,
+    position: idx,
+  }));
+
+  const { error: qErr } = await supabase.from("poll_questions").insert(questionRows);
+  if (qErr) return dbError(res, qErr, "POST /api/polls (questions)");
+
+  res.status(201).json({ poll });
+});
+
+// GET /api/polls — list all polls (moderator only, for Liam's viewer)
+app.get("/api/polls", requireAuth, require2FA, requireModerator, async (req, res) => {
+  const { data, error } = await supabase
+    .from("polls")
+    .select("id, title, slug, delivery_type, batch_type, batch_size, is_active, created_at, random_login_probability")
+    .order("created_at", { ascending: false });
+
+  if (error) return dbError(res, error, "GET /api/polls");
+  res.json({ polls: data || [] });
+});
+
+// GET /api/polls/for-me — returns the active poll the current user should see (delivery logic)
+app.get("/api/polls/for-me", requireAuth, require2FA, async (req, res) => {
+  const { type } = req.query; // 'first_login' or 'random_login'
+  if (!type) return res.json({ poll: null });
+
+  const { data: activePolls } = await supabase
+    .from("polls")
+    .select("id, title, description, slug, delivery_type, random_login_probability, batch_type, batch_size")
+    .eq("delivery_type", type)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  const activePoll = activePolls?.[0];
+  if (!activePoll) return res.json({ poll: null });
+
+  // Apply random probability for random_login delivery
+  if (type === "random_login" && Math.random() > (activePoll.random_login_probability ?? 0.25)) {
+    return res.json({ poll: null });
+  }
+
+  // Check if user already responded
+  const { data: response } = await supabase
+    .from("poll_responses")
+    .select("id")
+    .eq("poll_id", activePoll.id)
+    .eq("user_id", req.user.id)
+    .maybeSingle();
+  if (response) return res.json({ poll: null });
+
+  // Check if user already got an impression (was shown but didn't complete)
+  const { data: impression } = await supabase
+    .from("poll_impressions")
+    .select("completed")
+    .eq("poll_id", activePoll.id)
+    .eq("user_id", req.user.id)
+    .maybeSingle();
+  if (impression) return res.json({ poll: null });
+
+  // For random_group batching — check if user is in the target group
+  if (activePoll.batch_type === "random_group" && activePoll.batch_size) {
+    const { count } = await supabase
+      .from("poll_impressions")
+      .select("*", { count: "exact", head: true })
+      .eq("poll_id", activePoll.id);
+    if ((count || 0) >= activePoll.batch_size) return res.json({ poll: null });
+  }
+
+  // Record the impression
+  await supabase.from("poll_impressions").upsert({
+    poll_id: activePoll.id,
+    user_id: req.user.id,
+    shown_at: new Date().toISOString(),
+    completed: false,
+  }, { onConflict: "poll_id,user_id" });
+
+  res.json({ poll: activePoll });
+});
+
+// GET /api/polls/:slug — get poll with questions (public)
+app.get("/api/polls/:slug", async (req, res) => {
+  const { data: poll, error } = await supabase
+    .from("polls")
+    .select("id, title, description, slug, is_active")
+    .eq("slug", req.params.slug)
+    .maybeSingle();
+
+  if (error || !poll) return res.status(404).json({ error: "Poll not found" });
+  if (!poll.is_active) return res.status(403).json({ error: "This poll is not active" });
+
+  const { data: questions } = await supabase
+    .from("poll_questions")
+    .select("id, question_text, question_type, options, scale_min, scale_max, required, position")
+    .eq("poll_id", poll.id)
+    .order("position");
+
+  res.json({ poll: { ...poll, questions: questions || [] } });
+});
+
+// POST /api/polls/:slug/respond — submit a response (authenticated)
+app.post("/api/polls/:slug/respond", requireAuth, require2FA, async (req, res) => {
+  const { answers } = req.body;
+  if (!answers || typeof answers !== "object") return res.status(400).json({ error: "Missing answers" });
+  const answersStr = JSON.stringify(answers);
+  if (answersStr.length > 50000) return res.status(400).json({ error: "Response payload too large" });
+  if (Array.isArray(answers)) return res.status(400).json({ error: "Answers must be an object, not an array" });
+
+  const { data: poll } = await supabase
+    .from("polls")
+    .select("id, is_active")
+    .eq("slug", req.params.slug)
+    .maybeSingle();
+
+  if (!poll) return res.status(404).json({ error: "Poll not found" });
+  if (!poll.is_active) return res.status(403).json({ error: "This poll is not active" });
+
+  // Prevent duplicate responses
+  const { data: existing } = await supabase
+    .from("poll_responses")
+    .select("id")
+    .eq("poll_id", poll.id)
+    .eq("user_id", req.user.id)
+    .maybeSingle();
+  if (existing) return res.status(409).json({ error: "You have already responded to this poll" });
+
+  const { error } = await supabase.from("poll_responses").insert({
+    poll_id: poll.id,
+    user_id: req.user.id,
+    answers,
+  });
+  if (error) return dbError(res, error, "POST /api/polls/:slug/respond");
+
+  // Mark impression as completed
+  await supabase.from("poll_impressions").upsert({
+    poll_id: poll.id,
+    user_id: req.user.id,
+    completed: true,
+  }, { onConflict: "poll_id,user_id" });
+
+  res.json({ success: true });
+});
+
+// DELETE /api/polls/:id — delete a poll (moderator only)
+app.delete("/api/polls/:id", requireAuth, require2FA, requireModerator, async (req, res) => {
+  const { error } = await supabase.from("polls").delete().eq("id", req.params.id);
+  if (error) return dbError(res, error, "DELETE /api/polls/:id");
+  res.json({ success: true });
+});
+
+// PATCH /api/polls/:id — update poll active state or metadata (for Liam's activate/deactivate)
+app.patch("/api/polls/:id", requireAuth, require2FA, requireModerator, async (req, res) => {
+  const allowed = ["is_active", "title", "description"];
+  const updates = {};
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) updates[key] = req.body[key];
+  }
+  if (!Object.keys(updates).length) return res.status(400).json({ error: "No valid fields to update" });
+
+  // Enforce single first_login poll rule when activating
+  if (updates.is_active === true) {
+    const { data: poll } = await supabase.from("polls").select("delivery_type").eq("id", req.params.id).maybeSingle();
+    if (poll?.delivery_type === "first_login") {
+      const { data: existing } = await supabase
+        .from("polls")
+        .select("id")
+        .eq("delivery_type", "first_login")
+        .eq("is_active", true)
+        .neq("id", req.params.id)
+        .maybeSingle();
+      if (existing) return res.status(409).json({ error: "Another poll already holds the first-login slot. Deactivate it first." });
+    }
+  }
+
+  updates.updated_at = new Date().toISOString();
+  const { data, error } = await supabase.from("polls").update(updates).eq("id", req.params.id).select().single();
+  if (error) return dbError(res, error, "PATCH /api/polls/:id");
+  res.json({ poll: data });
+});
+
 app.use((req, res) => {
   console.log(`[404] No route matched: ${req.method} ${req.path}`);
   res.status(404).json({ error: "Not found" });

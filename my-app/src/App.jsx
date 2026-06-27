@@ -11,6 +11,7 @@ import MapPage from "./pages/MapPage";
 import MessagePage from "./pages/MessagePage";
 import SettingsPage from "./pages/SettingsPage";
 import DashboardPage from "./pages/DashboardPage";
+import ProctorDashboard from "./pages/ProctorDashboard";
 import DashboardOverviewPage from "./pages/dashboard/DashboardOverviewPage";
 import ReportsPage from "./pages/dashboard/ReportsPage";
 import FeedbackPage from "./pages/dashboard/FeedbackPage";
@@ -19,6 +20,8 @@ import SupportPage from "./pages/dashboard/SupportPage";
 import MyWorkPage from "./pages/dashboard/MyWorkPage";
 import StatsPage from "./pages/dashboard/StatsPage";
 import FinancesPage from "./pages/dashboard/FinancesPage";
+import PollsPage from "./pages/dashboard/PollsPage";
+import PollPage from "./pages/PollPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import PrivacyPage from "./pages/PrivacyPage";
 import NoteCard from "./components/NoteCard";
@@ -50,11 +53,12 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import MessageIcon from '@mui/icons-material/Message';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
+import Inventory2Icon from '@mui/icons-material/Inventory2';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { DEFAULT_TIME_ZONE, formatCalendarDate, resolveTimeZone } from './utils/timezone';
 import apiFetch from './utils/apiFetch';
-import { prefetchDashboard, clearDashboardCache } from './utils/dashboardPrefetch';
+import { prefetchDashboard, prefetchProctor, clearDashboardCache } from './utils/dashboardPrefetch';
 import usePushNotifications from './hooks/usePushNotifications';
 import LeaderboardSidebar from './components/LeaderboardSidebar';
 
@@ -156,6 +160,13 @@ export default function App() {
       prefetchDashboard();
     }
   }, [profile?.is_moderator]);
+
+  // Background prefetch — fire as soon as we know the user is a proctor
+  useEffect(() => {
+    if (profile?.is_proctor) {
+      prefetchProctor();
+    }
+  }, [profile?.is_proctor]);
 
   const handleLogout = useCallback(async () => {
     clearDashboardCache();
@@ -467,6 +478,43 @@ export default function App() {
 
   const justLoggedIn = useRef(false);
   const [passkeyModalOpen, setPasskeyModalOpen] = useState(false);
+  const [activePollSlug, setActivePollSlug] = useState(null);
+
+  // Poll delivery — check for first_login poll after fresh login, random_login with 3-login cooldown
+  useEffect(() => {
+    if (!user || !profile || isDemoMode) return;
+    const checkPolls = async () => {
+      if (justLoggedIn.current) {
+        try {
+          const d = await apiFetch("/api/polls/for-me?type=first_login");
+          if (d?.poll?.slug) { setActivePollSlug(d.poll.slug); return; }
+        } catch { /* ignore */ }
+      }
+
+      const cooldownKey = `random_poll_cooldown_${user.id}`;
+      const remaining = parseInt(localStorage.getItem(cooldownKey) || "0", 10);
+      if (remaining > 0) {
+        localStorage.setItem(cooldownKey, String(remaining - 1));
+        return;
+      }
+
+      try {
+        const d = await apiFetch("/api/polls/for-me?type=random_login");
+        if (d?.poll?.slug) {
+          localStorage.setItem(cooldownKey, "3");
+          setActivePollSlug(d.poll.slug);
+        }
+      } catch { /* ignore */ }
+    };
+    const t = setTimeout(checkPolls, 2000);
+    return () => clearTimeout(t);
+  }, [user?.id, !!profile]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Navigate to poll page when one becomes available
+  useEffect(() => {
+    if (!activePollSlug) return;
+    navigate(`/polls/${activePollSlug}`);
+  }, [activePollSlug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onLoginSuccess = useCallback(() => {
     justLoggedIn.current = true;
@@ -874,6 +922,16 @@ export default function App() {
               <SupervisorAccountIcon />
             </Button>
           )}
+          {!isDemoMode && !Capacitor.isNativePlatform() && effectiveProfile?.is_proctor && (
+            <Button
+              color="inherit"
+              component={Link}
+              to="/proctor"
+              sx={{ minWidth: 0, mr: 0.5 }}
+            >
+              <Inventory2Icon />
+            </Button>
+          )}
           <Typography variant="body1" sx={{ mr: 1, display: { xs: "none", md: "block" } }}>
             {effectiveProfile?.first_name && effectiveProfile?.last_name
               ? effectiveProfile.first_name + " " + effectiveProfile.last_name
@@ -947,8 +1005,13 @@ export default function App() {
                 <Route path="my-work"  element={<MyWorkPage />} />
                 <Route path="stats"    element={<StatsPage />} />
                 {effectiveProfile?.is_owner && <Route path="finances" element={<FinancesPage />} />}
+                <Route path="polls" element={<PollsPage />} />
               </Route>
             )}
+            {!isDemoMode && !Capacitor.isNativePlatform() && effectiveProfile?.is_proctor && (
+              <Route path="/proctor" element={<ProctorDashboard effectiveTheme={effectiveTheme} timeZone={timeZone} />} />
+            )}
+            <Route path="/polls/:slug" element={<PollPage effectiveTheme={effectiveTheme} />} />
             <Route path="/credits" element={<CreditsPage effectiveTheme={effectiveTheme} />} />
             <Route path="/privacy" element={<PrivacyPage effectiveTheme={effectiveTheme} />} />
             <Route path="*" element={<NotFoundPage effectiveTheme={effectiveTheme} />} />
