@@ -1,0 +1,19 @@
+name: Embed guard
+
+# Fails a PR (or a push to main) if any ambiguous `locations(...)` Supabase
+# embed slips in. `listings` has two foreign keys to `locations`, so every
+# embed must name the relationship (e.g. `locations!location_id(...)`).
+# See scripts/check-location-embeds.sh for the full explanation.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  embed-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for ambiguous locations(...) embeds
+        run: bash scripts/check-location-embeds.sh
