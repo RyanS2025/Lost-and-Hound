@@ -1044,7 +1044,7 @@ app.get("/api/listings", requireAuth, require2FA, async (req, res) => {
 
   let query = supabase
     .from("listings")
-    .select("*, locations!location_id(name, coordinates, campus)", { count: "exact" })
+    .select("*, locations!listings_location_id_fkey(name, coordinates, campus)", { count: "exact" })
     .order("date", { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -1153,7 +1153,7 @@ app.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBanne
   const { data, error } = await supabase
     .from("listings")
     .insert([insertData])
-    .select("*, locations!location_id(name, coordinates, campus)")
+    .select("*, locations!listings_location_id_fkey(name, coordinates, campus)")
     .single();
 
   if (error) return dbError(res, error, "POST /api/listings");
@@ -1920,7 +1920,7 @@ app.get("/api/reports", requireAuth, require2FA, requireModerator, async (req, r
   if (listingIds.length > 0) {
     const { data: listingsData } = await supabase
       .from("listings")
-      .select("*, locations!location_id(name, coordinates, campus)")
+      .select("*, locations!listings_location_id_fkey(name, coordinates, campus)")
       .in("item_id", listingIds);
     (listingsData || []).forEach((l) => { listingMap[l.item_id] = l; });
   }
