@@ -861,48 +861,70 @@ app.patch("/api/settings/notifications", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Max ids per .in(...) filter. Keeps each query well under PostgREST's row and
+// URL limits so a large cleanup batch can't silently return/delete a partial set.
+const DELETE_CHUNK_SIZE = 100;
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
 // Deletes listings (by item_id) together with the rows that depend on them.
 // conversations.listing_id has a foreign key to listings with no ON DELETE
 // cascade, so a listing referenced by any conversation can't be deleted until
 // that conversation (and its messages / hidden_conversations rows) is gone.
+//
+// Processes ids in chunks and deletes each chunk's dependents *before* its
+// listings. Doing the whole set in one .in(...) risks the conversation lookup
+// returning a partial set on a large backlog, which left orphaned rows and
+// tripped conversations_listing_id_fkey on the listings delete.
 // Returns { error } — the first error encountered, or null on success.
 async function deleteListingsWithDependents(itemIds) {
   const ids = (itemIds || []).filter(Boolean);
   if (ids.length === 0) return { error: null };
 
-  const { data: convos, error: convoSelErr } = await supabase
-    .from("conversations")
-    .select("id")
-    .in("listing_id", ids);
-  if (convoSelErr) return { error: convoSelErr };
-
-  if (convos && convos.length > 0) {
-    const convoIds = convos.map((c) => c.id);
-
-    const { error: msgErr } = await supabase
-      .from("messages")
-      .delete()
-      .in("conversation_id", convoIds);
-    if (msgErr) return { error: msgErr };
-
-    const { error: hidErr } = await supabase
-      .from("hidden_conversations")
-      .delete()
-      .in("conversation_id", convoIds);
-    if (hidErr) return { error: hidErr };
-
-    const { error: convoDelErr } = await supabase
+  for (const idBatch of chunk(ids, DELETE_CHUNK_SIZE)) {
+    // Every conversation referencing a listing in this batch.
+    const { data: convos, error: convoSelErr } = await supabase
       .from("conversations")
+      .select("id")
+      .in("listing_id", idBatch);
+    if (convoSelErr) return { error: convoSelErr };
+
+    const convoIds = (convos || []).map((c) => c.id);
+
+    // A single listing can accumulate many conversations, so chunk these too.
+    for (const convoBatch of chunk(convoIds, DELETE_CHUNK_SIZE)) {
+      const { error: msgErr } = await supabase
+        .from("messages")
+        .delete()
+        .in("conversation_id", convoBatch);
+      if (msgErr) return { error: msgErr };
+
+      const { error: hidErr } = await supabase
+        .from("hidden_conversations")
+        .delete()
+        .in("conversation_id", convoBatch);
+      if (hidErr) return { error: hidErr };
+
+      const { error: convoDelErr } = await supabase
+        .from("conversations")
+        .delete()
+        .in("id", convoBatch);
+      if (convoDelErr) return { error: convoDelErr };
+    }
+
+    // Dependents for this batch are gone — safe to delete its listings.
+    const { error: listingErr } = await supabase
+      .from("listings")
       .delete()
-      .in("id", convoIds);
-    if (convoDelErr) return { error: convoDelErr };
+      .in("item_id", idBatch);
+    if (listingErr) return { error: listingErr };
   }
 
-  const { error: listingErr } = await supabase
-    .from("listings")
-    .delete()
-    .in("item_id", ids);
-  return { error: listingErr };
+  return { error: null };
 }
 
 app.delete("/api/profile", strictLimiter, requireAuth, require2FA, async (req, res) => {
