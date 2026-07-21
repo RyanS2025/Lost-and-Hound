@@ -43,7 +43,25 @@ export default function ItemDetailModal({ item, onClose, onClaim, isDark = false
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const [pickupPin, setPickupPin] = useState("");
+  const [claimError, setClaimError] = useState("");
   const isOwner = user?.id && item?.poster_id === user.id;
+  // A found item another user can claim as theirs to pick up at the building desk
+  const canClaimOwnership = !isOwner && item?.listing_type === "found" && !item?.resolved;
+
+  const handleClaimOwnership = async () => {
+    setClaiming(true);
+    setClaimError("");
+    try {
+      const res = await apiFetch(`/api/listings/${item.item_id}/claim-ownership`, { method: "POST" });
+      setPickupPin(res?.pickup_pin || "");
+    } catch (err) {
+      setClaimError(err?.message || "Could not claim this item.");
+    } finally {
+      setClaiming(false);
+    }
+  };
 
   useEffect(() => {
     if (!user || !item?.poster_id || isOwner) return;
@@ -176,6 +194,24 @@ export default function ItemDetailModal({ item, onClose, onClaim, isDark = false
           </Box>
         )}
 
+        {/* Owner self-designation result: the 4-digit pickup PIN to show at the desk */}
+        {pickupPin && (
+          <Paper variant="outlined" sx={{ p: 2, mb: 1.5, borderRadius: 2, textAlign: "center", background: isDark ? "#1f3527" : "#dcfce7", borderColor: isDark ? "rgba(110,231,183,0.42)" : "#86efac" }}>
+            <Typography variant="caption" fontWeight={800} sx={{ color: isDark ? "#6ee7b7" : "#16a34a", letterSpacing: 0.5, display: "block", mb: 0.5 }}>
+              YOUR PICKUP PIN
+            </Typography>
+            <Typography sx={{ fontSize: 34, fontWeight: 900, letterSpacing: 8, color: isDark ? "#6ee7b7" : "#15803d" }}>
+              {pickupPin}
+            </Typography>
+            <Typography variant="caption" sx={{ color: isDark ? "#9fe6c4" : "#15803d", fontWeight: 600 }}>
+              Show this code at the desk to collect your item.
+            </Typography>
+          </Paper>
+        )}
+        {claimError && (
+          <Typography variant="caption" sx={{ color: "#dc2626", fontWeight: 700, display: "block", mb: 1 }}>{claimError}</Typography>
+        )}
+
         <Box sx={{ display: "flex", gap: 1.5 }}>
           {isOwner && (
             <Button variant="contained" fullWidth disabled={item.resolved || returning}
@@ -186,6 +222,14 @@ export default function ItemDetailModal({ item, onClose, onClaim, isDark = false
                 ? (item.listing_type === "lost" ? "Already Found" : "Already Returned")
                 : returning ? "Marking..."
                 : (item.listing_type === "lost" ? "I Found This!" : "Returned Item")}
+            </Button>
+          )}
+          {canClaimOwnership && !pickupPin && (
+            <Button variant="contained" disabled={claiming}
+              onClick={handleClaimOwnership}
+              sx={{ background: "#A84D48", "&:hover": { background: "#8f3e3a" }, fontWeight: 800, borderRadius: 2, flexShrink: 0, width: "100%" }}
+            >
+              {claiming ? "Claiming..." : "This is mine — pick up at desk"}
             </Button>
           )}
           {!isOwner && (

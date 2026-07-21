@@ -238,6 +238,14 @@ export default function DashboardOverviewPage() {
       accentColor: "#0ea5e9",
       stats: [],
     },
+    {
+      to: "/moderation/polls",
+      icon: <CampaignIcon sx={{ color: "#f97316", fontSize: 20 }} />,
+      title: "Polls",
+      description: "Create community polls and send them out via link, first login, or random login.",
+      accentColor: "#f97316",
+      stats: [],
+    },
     ...(profile?.is_owner ? [{
       to: "/moderation/finances",
       icon: <AttachMoneyIcon sx={{ color: "#16a34a", fontSize: 20 }} />,
