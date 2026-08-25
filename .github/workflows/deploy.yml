@@ -3,14 +3,6 @@ name: Deploy Lost & Hound
 on:
   workflow_dispatch:
     inputs:
-      target:
-        description: "Deploy target"
-        required: true
-        type: choice
-        options:
-          - vercel
-          - railway
-          - both
       environment:
         description: "Environment"
         required: true
@@ -20,31 +12,21 @@ on:
           - preview
 
 jobs:
-  deploy-vercel:
-    if: inputs.target == 'vercel' || inputs.target == 'both'
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Install Vercel CLI
-        run: npm i -g vercel
-      - name: Deploy to Vercel
+      - name: Install and lint
+        working-directory: my-app
         run: |
-          if [ "$DEPLOY_ENV" = "production" ]; then
-            vercel deploy --prod --token="$VERCEL_TOKEN" --yes
-          else
-            vercel deploy --token="$VERCEL_TOKEN" --yes
-          fi
-        env:
-          DEPLOY_ENV: ${{ inputs.environment }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          npm ci
+          npm run lint
 
-  deploy-railway:
-    if: inputs.target == 'railway' || inputs.target == 'both'
+  deploy:
+    needs: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

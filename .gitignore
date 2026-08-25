@@ -16,6 +16,7 @@ my-app/dist-ssr/
 # Sensitive credentials — never commit
 sensitive-info/
 *.p8
+*.p12
 
 # OS/editor
 .DS_Store
