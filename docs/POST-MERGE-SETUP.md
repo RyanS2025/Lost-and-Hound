@@ -4,7 +4,7 @@ After the `ryan/team-ready-refactor` branch is merged, complete these steps to f
 
 ---
 
-## 1. Create the Dev Supabase Project
+## 1. Create the Dev Supabase Project -- Done !
 
 This is a free-tier Supabase project that contributors use for local development. It keeps production data safe.
 
@@ -29,7 +29,95 @@ This is a free-tier Supabase project that contributors use for local development
    - Or: go to **Table Editor** in prod, note each table's columns, and recreate them in dev
    - Enable **Row Level Security** on each table (even for dev — keeps behavior consistent)
 
-6. **Seed sample data** — insert a few test users, listings, and locations so contributors have something to work with
+6. **Seed sample data** — first create test users in the Supabase dashboard, then run the SQL below in the SQL Editor.
+
+   **Create test auth users first** (Authentication → Users → Add User):
+
+   | Email | Password | Note |
+   |-------|----------|------|
+   | `testuser1@test.com` | `TestPass123!` | Regular user (poster) |
+   | `testuser2@test.com` | `TestPass123!` | Regular user (finder) |
+   | `testmod@test.com` | `TestPass123!` | Moderator |
+
+   After creating them, copy each user's UUID from the dashboard and replace the placeholders in the SQL below.
+
+   ```sql
+   -- ============================================================
+   -- SEED DATA FOR DEV SUPABASE
+   -- Replace these UUIDs with the real ones from Authentication → Users
+   -- ============================================================
+
+   -- Step 0: Set your user IDs (paste real UUIDs here)
+   DO $$
+   DECLARE
+     user1_id uuid := '00000000-0000-0000-0000-000000000001'; -- testuser1@test.com
+     user2_id uuid := '00000000-0000-0000-0000-000000000002'; -- testuser2@test.com
+     mod_id   uuid := '00000000-0000-0000-0000-000000000003'; -- testmod@test.com
+   BEGIN
+
+   -- Step 1: Profiles
+   INSERT INTO profiles (id, first_name, last_name, default_campus, is_moderator, is_owner, points, referral_answered, email_notifications_enabled, push_notifications_enabled, broadcast_notifications_enabled)
+   VALUES
+     (user1_id, 'Alex',  'Demo',    'boston', false, false, 0,  true, true, true, true),
+     (user2_id, 'Jamie', 'Tester',  'boston', false, false, 10, true, true, true, true),
+     (mod_id,   'Mod',   'Account', 'boston', true,  false, 50, true, true, true, true)
+   ON CONFLICT (id) DO NOTHING;
+
+   -- Step 2: Locations (campus buildings)
+   INSERT INTO locations (name, coordinates, campus)
+   VALUES
+     ('Snell Library',         '42.3384,-71.0880', 'boston'),
+     ('Curry Student Center',  '42.3390,-71.0897', 'boston'),
+     ('ISEC',                  '42.3372,-71.0884', 'boston'),
+     ('Marino Center',         '42.3401,-71.0905', 'boston'),
+     ('Shillman Hall',         '42.3395,-71.0879', 'boston'),
+     ('Ell Hall',              '42.3399,-71.0888', 'boston'),
+     ('International Village', '42.3369,-71.0905', 'boston'),
+     ('West Village H',       '42.3376,-71.0924', 'boston')
+   ON CONFLICT DO NOTHING;
+
+   -- Step 3: Listings (mix of found and lost items)
+   INSERT INTO listings (title, category, location_id, found_at, importance, description, listing_type, resolved, poster_id, poster_name, date)
+   VALUES
+     ('Blue North Face Backpack',  'bags',        (SELECT location_id FROM locations WHERE name = 'Snell Library' LIMIT 1),         'First floor near printers', 3, 'Navy blue North Face backpack with a laptop and notebooks inside. Found on a chair near the printing station.', 'found', false, user1_id, 'Alex Demo',    NOW() - INTERVAL '2 days'),
+     ('AirPods Pro Case',          'electronics', (SELECT location_id FROM locations WHERE name = 'Curry Student Center' LIMIT 1),  'Dunkin counter',            2, 'White AirPods Pro case, no name on it. Left on the counter at Dunkin.', 'found', false, user1_id, 'Alex Demo',    NOW() - INTERVAL '1 day'),
+     ('Gold Hoop Earring',         'accessories', (SELECT location_id FROM locations WHERE name = 'Marino Center' LIMIT 1),         'Women''s locker room',      1, 'Single gold hoop earring found on the bench in the locker room.', 'found', false, user2_id, 'Jamie Tester', NOW() - INTERVAL '3 days'),
+     ('TI-84 Calculator',          'electronics', (SELECT location_id FROM locations WHERE name = 'Shillman Hall' LIMIT 1),         'Room 105 after lecture',    2, 'TI-84 Plus CE graphing calculator, has a small scratch on the screen. Found under a desk.', 'found', false, user2_id, 'Jamie Tester', NOW() - INTERVAL '12 hours'),
+     ('Red Hydroflask',            'bottles',     (SELECT location_id FROM locations WHERE name = 'ISEC' LIMIT 1),                  'Second floor study area',   1, 'Red 32oz Hydroflask with stickers on it. Left on a table.', 'found', true,  user1_id, 'Alex Demo',    NOW() - INTERVAL '5 days'),
+     ('Student ID Card',           'ids',         (SELECT location_id FROM locations WHERE name = 'Ell Hall' LIMIT 1),              'Hallway outside room 312',  3, 'Northeastern student ID card. Not posting the name for privacy — DM me to verify.', 'found', false, mod_id,   'Mod Account',  NOW() - INTERVAL '6 hours'),
+     ('Lost Black Wallet',         'wallets',     (SELECT location_id FROM locations WHERE name = 'International Village' LIMIT 1), 'Somewhere in IV',           3, 'Lost my black leather wallet somewhere in International Village. Has my Charlie card and debit card inside. Please help!', 'lost', false, user2_id, 'Jamie Tester', NOW() - INTERVAL '1 day'),
+     ('Missing Lab Notebook',      'other',       (SELECT location_id FROM locations WHERE name = 'ISEC' LIMIT 1),                  'ISEC 3rd or 4th floor',     2, 'Green lab notebook for CHEM 2311. I think I left it in one of the study rooms. Has my name on the cover.', 'lost', false, user1_id, 'Alex Demo',    NOW() - INTERVAL '4 hours');
+
+   -- Step 4: A conversation between user1 and user2 about the backpack
+   INSERT INTO conversations (listing_id, participant_1, participant_2)
+   VALUES
+     ((SELECT item_id FROM listings WHERE title = 'Blue North Face Backpack' LIMIT 1), user2_id, user1_id);
+
+   -- Step 5: Messages in that conversation
+   INSERT INTO messages (conversation_id, sender_id, content, read, is_system)
+   VALUES
+     ((SELECT id FROM conversations LIMIT 1), user2_id, 'Hey! I think that might be my backpack. It has a red keychain on the zipper — does that match?', true,  false),
+     ((SELECT id FROM conversations LIMIT 1), user1_id, 'Yes it does! When can you pick it up?',                                                         true,  false),
+     ((SELECT id FROM conversations LIMIT 1), user2_id, 'I can come by Snell in about an hour. Want to meet at the front desk?',                         false, false);
+
+   -- Step 6: A sample report (so moderator dashboard has data)
+   INSERT INTO reports (reporter_id, reported_listing_id, reason, details, status)
+   VALUES
+     (user2_id,
+      (SELECT item_id FROM listings WHERE title = 'Red Hydroflask' LIMIT 1),
+      'spam',
+      'This listing looks like a duplicate.',
+      'pending');
+
+   -- Step 7: A support ticket
+   INSERT INTO support_tickets (user_id, name, email, ticket_type, category, ticket_title, ticket_desc, ticket_code, status)
+   VALUES
+     (user1_id, 'Alex Demo', 'testuser1@test.com', 'Bug Report', 'general', 'Map not loading on iOS', 'The map page shows a blank white screen on my iPhone 14. Works fine on desktop.', '12345', 'open');
+
+   END $$;
+   ```
+
+   > **Tip:** If you need to re-seed, run `TRUNCATE profiles, listings, locations, conversations, messages, reports, support_tickets, hidden_conversations, blocked_users CASCADE;` first, then re-run the seed script.
 
 7. **Share credentials with contributors** — send them the dev URL + anon key + service role key via a pinned Slack/Discord message or shared doc (not in the repo). These are safe to share since the dev project has no real user data.
 
