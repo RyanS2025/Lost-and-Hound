@@ -16,6 +16,12 @@ my-app/dist-ssr/
 # Sensitive credentials — never commit
 sensitive-info/
 *.p8
+*.p12
+
+# Internal docs (shared via Slack, not the repo)
+docs/ONBOARDING.md
+docs/TASK-SPLIT.md
+docs/WIP-SCOPE.md
 
 # OS/editor
 .DS_Store
