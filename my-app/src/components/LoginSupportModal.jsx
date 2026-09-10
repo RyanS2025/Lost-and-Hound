@@ -52,7 +52,7 @@ const NAME_MAX = 50;
 const SUBJECT_MAX = 100;
 const DESC_MAX = 500;
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
+const API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "http://localhost:3001" : "");
 
 export default function LoginSupportModal({ open, onClose, effectiveTheme = "light" }) {
   const isDark = effectiveTheme === "dark";

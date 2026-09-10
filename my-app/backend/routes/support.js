@@ -2,7 +2,7 @@ import express from "express";
 import { supabase } from "../lib/supabase.js";
 import { requireAuth, require2FA, requireModerator, requireNotBanned } from "../middleware/auth.js";
 import { writeLimiter, strictLimiter } from "../middleware/rateLimiters.js";
-import { sanitize, profanityCheck, validateRequired, dbError, logModAction } from "../lib/validation.js";
+import { sanitize, dbError } from "../lib/validation.js";
 import { sendPushNotification } from "../lib/pushNotifications.js";
 import { sendReplyNotificationEmail, sendTicketConfirmationEmail } from "../lib/email.js";
 
@@ -47,7 +47,7 @@ function generateTicketCode() {
 }
 
 // POST /api/support — authenticated user submits a ticket
-router.post("/api/support", requireAuth, writeLimiter, async (req, res) => {
+router.post("/api/support", requireAuth, require2FA, requireNotBanned, writeLimiter, async (req, res) => {
   const { ticketType, name, category, subject, description, image_url } = req.body;
 
   if (!ticketType || !category || !subject || !description) {

@@ -55,7 +55,7 @@ export async function sendBroadcastPush(title, body, data = {}) {
         const { data: tokens } = await supabase
           .from("push_tokens")
           .select("player_id")
-          .not("user_id", "in", `(${optedOutIds.join(",")})`);
+          .not("user_id", "in", `(${optedOutIds.map(id => `"${id}"`).join(",")})`);
         const playerIds = (tokens ?? []).map(t => t.player_id).filter(Boolean);
         if (playerIds.length > 0) {
           delete notifPayload.included_segments;

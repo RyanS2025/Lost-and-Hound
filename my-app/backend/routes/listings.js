@@ -232,7 +232,7 @@ router.delete("/api/listings/:item_id", requireAuth, require2FA, requireModerato
 });
 
 // Cleanup with cooldown — runs at most once per hour
-router.post("/api/listings/cleanup", requireAuth, require2FA, async (req, res) => {
+router.post("/api/listings/cleanup", requireAuth, require2FA, requireModerator, async (req, res) => {
   const now = Date.now();
 
   if (now - lastCleanupTime < CLEANUP_COOLDOWN) {

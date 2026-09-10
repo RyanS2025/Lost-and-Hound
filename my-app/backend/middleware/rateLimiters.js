@@ -1,6 +1,6 @@
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 
-const AUTH_CRITICAL_PATHS = new Set(["/api/profile", "/api/auth/check-device", "/api/auth/trust-device"]);
+const AUTH_CRITICAL_PATHS = new Set(["/profile", "/auth/check-device", "/auth/trust-device"]);
 
 export const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

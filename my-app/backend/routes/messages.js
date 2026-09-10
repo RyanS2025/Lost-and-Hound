@@ -1,6 +1,6 @@
 import express from "express";
 import { supabase } from "../lib/supabase.js";
-import { sanitize, profanityCheck, dbError } from "../lib/validation.js";
+import { sanitize, profanityCheck, dbError, UUID_RE } from "../lib/validation.js";
 import { sendPushNotification } from "../lib/pushNotifications.js";
 import { requireAuth, require2FA, requireNotBanned, requireConversationParticipant } from "../middleware/auth.js";
 import { writeLimiter } from "../middleware/rateLimiters.js";
@@ -122,6 +122,10 @@ router.post("/api/conversations", writeLimiter, requireAuth, require2FA, require
     return res.status(400).json({ error: "listing_id and other_user_id are required" });
   }
 
+  if (!UUID_RE.test(other_user_id) || !UUID_RE.test(listing_id)) {
+    return res.status(400).json({ error: "Invalid ID format" });
+  }
+
   if (other_user_id === userId) {
     return res.status(400).json({ error: "Cannot create a conversation with yourself" });
   }
@@ -130,7 +134,10 @@ router.post("/api/conversations", writeLimiter, requireAuth, require2FA, require
     .from("conversations")
     .select("id")
     .eq("listing_id", listing_id)
-    .eq("participant_1", userId)
+    .or(
+      `and(participant_1.eq.${userId},participant_2.eq.${other_user_id}),` +
+      `and(participant_1.eq.${other_user_id},participant_2.eq.${userId})`
+    )
     .maybeSingle();
 
   if (existing) return res.json({ id: existing.id, created: false });
@@ -174,8 +181,15 @@ router.delete("/api/conversations/:id", requireAuth, require2FA, requireConversa
     conversation_id: convoId,
   });
 
-  await supabase.from("messages").delete().eq("conversation_id", convoId);
-  await supabase.from("conversations").delete().eq("id", convoId);
+  const { count } = await supabase
+    .from("hidden_conversations")
+    .select("id", { count: "exact", head: true })
+    .eq("conversation_id", convoId);
+
+  if (count >= 2) {
+    await supabase.from("messages").delete().eq("conversation_id", convoId);
+    await supabase.from("conversations").delete().eq("id", convoId);
+  }
 
   res.json({ success: true });
 });
@@ -201,7 +215,6 @@ router.get("/api/conversations/:id/messages", requireAuth, require2FA, requireCo
 // Total count of unread messages across all of the user's visible conversations.
 // Used by the navbar badge — lightweight head-count query, no message content returned.
 router.get("/api/messages/unread-count", requireAuth, require2FA, async (req, res) => {
-  console.log(`[unread-count] reached — user=${req.user?.id}`);
   const userId = req.user.id;
 
   // Find all conversations the user is in

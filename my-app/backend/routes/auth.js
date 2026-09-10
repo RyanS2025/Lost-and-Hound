@@ -1,7 +1,7 @@
 import express from "express";
 import crypto from "crypto";
 import { supabase } from "../lib/supabase.js";
-import { requireAuth, isAal2Token } from "../middleware/auth.js";
+import { requireAuth, require2FA, isAal2Token } from "../middleware/auth.js";
 import { strictLimiter } from "../middleware/rateLimiters.js";
 import { dbError } from "../lib/validation.js";
 
@@ -73,7 +73,7 @@ router.post("/api/auth/clear-device", requireAuth, async (req, res) => {
   res.json({ success: true });
 });
 
-router.post("/api/auth/reset-password", strictLimiter, requireAuth, async (req, res) => {
+router.post("/api/auth/reset-password", strictLimiter, requireAuth, require2FA, async (req, res) => {
   const { password } = req.body;
 
   if (!password || typeof password !== "string") {

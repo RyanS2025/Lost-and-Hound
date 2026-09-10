@@ -136,9 +136,14 @@ router.post("/api/passkeys/authenticate/options", strictLimiter, async (req, res
     return res.status(400).json({ error: "Must use a @northeastern.edu email address" });
   }
 
-  // Look up the Supabase user
-  const { data: usersData } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  const authUser = usersData?.users?.find(u => u.email === email);
+  // Look up the Supabase user by email
+  let authUser = null;
+  for (let page = 1; page <= 100; page++) {
+    const { data: usersData } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
+    if (!usersData?.users?.length) break;
+    authUser = usersData.users.find(u => u.email === email);
+    if (authUser) break;
+  }
   if (!authUser) return res.status(404).json({ error: "No account found with this email" });
   if (!authUser.email_confirmed_at) return res.status(403).json({ error: "Email not confirmed" });
 
@@ -183,6 +188,12 @@ router.post("/api/passkeys/authenticate/verify", strictLimiter, async (req, res)
     .maybeSingle();
 
   if (!credRow) return res.status(400).json({ error: "Passkey not recognized" });
+
+  const { data: usersData } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const authUser = usersData?.users?.find(u => u.email === email);
+  if (!authUser || authUser.id !== credRow.user_id) {
+    return res.status(403).json({ error: "Credential does not belong to this account" });
+  }
 
   let verification;
   try {

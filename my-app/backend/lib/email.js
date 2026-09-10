@@ -1,5 +1,10 @@
 import { resend } from "./resend.js";
 
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 export async function sendUnreadMessageEmail({ toEmail, toName, messageCount, conversationCount }) {
   if (!resend || !process.env.RESEND_FROM || !toEmail) return;
   const msgWord = messageCount === 1 ? "message" : "messages";
@@ -12,7 +17,7 @@ export async function sendUnreadMessageEmail({ toEmail, toName, messageCount, co
   </h2>
 
   <p style="font-size: 16px; line-height: 1.5;">
-    ${toName ? `Hi <strong>${toName}</strong>, you have` : "You have"} <strong>${messageCount} unread ${msgWord}</strong> across <strong>${conversationCount} ${convWord}</strong> on Lost &amp; Hound.
+    ${toName ? `Hi <strong>${escapeHtml(toName)}</strong>, you have` : "You have"} <strong>${messageCount} unread ${msgWord}</strong> across <strong>${conversationCount} ${convWord}</strong> on Lost &amp; Hound.
   </p>
 
   <div style="text-align: center; margin: 32px 0;">
@@ -42,18 +47,18 @@ export async function sendReplyNotificationEmail({ toEmail, toName, ticketTitle,
   </h2>
 
   <p style="font-size: 16px; line-height: 1.5;">
-    ${toName ? `Hi <strong>${toName}</strong>, a` : "A"} member of the <strong>Lost & Hound</strong> support team has responded to your ticket.
+    ${toName ? `Hi <strong>${escapeHtml(toName)}</strong>, a` : "A"} member of the <strong>Lost &amp; Hound</strong> support team has responded to your ticket.
   </p>
 
   <div style="background-color: #fdf5f5; border-left: 4px solid #A84D48; border-radius: 0 6px 6px 0; padding: 16px 20px; margin: 24px 0;">
-    <p style="margin: 0 0 6px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: #A84D48;">${moderatorName || "Support Team"} replied</p>
-    <p style="margin: 0; font-size: 15px; line-height: 1.6; color: #000000;">${replyMessage.replace(/\n/g, "<br>")}</p>
+    <p style="margin: 0 0 6px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: #A84D48;">${escapeHtml(moderatorName) || "Support Team"} replied</p>
+    <p style="margin: 0; font-size: 15px; line-height: 1.6; color: #000000;">${escapeHtml(replyMessage).replace(/\n/g, "<br>")}</p>
   </div>
 
   <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 28px;">
     <tr>
       <td style="padding: 10px 0; border-bottom: 1px solid #eeeeee; color: #666666;">Ticket</td>
-      <td style="padding: 10px 0; border-bottom: 1px solid #eeeeee; font-weight: bold; text-align: right;">${ticketTitle}</td>
+      <td style="padding: 10px 0; border-bottom: 1px solid #eeeeee; font-weight: bold; text-align: right;">${escapeHtml(ticketTitle)}</td>
     </tr>
     <tr>
       <td style="padding: 10px 0; color: #666666;">Ticket Code</td>
@@ -89,7 +94,7 @@ export async function sendTicketConfirmationEmail({ toEmail, toName, ticketCode,
   </h2>
 
   <p style="font-size: 16px; line-height: 1.5;">
-    ${toName ? `Hi <strong>${toName}</strong>, we` : "We"} received your <strong>${ticketType}</strong> ticket for <strong>Lost & Hound</strong>. A moderator will review it and get back to you shortly.
+    ${toName ? `Hi <strong>${escapeHtml(toName)}</strong>, we` : "We"} received your <strong>${escapeHtml(ticketType)}</strong> ticket for <strong>Lost & Hound</strong>. A moderator will review it and get back to you shortly.
   </p>
 
   <div style="background-color: #fdf5f5; border: 2px solid #A84D48; border-radius: 6px; padding: 24px; text-align: center; margin: 32px 0;">
