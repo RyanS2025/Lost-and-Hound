@@ -1,0 +1,3 @@
+# Keep shell scripts LF so they run under bash on every platform
+# (CRLF makes bash fail with "$'\r': command not found").
+*.sh text eol=lf

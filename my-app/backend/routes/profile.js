@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase.js";
 import { requireAuth, require2FA } from "../middleware/auth.js";
 import { strictLimiter } from "../middleware/rateLimiters.js";
 import { sanitize, profanityCheck, dbError, PROFILE_NAME_MAX_LENGTH, VALID_CAMPUS_IDS } from "../lib/validation.js";
+import { deleteListingsWithDependents } from "./listings.js";
 
 const router = express.Router();
 
@@ -108,11 +109,14 @@ router.delete("/api/profile", strictLimiter, requireAuth, require2FA, async (req
   const userId = req.user.id;
   const errors = [];
 
-  // 1. Delete user's listings
-  const { error: listingsErr } = await supabase
+  // 1. Delete user's listings (and conversations referencing them)
+  const { data: userListings } = await supabase
     .from("listings")
-    .delete()
+    .select("item_id")
     .eq("poster_id", userId);
+  const { error: listingsErr } = await deleteListingsWithDependents(
+    (userListings || []).map((l) => l.item_id)
+  );
   if (listingsErr) errors.push({ step: "listings", message: listingsErr.message });
 
   // 2. Delete messages in conversations the user is part of, then the conversations

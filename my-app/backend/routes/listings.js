@@ -14,6 +14,56 @@ const router = express.Router();
 
 let lastCleanupTime = 0;
 const CLEANUP_COOLDOWN = 60 * 60 * 1000; // 1 hour
+const DELETE_CHUNK_SIZE = 100;
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+export async function deleteListingsWithDependents(itemIds) {
+  const ids = (itemIds || []).filter(Boolean);
+  if (ids.length === 0) return { error: null };
+
+  for (const idBatch of chunk(ids, DELETE_CHUNK_SIZE)) {
+    const { data: convos, error: convoSelErr } = await supabase
+      .from("conversations")
+      .select("id")
+      .in("listing_id", idBatch);
+    if (convoSelErr) return { error: convoSelErr };
+
+    const convoIds = (convos || []).map((c) => c.id);
+
+    for (const convoBatch of chunk(convoIds, DELETE_CHUNK_SIZE)) {
+      const { error: msgErr } = await supabase
+        .from("messages")
+        .delete()
+        .in("conversation_id", convoBatch);
+      if (msgErr) return { error: msgErr };
+
+      const { error: hidErr } = await supabase
+        .from("hidden_conversations")
+        .delete()
+        .in("conversation_id", convoBatch);
+      if (hidErr) return { error: hidErr };
+
+      const { error: convoDelErr } = await supabase
+        .from("conversations")
+        .delete()
+        .in("id", convoBatch);
+      if (convoDelErr) return { error: convoDelErr };
+    }
+
+    const { error: listingErr } = await supabase
+      .from("listings")
+      .delete()
+      .in("item_id", idBatch);
+    if (listingErr) return { error: listingErr };
+  }
+
+  return { error: null };
+}
 
 router.get("/api/listings", requireAuth, require2FA, async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
@@ -26,7 +76,7 @@ router.get("/api/listings", requireAuth, require2FA, async (req, res) => {
 
   let query = supabase
     .from("listings")
-    .select("*, locations(name, coordinates, campus)", { count: "exact" })
+    .select("*, locations!listings_location_id_fkey(name, coordinates, campus)", { count: "exact" })
     .order("date", { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -135,7 +185,7 @@ router.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBa
   const { data, error } = await supabase
     .from("listings")
     .insert([insertData])
-    .select("*, locations(name, coordinates, campus)")
+    .select("*, locations!listings_location_id_fkey(name, coordinates, campus)")
     .single();
 
   if (error) return dbError(res, error, "POST /api/listings");
@@ -211,10 +261,7 @@ router.delete("/api/listings/:item_id", requireAuth, require2FA, requireModerato
     .eq("item_id", req.params.item_id)
     .maybeSingle();
 
-  const { error } = await supabase
-    .from("listings")
-    .delete()
-    .eq("item_id", req.params.item_id);
+  const { error } = await deleteListingsWithDependents([req.params.item_id]);
 
   if (error) return dbError(res, error, "DELETE /api/listings");
 
@@ -244,20 +291,26 @@ router.post("/api/listings/cleanup", requireAuth, require2FA, requireModerator, 
   const resolvedCutoff   = new Date(now - 10 * 86400000).toISOString();
   const unresolvedCutoff = new Date(now - 30 * 86400000).toISOString();
 
-  const { error: resolvedError } = await supabase
+  const { data: resolved } = await supabase
     .from("listings")
-    .delete()
+    .select("item_id")
     .eq("resolved", true)
     .lt("date", resolvedCutoff);
 
+  const { error: resolvedError } = await deleteListingsWithDependents(
+    (resolved || []).map((l) => l.item_id)
+  );
   if (resolvedError) return dbError(res, resolvedError, "POST /api/listings/cleanup");
 
-  const { error: unresolvedError } = await supabase
+  const { data: unresolved } = await supabase
     .from("listings")
-    .delete()
+    .select("item_id")
     .eq("resolved", false)
     .lt("date", unresolvedCutoff);
 
+  const { error: unresolvedError } = await deleteListingsWithDependents(
+    (unresolved || []).map((l) => l.item_id)
+  );
   if (unresolvedError) return dbError(res, unresolvedError, "POST /api/listings/cleanup");
 
   res.json({ success: true });
