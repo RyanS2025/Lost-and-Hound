@@ -96,7 +96,7 @@ router.get("/api/reports", requireAuth, require2FA, requireModerator, async (req
   if (listingIds.length > 0) {
     const { data: listingsData } = await supabase
       .from("listings")
-      .select("*, locations(name, coordinates, campus)")
+      .select("*, locations!listings_location_id_fkey(name, coordinates, campus)")
       .in("item_id", listingIds);
     (listingsData || []).forEach((l) => { listingMap[l.item_id] = l; });
   }
