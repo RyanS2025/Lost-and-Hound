@@ -88,7 +88,7 @@ app.use(pushRouter);
 app.use(financesRouter);
 
 // ── API 404 catch-all ─────────────────────────────────────
-app.all("/api/*", (req, res) => {
+app.all("/api/{*path}", (req, res) => {
   console.log(`[404] No route matched: ${req.method} ${req.path}`);
   res.status(404).json({ error: "Not found" });
 });
