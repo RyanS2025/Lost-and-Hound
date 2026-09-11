@@ -54,6 +54,15 @@ my-app/
 - The app name is "Lost & Hound" — "Oasis" is the GitHub org, not the product name.
 - iOS is the primary mobile target (App Store). Android is deferred but keep code compatible.
 
+## Coding Principles (Karpathy Rules)
+
+These four principles apply to every task. They reduce overengineering and unnecessary diffs.
+
+1. **Think Before Coding** — State assumptions explicitly. If multiple interpretations exist, present them. If unclear, ask before implementing.
+2. **Simplicity First** — Minimum code that solves the problem. No speculative features, no abstractions for single-use code, no error handling for impossible scenarios.
+3. **Surgical Changes** — Touch only what the request requires. Match existing style. Don't refactor adjacent code. Remove only orphans YOUR changes created.
+4. **Goal-Driven Execution** — Transform tasks into verifiable goals. State a brief plan with success criteria. Loop until verified.
+
 ## Database
 
 Supabase PostgreSQL with Row-Level Security on all tables. No ORM — raw Supabase client queries. Key tables: profiles, listings, locations, conversations, messages, reports, support_tickets, push_tokens, finance_config.
@@ -69,5 +78,37 @@ Backend syntax check: `node --check my-app/backend/server.js`
 ## Git Rules
 
 - Do not commit `.env` files or anything in `sensitive-info/`
-- Do not run `git commit` or `git add` — the user handles all git operations
+- Only run `git commit` / `git add` when explicitly asked — never add co-author attribution
 - Branch off `main` for all work
+
+## Claude Code Setup (All Team Members)
+
+Every contributor should install these plugins for a consistent experience. Run these commands in Claude Code (not bash):
+
+```
+# Superpowers — brainstorming, debugging, planning, code review workflows
+/plugin marketplace add anthropics/superpowers
+
+# Superdesign — design-first frontend development, stop shipping AI-slop UI
+/plugin marketplace add superdesigndev/superdesign-skill
+/plugin install superdesign@superdesign
+
+# Trail of Bits — code auditing and vulnerability detection
+/plugin marketplace add trailofbits/skills
+
+# Playwright — browser automation and E2E testing
+/plugin marketplace add lackeyjb/playwright-skill
+/plugin install playwright-skill@playwright-skill
+```
+
+After installing superdesign, also run:
+```bash
+npm install -g @superdesign/cli@latest
+superdesign login
+```
+
+### Project Skills (auto-loaded from .claude/skills/)
+
+- `/get-shit-done` — Fast implementation mode, no planning docs, just build
+- `/close` — Clean session wrap-up, saves context to memory
+- `/karpathy` — Coding principles reference (also baked into this file above)

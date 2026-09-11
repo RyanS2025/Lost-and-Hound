@@ -27,5 +27,6 @@ docs/WIP-SCOPE.md
 .DS_Store
 .vscode/
 .idea/
-.claude/
+.claude/*
+!.claude/skills/
 .playwright-mcp/
