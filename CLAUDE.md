@@ -45,7 +45,9 @@ my-app/
 - **API calls from frontend**: Always use `apiFetch(path, options)` from `src/utils/apiFetch.js`. It attaches the Supabase Bearer token and device trust token automatically.
 - **Backend auth chain**: Routes use `requireAuth → require2FA → [requireModerator|requireOwner|requireNotBanned]` middleware.
 - **Supabase**: Frontend uses anon key (respects RLS). Backend uses service role key (bypasses RLS). Never expose the service role key client-side.
-- **Real-time**: Supabase Realtime subscriptions for live feed updates, messaging, and dashboard sync.
+- **Real-time**: Supabase Realtime subscriptions for messaging and dashboard sync. The feed does NOT use Realtime — it fetches through `apiFetch`.
+- **Image uploads** are screened before they can be attached to anything: client → `/api/upload-url` → PUT to Supabase Storage → `/api/verify-image` → attach. `/api/verify-image` returns a signed token, and the attach endpoints reject an `image_url` without one. Anything that looks like an ID, payment card or personal document is deleted and the post renders a synthetic "photo hidden" tile.
+- **Descriptions are split on POST** into a public half and a desk-only half by `backend/lib/descriptionSplitter.js`. That module is duplicated byte-for-byte at `src/utils/descriptionSplitter.js` so the create form can preview the split live; `scripts/check-splitter-sync.sh` enforces the copies match, and the module must stay import-free for that to work.
 
 ## Important Constraints
 
@@ -65,15 +67,31 @@ These four principles apply to every task. They reduce overengineering and unnec
 
 ## Database
 
-Supabase PostgreSQL with Row-Level Security on all tables. No ORM — raw Supabase client queries. Key tables: profiles, listings, locations, conversations, messages, reports, support_tickets, push_tokens, finance_config.
+Supabase PostgreSQL with Row-Level Security on all tables. No ORM — raw Supabase client queries. Key tables: profiles, listings, locations, conversations, messages, reports, support_tickets, push_tokens, finance_config, sensitive_image_blocks.
+
+Schema is managed by hand in the Supabase dashboard — there is no migration tooling. `backend/migrations/*.sql` are scripts you run there yourself, newest last.
+
+**`listings.description_internal` is staff-only.** `listings.description` holds the auto-redacted public text; `description_internal` holds the original, including the specifics the Curry front desk uses to verify ownership. Never put it in a select reachable by a non-staff client — use `PUBLIC_LISTING_COLUMNS` / `STAFF_LISTING_COLUMNS` from `backend/routes/listings.js` and never `select("*")` on listings. `scripts/check-internal-leak.sh` fails the build otherwise.
 
 ## Testing
 
 ```bash
+# Backend unit tests — Node's built-in runner, no extra dependencies
+cd my-app/backend && npm test
+
+# E2E. If results look nonsensical, something else may be on port 5173:
+#   lsof -nP -iTCP:5173 -sTCP:LISTEN
 cd my-app && npx playwright test --config=tests/playwright.config.js
+
+# Guards that also run in CI
+bash scripts/check-location-embeds.sh   # ambiguous locations embeds
+bash scripts/check-splitter-sync.sh     # splitter copies byte-identical
+bash scripts/check-internal-leak.sh     # description_internal never leaks
 ```
 
 Backend syntax check: `node --check my-app/backend/server.js`
+
+Note: 8 tests in `signup.spec.js`, `login.spec.js` and `navigation.spec.js` fail on `main` as of Sept 2026 — pre-existing, not caused by new work.
 
 ## Git Rules
 
@@ -82,6 +100,8 @@ Backend syntax check: `node --check my-app/backend/server.js`
 - Branch off `main` for all work
 
 ## Claude Code Setup (All Team Members)
+
+Use **Opus 5** (`claude-opus-5`) for work on this repo — set it with `/model` in Claude Code. `.claude/` is gitignored apart from `skills/`, so this is a per-contributor setting, not something the repo can enforce.
 
 Every contributor should install these plugins for a consistent experience. Run these commands in Claude Code (not bash):
 

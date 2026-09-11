@@ -9,6 +9,13 @@ my-app/.env.*
 my-app/backend/.env
 my-app/backend/.env.*
 
+# ...but the templates must stay tracked. The .env.* rules above match
+# .env.example too, which is why my-app/backend/.env.example was invisible to
+# git: CONTRIBUTING.md tells you to copy it, and a fresh clone had no such file.
+!.env.example
+!my-app/.env.example
+!my-app/backend/.env.example
+
 # Build artifacts
 my-app/dist/
 my-app/dist-ssr/

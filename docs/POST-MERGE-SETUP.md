@@ -269,7 +269,8 @@ Contributors only need 4 frontend env vars (all public/client-safe). The backend
    - `SUPABASE_SERVICE_ROLE_KEY` → your **dev** Supabase service role key
    - `ALLOWED_ORIGINS` → `http://localhost:5173,http://localhost:3001`
    - `RESEND_API_KEY` → same as prod (or leave blank — emails just won't send)
-   - `GOOGLE_CLOUD_VISION_API_KEY` → same as prod (or leave blank — image moderation skips)
+   - `GOOGLE_CLOUD_VISION_API_KEY` → same as prod. **Do not leave this blank on a service with `NODE_ENV=production`** — since sensitive-content screening landed, a missing key means every image upload is rejected with a 503 rather than skipped. See section 8. On the dev backend the simplest option is to leave `NODE_ENV` unset, which makes screening fail open with a console warning.
+   - `NODE_ENV` → leave **unset** on the dev backend (see above). Setting it to `production` turns on fail-closed image screening, which needs a real Vision key.
    - `ONESIGNAL_APP_ID` / `ONESIGNAL_REST_API_KEY` → leave blank (push won't send — that's fine for dev)
    - `PASSKEY_RP_ID` → `localhost`
    - `PASSKEY_ORIGIN` → `http://localhost:5173`
@@ -343,6 +344,158 @@ Both run on every PR with zero ongoing maintenance.
 
 ---
 
+## 8. Sensitive-Content Screening (required before deploying that branch)
+
+Two features ship together on `security/sensitive-content-screening`:
+
+- **Image screening** — every upload is checked with Google Vision for adult
+  content *and* for government IDs, payment cards and personal documents.
+  Anything that matches is deleted from storage before it can be attached to
+  anything. The post is still created; it renders a "photo hidden" tile.
+- **The description auto-sorter** — one description is split into a public half
+  (`listings.description`, auto-redacted) and a desk-only half
+  (`listings.description_internal`, the original). The Curry front desk uses
+  the withheld details to verify a claimant really owns an item.
+
+**Run the SQL before deploying the code.** The backend writes columns that do
+not exist yet otherwise.
+
+### 8.1 Run the migrations
+
+In the Supabase Dashboard → SQL Editor, for the **dev** project first and then
+production, paste the whole file and run it once:
+
+```
+my-app/backend/migrations/sensitive_content_screening.sql
+```
+
+Every statement is idempotent, so it is safe to re-run. The last thing it does
+is print a verification grid — every row must read `OK`. Anything marked
+`MISSING` means a statement above it failed; scroll up in the SQL Editor output
+to find which.
+
+It adds:
+
+| Object | Purpose |
+|---|---|
+| `listings.image_redacted`, `support_tickets.image_redacted` | Tells the UI to render the hidden-photo tile |
+| `listings.description_internal` | The staff-only original description |
+| `sensitive_image_blocks` | Append-only audit of rejected images |
+| `vision_usage` + unique index on `month` | Created if absent; `ON CONFLICT (month)` depends on the constraint |
+| `increment_vision_usage_by(month, units)` | Screening costs 2–4 billable units, not 1 |
+
+The script ends with `NOTIFY pgrst, 'reload schema'`. Without it the new columns
+return `PGRST204 column not found` until PostgREST's cache expires by itself.
+
+The column-level `GRANT` block at the bottom is **required, and runs as part of
+the script** — do not split it off for later. This database has a permissive
+`SELECT` policy on `listings` for the `authenticated` role:
+
+```
+polname                                 polroles
+"Authenticated users can read listings" {authenticated}
+```
+
+With that policy in place, the moment `description_internal` exists any logged-in
+user can read it straight from PostgREST — anon key from the JS bundle, their own
+session token, `GET /rest/v1/listings?select=item_id,description_internal` — with
+Express nowhere in the path. `PUBLIC_LISTING_COLUMNS` and `check-internal-leak.sh`
+constrain our source only; they cannot see that request. The `GRANT` is the part
+that actually stops it.
+
+The block derives its column list from `information_schema` rather than a pasted
+list, so it does not rot when the proctor-desk columns land. It excludes
+`description_internal` and `pickup_pin` and leaves every other column readable
+exactly as it is today. Re-run it after adding any column.
+
+The `SELECT` immediately after it must return **zero rows**. If it returns any,
+a role can still read a withheld column and the migration is not finished.
+
+### 8.2 Environment variables
+
+Add to the backend service (Railway → Variables), and to your local
+`my-app/backend/.env`:
+
+```bash
+# Optional. Falls back to SUPABASE_SERVICE_ROLE_KEY if unset.
+UPLOAD_TOKEN_SECRET=
+
+# Stop screening rather than silently billing past the free tier.
+VISION_MONTHLY_UNIT_BUDGET=900
+
+# Leave EMPTY. Incident use only — see 8.4.
+IMAGE_SCREENING_FAIL_OPEN=
+```
+
+`ALLOWED_IMAGE_ORIGINS` is now dead and can be deleted. It was the old way of
+deciding whether an `image_url` was acceptable; a signed upload token replaces
+it. Before removing it in production, confirm no stored `listings.image_url`
+points at a proxy host:
+
+```sql
+SELECT DISTINCT split_part(image_url, '/', 3) AS host
+FROM public.listings WHERE image_url IS NOT NULL;
+```
+
+Every row should be your own Supabase project host.
+
+### 8.3 `GOOGLE_CLOUD_VISION_API_KEY` is now load-bearing
+
+Previously a missing key silently skipped all screening. It now **fails
+closed**: with `NODE_ENV=production` and no key, every image upload is rejected
+with a retry-able 503. Locally, uploads are accepted with a loud console
+warning so you can work without a Google Cloud account.
+
+Verify after deploying by posting a listing with a photo. If it fails with
+"We couldn't check your photo right now", the key is missing or wrong.
+
+### 8.4 Break glass
+
+If Google Vision has an outage, nobody can post a photo and the only remedy is
+a redeploy. To restore uploads immediately:
+
+```bash
+railway variables --set IMAGE_SCREENING_FAIL_OPEN=1
+```
+
+**Turn it back off afterwards.** While it is on, sensitive images are not being
+blocked at all.
+
+### 8.5 Monitoring
+
+Repeat offenders (three or more blocks in 30 days):
+
+```sql
+SELECT subject_id, count(*) AS blocks, max(created_at) AS last_seen,
+       array_agg(DISTINCT tier) AS tiers
+FROM public.sensitive_image_blocks
+WHERE created_at > now() - interval '30 days' AND subject_id IS NOT NULL
+GROUP BY subject_id HAVING count(*) >= 3 ORDER BY blocks DESC;
+```
+
+Which detection rules fire most, for retuning thresholds:
+
+```sql
+SELECT unnest(reasons) AS rule_id, count(*) AS hits, round(avg(score), 1) AS avg_score
+FROM public.sensitive_image_blocks
+WHERE created_at > now() - interval '30 days'
+GROUP BY rule_id ORDER BY hits DESC;
+```
+
+The audit table deliberately stores **no image data, no OCR text, no URLs and
+no raw IPs** — only rule ids, a score, and hashes. You can retune the
+classifier without ever looking at a student's photo.
+
+The description splitter logs a `description_split` line per post carrying
+reason ids and text *lengths* only, for the same reason.
+
+### 8.6 Known limitation
+
+A photo defeats the text split: a picture of the cracked corner **is** the
+identifying detail. Do not tell desk staff that a withheld detail is
+guaranteed private if the listing also carries a photo.
+
+
 ## Recommended Order
 
 | Step | What | Risk | Dependencies |
@@ -355,3 +508,4 @@ Both run on every PR with zero ongoing maintenance.
 | 6 | Set up shared dev backend on Railway | None | Step 1 done (dev Supabase exists) |
 | 7 | Enable lint status check | None | After first PR with the new workflow runs |
 | 8 | Set up Copilot + CodeRabbit PR reviewers | None | After org/repo is set up |
+| 9 | Sensitive-content screening SQL + env vars | **Medium** | Must run BEFORE deploying that branch |

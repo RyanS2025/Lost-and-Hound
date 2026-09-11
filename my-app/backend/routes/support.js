@@ -1,5 +1,6 @@
 import express from "express";
 import { supabase } from "../lib/supabase.js";
+import { verifyUploadToken, storagePathFromPublicUrl, pathBelongsToSubject } from "../lib/uploadToken.js";
 import { requireAuth, require2FA, requireModerator, requireNotBanned } from "../middleware/auth.js";
 import { writeLimiter, strictLimiter } from "../middleware/rateLimiters.js";
 import { sanitize, dbError } from "../lib/validation.js";
@@ -47,7 +48,7 @@ function generateTicketCode() {
 }
 
 // POST /api/support — authenticated user submits a ticket
-router.post("/api/support", requireAuth, require2FA, requireNotBanned, writeLimiter, async (req, res) => {
+router.post("/api/support", writeLimiter, requireAuth, require2FA, requireNotBanned, async (req, res) => {
   const { ticketType, name, category, subject, description, image_url } = req.body;
 
   if (!ticketType || !category || !subject || !description) {
@@ -66,15 +67,34 @@ router.post("/api/support", requireAuth, require2FA, requireNotBanned, writeLimi
   if (!safeTitle) return res.status(400).json({ error: "Subject is required." });
   if (!safeDesc) return res.status(400).json({ error: "Description is required." });
 
-  // Validate image_url must come from our own Supabase storage bucket
+  // ── Verified-image attach ───────────────────────────────────────────────
+  // Matching our storage prefix proves the object is in our bucket; it does
+  // NOT prove the object was screened, or that this user uploaded it. Both
+  // come from the token /api/verify-image issued.
   let safeImageUrl = null;
+  let imageRedacted = false;
+
+  const uploadToken = sanitize(req.body.upload_token, 600);
+
   if (image_url) {
-    const rawUrl = sanitize(image_url, 600);
-    const storagePrefix = `${process.env.SUPABASE_URL}/storage/v1/object/public/listing-images/`;
-    if (!rawUrl.startsWith(storagePrefix)) {
+    const objectPath = storagePathFromPublicUrl(sanitize(image_url, 600));
+    if (!objectPath || !pathBelongsToSubject(objectPath, req.user.id)) {
       return res.status(400).json({ error: "Invalid image URL." });
     }
-    safeImageUrl = rawUrl;
+    const check = verifyUploadToken(uploadToken, { subject: req.user.id });
+    if (!check.ok || check.kind !== "ok" || check.path !== objectPath) {
+      return res.status(400).json({
+        error: "That photo wasn't verified. Please re-attach it and try again.",
+        code: "IMAGE_NOT_VERIFIED",
+      });
+    }
+    safeImageUrl = sanitize(image_url, 600);
+  } else if (req.body.image_redacted === true) {
+    const check = verifyUploadToken(uploadToken, { subject: req.user.id });
+    if (!check.ok || check.kind !== "blocked") {
+      return res.status(400).json({ error: "Invalid redaction token.", code: "IMAGE_NOT_VERIFIED" });
+    }
+    imageRedacted = true;
   }
 
   const { data: inserted, error } = await supabase.from("support_tickets").insert({
@@ -86,6 +106,7 @@ router.post("/api/support", requireAuth, require2FA, requireNotBanned, writeLimi
     ticket_title: safeTitle,
     ticket_desc: safeDesc,
     image_url: safeImageUrl,
+    image_redacted: imageRedacted,
     ticket_code: generateTicketCode(),
   }).select("ticket_code");
 
@@ -129,15 +150,34 @@ router.post("/api/support/guest", strictLimiter, async (req, res) => {
   if (!safeTitle) return res.status(400).json({ error: "Subject is required." });
   if (!safeDesc) return res.status(400).json({ error: "Description is required." });
 
-  // Validate image_url must come from the guest/support/ path in our own storage bucket
+  // ── Verified-image attach (guest) ───────────────────────────────────────
+  // "guest" is not an identity, so the token binds to the path rather than to
+  // a person. Object names carry a random suffix precisely so that one guest
+  // cannot name another's attachment here.
   let safeImageUrl = null;
+  let imageRedacted = false;
+
+  const uploadToken = sanitize(req.body.upload_token, 600);
+
   if (image_url) {
-    const rawUrl = sanitize(image_url, 600);
-    const guestStoragePrefix = `${process.env.SUPABASE_URL}/storage/v1/object/public/listing-images/guest/support/`;
-    if (!rawUrl.startsWith(guestStoragePrefix)) {
+    const objectPath = storagePathFromPublicUrl(sanitize(image_url, 600));
+    if (!objectPath || !pathBelongsToSubject(objectPath, "guest")) {
       return res.status(400).json({ error: "Invalid image URL." });
     }
-    safeImageUrl = rawUrl;
+    const check = verifyUploadToken(uploadToken, { subject: "guest" });
+    if (!check.ok || check.kind !== "ok" || check.path !== objectPath) {
+      return res.status(400).json({
+        error: "That photo wasn't verified. Please re-attach it and try again.",
+        code: "IMAGE_NOT_VERIFIED",
+      });
+    }
+    safeImageUrl = sanitize(image_url, 600);
+  } else if (req.body.image_redacted === true) {
+    const check = verifyUploadToken(uploadToken, { subject: "guest" });
+    if (!check.ok || check.kind !== "blocked") {
+      return res.status(400).json({ error: "Invalid redaction token.", code: "IMAGE_NOT_VERIFIED" });
+    }
+    imageRedacted = true;
   }
 
   const { data: inserted, error } = await supabase.from("support_tickets").insert({
@@ -148,6 +188,7 @@ router.post("/api/support/guest", strictLimiter, async (req, res) => {
     ticket_title: safeTitle,
     ticket_desc: safeDesc,
     image_url: safeImageUrl,
+    image_redacted: imageRedacted,
     ticket_code: generateTicketCode(),
   }).select("ticket_code");
 
@@ -182,7 +223,7 @@ router.get("/api/support-tickets/guest-status", strictLimiter, async (req, res) 
 
   const { data, error } = await supabase
     .from("support_tickets")
-    .select("id, ticket_code, ticket_type, category, ticket_title, ticket_desc, status, claimed_by, image_url, created_at, support_replies(id, is_moderator, message, created_at)")
+    .select("id, ticket_code, ticket_type, category, ticket_title, ticket_desc, status, claimed_by, image_url, image_redacted, created_at, support_replies(id, is_moderator, message, created_at)")
     .eq("ticket_code", ticketCode)
     .eq("email", email)
     .single();
@@ -295,7 +336,7 @@ router.get("/api/support-tickets", requireAuth, require2FA, requireModerator, as
 
     let query = supabase
       .from("support_tickets")
-      .select("id, ticket_code, user_id, ticket_type, category, ticket_title, ticket_desc, name, email, status, image_url, claimed_by, resolved_by, resolved_at, severity, assignee, assignee_id, environment, estimated_effort, repro_steps, fix_notes, fix_pr_url, deadline, created_at, support_replies(id, is_moderator, message, created_at)", { count: "exact" })
+      .select("id, ticket_code, user_id, ticket_type, category, ticket_title, ticket_desc, name, email, status, image_url, image_redacted, claimed_by, resolved_by, resolved_at, severity, assignee, assignee_id, environment, estimated_effort, repro_steps, fix_notes, fix_pr_url, deadline, created_at, support_replies(id, is_moderator, message, created_at)", { count: "exact" })
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -318,7 +359,7 @@ router.get("/api/support-tickets/mine", requireAuth, async (req, res) => {
 
     const { data, error, count } = await supabase
       .from("support_tickets")
-      .select("id, ticket_code, ticket_type, category, ticket_title, ticket_desc, status, claimed_by, image_url, created_at, support_replies(id, is_moderator, message, created_at)", { count: "exact" })
+      .select("id, ticket_code, ticket_type, category, ticket_title, ticket_desc, status, claimed_by, image_url, image_redacted, created_at, support_replies(id, is_moderator, message, created_at)", { count: "exact" })
       .eq("user_id", req.user.id)
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
@@ -358,7 +399,7 @@ router.get("/api/support-tickets/my-work", requireAuth, require2FA, requireModer
 
     const { data, error, count } = await supabase
       .from("support_tickets")
-      .select("id, ticket_code, user_id, ticket_type, category, ticket_title, ticket_desc, name, email, status, image_url, claimed_by, resolved_by, resolved_at, severity, assignee, assignee_id, environment, estimated_effort, repro_steps, fix_notes, fix_pr_url, deadline, created_at, support_replies(id, is_moderator, message, created_at)", { count: "exact" })
+      .select("id, ticket_code, user_id, ticket_type, category, ticket_title, ticket_desc, name, email, status, image_url, image_redacted, claimed_by, resolved_by, resolved_at, severity, assignee, assignee_id, environment, estimated_effort, repro_steps, fix_notes, fix_pr_url, deadline, created_at, support_replies(id, is_moderator, message, created_at)", { count: "exact" })
       .eq("assignee_id", req.user.id)
       .not("status", "eq", "closed")
       .order("deadline", { ascending: true, nullsFirst: false })

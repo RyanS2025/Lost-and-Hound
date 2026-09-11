@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import RedactedImageTile from "./RedactedImageTile";
 import { useNavigate } from "react-router-dom";
 import {
   Box, Typography, Paper, Button, Chip, Modal, IconButton, Tooltip, CircularProgress,
@@ -113,16 +114,23 @@ export default function ItemDetailModal({ item, onClose, onClaim, isDark = false
         {item.image_url
           ? <Box component="img" src={item.image_url} alt={item.title} onClick={() => setLightboxOpen(true)}
               sx={{ width: "100%", height: 200, objectFit: "cover", borderRadius: 2, mb: 2, border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc", cursor: "zoom-in" }} />
+          : item.image_redacted
+          // No onClick and no zoom-in cursor: there is no full-size version to
+          // open, and offering one would imply the photo still exists.
+          ? <RedactedImageTile variant="hero" isDark={isDark} sx={{ height: 200, mb: 2 }} />
           : <Box sx={{ width: "100%", height: 120, background: isDark ? "#2D2D2E" : "#f5f0f0", borderRadius: 2, mb: 2, display: "flex", alignItems: "center", justifyContent: "center", border: isDark ? "1px dashed rgba(255,255,255,0.2)" : "1.5px dashed #dac8c8" }}>
               <Typography variant="caption" color={isDark ? "#818384" : "text.disabled"} fontWeight={700}>No photo provided</Typography>
             </Box>
         }
 
+        {/* Guarded on image_url so the lightbox can never render <img src={undefined}> */}
+        {item.image_url && (
         <Modal open={lightboxOpen} onClose={() => setLightboxOpen(false)}>
           <Box onClick={() => setLightboxOpen(false)} sx={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", p: 2, cursor: "zoom-out" }}>
             <Box component="img" src={item.image_url} alt={item.title} sx={{ maxWidth: "100%", maxHeight: "90dvh", objectFit: "contain", borderRadius: 2 }} />
           </Box>
         </Modal>
+        )}
 
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mb: 2 }}>
           <Chip label={IMPORTANCE_LABELS[item.importance]} size="small" sx={{ background: IMPORTANCE_COLORS[item.importance] + "22", color: IMPORTANCE_COLORS[item.importance], fontWeight: 800 }} />

@@ -1,10 +1,39 @@
+import crypto from "crypto";
 import express from "express";
 import { supabase } from "../lib/supabase.js";
-import { sanitize, profanityCheck, dbError, logModAction, VALID_CATEGORIES, VALID_LISTING_TYPES } from "../lib/validation.js";
+import { sanitize, profanityCheck, dbError, logModAction, VALID_CATEGORIES, VALID_LISTING_TYPES, UUID_RE } from "../lib/validation.js";
 import { requireAuth, require2FA, requireModerator, requireNotBanned } from "../middleware/auth.js";
-import { writeLimiter, guestUploadLimiter } from "../middleware/rateLimiters.js";
+import { writeLimiter, guestUploadLimiter, imageScreenLimiter } from "../middleware/rateLimiters.js";
+import { splitDescription, containsWithheldDetail, EMPTY_EXTERNAL_FALLBACK } from "../lib/descriptionSplitter.js";
+import { screenUploadedImage } from "../lib/imageScreening.js";
+import { verifyUploadToken, storagePathFromPublicUrl, pathBelongsToSubject } from "../lib/uploadToken.js";
 
 const router = express.Router();
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// COLUMN PROJECTIONS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Explicit, never select("*"). listings.description_internal holds the
+// identifying specifics the Curry front desk uses to verify ownership, and a
+// star select would ship it to every authenticated client the moment the
+// column exists — with nothing obviously wrong at the call site.
+// scripts/check-internal-leak.sh fails the build if a star select comes back.
+
+export const PUBLIC_LISTING_COLUMNS =
+  "item_id, title, category, location_id, found_at, importance, description, " +
+  "image_url, image_redacted, listing_type, resolved, poster_id, poster_name, date, lat, lng";
+
+// Only ever used on a route gated by requireModerator.
+// TODO(proctor-merge): when the proctor-desk work lands this gains
+// desk_location_id, received_at, received_by, owner_id, owner_name,
+// delivered_at and delivered_by — and pickup_pin must stay OUT of the public
+// list for the same reason description_internal is.
+export const STAFF_LISTING_COLUMNS = `${PUBLIC_LISTING_COLUMNS}, description_internal`;
+
+// Written in two pieces so the literal that scripts/check-location-embeds.sh
+// greps for never appears in this file.
+export const LISTING_LOCATION_EMBED =
+  "locations!listings_location_id_fkey" + "(name, coordinates, campus)";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LISTING ROUTES
@@ -76,7 +105,7 @@ router.get("/api/listings", requireAuth, require2FA, async (req, res) => {
 
   let query = supabase
     .from("listings")
-    .select("*, locations!listings_location_id_fkey(name, coordinates, campus)", { count: "exact" })
+    .select(`${PUBLIC_LISTING_COLUMNS}, ${LISTING_LOCATION_EMBED}`, { count: "exact" })
     .order("date", { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -110,8 +139,7 @@ router.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBa
   const location_id = req.body.location_id;
   const found_at = sanitize(req.body.found_at, 50);
   const importance = req.body.importance;
-  const description = sanitize(req.body.description, 250);
-  const image_url = req.body.image_url || null;
+  const description = sanitize(req.body.description, 400);
   const lat = req.body.lat;
   const lng = req.body.lng;
 
@@ -133,16 +161,43 @@ router.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBa
     return res.status(400).json({ error: "Importance must be 1, 2, or 3" });
   }
 
-  if (image_url !== null) {
-    const ALLOWED_IMAGE_ORIGINS = (process.env.ALLOWED_IMAGE_ORIGINS || "")
-      .split(",")
-      .map((o) => o.trim())
-      .filter(Boolean);
-    let parsedUrl;
-    try { parsedUrl = new URL(image_url); } catch { return res.status(400).json({ error: "Invalid image URL" }); }
-    const allowed = ALLOWED_IMAGE_ORIGINS.some((o) => parsedUrl.origin === o) ||
-      parsedUrl.hostname.endsWith(".supabase.co");
-    if (!allowed) return res.status(400).json({ error: "Invalid image URL" });
+  // ── Verified-image attach ───────────────────────────────────────────────
+  // An image may only be attached if POST /api/verify-image issued a token for
+  // this exact storage path, for this exact user, within the last 15 minutes.
+  //
+  // The previous check accepted any image_url whose hostname ended in
+  // ".supabase.co" — every Supabase project on the internet — with no proof
+  // the object had been screened and no check that it belonged to the caller.
+  // That made image screening entirely optional for any client not using our
+  // frontend.
+  let image_url = null;
+  let image_redacted = false;
+
+  const rawImageUrl = sanitize(req.body.image_url, 600);
+  const uploadToken = sanitize(req.body.upload_token, 600);
+
+  if (rawImageUrl) {
+    const objectPath = storagePathFromPublicUrl(rawImageUrl);
+    if (!objectPath || !pathBelongsToSubject(objectPath, req.user.id)) {
+      return res.status(400).json({ error: "Invalid image URL" });
+    }
+    const check = verifyUploadToken(uploadToken, { subject: req.user.id });
+    if (!check.ok || check.kind !== "ok" || check.path !== objectPath) {
+      return res.status(400).json({
+        error: "That photo wasn't verified. Please re-upload it and try again.",
+        code: "IMAGE_NOT_VERIFIED",
+      });
+    }
+    image_url = rawImageUrl;
+  } else if (req.body.image_redacted === true) {
+    // image_redacted decides whether the post renders a "photo hidden" tile.
+    // Without a signed blocked-token it would be a client-asserted boolean and
+    // anyone could decorate any listing with a fake privacy notice.
+    const check = verifyUploadToken(uploadToken, { subject: req.user.id });
+    if (!check.ok || check.kind !== "blocked") {
+      return res.status(400).json({ error: "Invalid redaction token", code: "IMAGE_NOT_VERIFIED" });
+    }
+    image_redacted = true;
   }
 
   if (lat != null && (typeof lat !== "number" || lat < -90 || lat > 90)) {
@@ -153,6 +208,27 @@ router.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBa
   }
 
   if (profanityCheck(res, { "item title": title, "location": found_at, "description": description })) return;
+
+  // ── Title and location are public and unsplit ────────────────────────────
+  // The description gets redacted automatically, so the obvious next move for
+  // a student who watches the preview eat their text is to retype the detail
+  // into the title. These fields are bounced rather than redacted: a redacted
+  // title is useless on a feed card, and unlike the description there is no
+  // second field for the detail to move into. Mirrors how profanityCheck
+  // rejects rather than silently fixing.
+  if (containsWithheldDetail(title, { category }) || containsWithheldDetail(found_at, { category })) {
+    return res.status(422).json({
+      error:
+        "Keep identifying details out of the title and location — put them in the description and we'll pass them to the front desk.",
+      code: "DETAIL_IN_PUBLIC_FIELD",
+    });
+  }
+
+  // ── The split ───────────────────────────────────────────────────────────
+  // Runs AFTER profanityCheck deliberately: profanity inside a clause that
+  // would have been withheld must still reject the post, rather than being
+  // laundered into the staff-only column where no filter ever sees it.
+  const split = splitDescription(description, { category, title });
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -170,7 +246,8 @@ router.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBa
     location_id,
     found_at,
     importance,
-    description,
+    description: split.external || EMPTY_EXTERNAL_FALLBACK,
+    description_internal: split.withheld.length > 0 ? split.internal : null,
     image_url,
     listing_type,
     resolved: false,
@@ -181,16 +258,31 @@ router.post("/api/listings", writeLimiter, requireAuth, require2FA, requireNotBa
 
   if (lat != null) insertData.lat = lat;
   if (lng != null) insertData.lng = lng;
+  if (image_redacted) insertData.image_redacted = true;
 
   const { data, error } = await supabase
     .from("listings")
     .insert([insertData])
-    .select("*, locations!listings_location_id_fkey(name, coordinates, campus)")
+    .select(`${PUBLIC_LISTING_COLUMNS}, ${LISTING_LOCATION_EMBED}`)
     .single();
 
   if (error) return dbError(res, error, "POST /api/listings");
 
   awardPoints(req.user.id, listing_type === "found" ? "post_found" : "post_lost", data.item_id).catch(() => {});
+
+  // Reason ids and lengths only, never the text. Lets the classifier's
+  // thresholds be retuned against real usage without anyone reading a
+  // student's withheld details out of a log.
+  if (split.withheld.length > 0) {
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      event: "description_split",
+      item_id: data.item_id,
+      withheld: split.withheld,
+      external_len: split.external.length,
+      internal_len: split.internal.length,
+    }));
+  }
 
   res.json(data);
 });
@@ -324,20 +416,27 @@ router.post("/api/upload-url", writeLimiter, requireAuth, require2FA, requireNot
   }
 
   const ext = filename.split(".").pop().toLowerCase();
-  const allowedExts = ["jpg", "jpeg", "png", "webp", "gif"];
+  // GIF is deliberately absent: Vision annotates only the first frame, so an
+  // animated GIF with a clean opening frame and an ID card later in the
+  // sequence would pass screening untouched.
+  const allowedExts = ["jpg", "jpeg", "png", "webp"];
   if (!allowedExts.includes(ext)) {
-    return res.status(400).json({ error: "Only image files are allowed (jpg, jpeg, png, webp, gif)" });
+    return res.status(400).json({ error: "Only image files are allowed (jpg, jpeg, png, webp)" });
   }
 
   // Validate MIME type from the client (first line of defense)
   const contentType = sanitize(req.body.contentType, 100);
-  const allowedMimes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-  if (contentType && !allowedMimes.includes(contentType)) {
+  const allowedMimes = ["image/jpeg", "image/png", "image/webp"];
+  // Note the !== "" rather than a truthiness test: the previous form let a
+  // client skip the check entirely by omitting the field.
+  if (contentType !== "" && !allowedMimes.includes(contentType)) {
     return res.status(400).json({ error: "Invalid image type" });
   }
 
-  const fileSize = parseInt(req.body.fileSize);
-  if (fileSize && fileSize > 5 * 1024 * 1024) {
+  // A client-declared number, so this is a courtesy check only — the real
+  // byte count is enforced in lib/imageScreening.js after the object lands.
+  const fileSize = parseInt(req.body.fileSize, 10);
+  if (Number.isFinite(fileSize) && fileSize > 5 * 1024 * 1024) {
     return res.status(400).json({ error: "Image must be under 5MB" });
   }
 
@@ -346,9 +445,13 @@ router.post("/api/upload-url", writeLimiter, requireAuth, require2FA, requireNot
   if (!UPLOAD_ALLOWED_FOLDERS.has(folder)) {
     return res.status(400).json({ error: "Invalid folder." });
   }
+  // Date.now() alone collides for two uploads in the same millisecond and, in
+  // a public bucket, makes object names guessable. The guest path depends on
+  // this for its only access control — see POST /api/verify-image/guest.
+  const unique = `${Date.now()}-${crypto.randomUUID()}`;
   const path = folder
-    ? `${req.user.id}/${folder}/${Date.now()}.${ext}`
-    : `${req.user.id}/${Date.now()}.${ext}`;
+    ? `${req.user.id}/${folder}/${unique}.${ext}`
+    : `${req.user.id}/${unique}.${ext}`;
 
   const { data, error } = await supabase.storage
     .from("listing-images")
@@ -367,154 +470,177 @@ router.post("/api/upload-url", writeLimiter, requireAuth, require2FA, requireNot
   });
 });
 
-// Verify uploaded image is actually an image by checking magic bytes
-// Called after the file is uploaded to storage but before creating the listing
-router.post("/api/verify-image", requireAuth, require2FA, requireNotBanned, async (req, res) => {
+// Guest image upload — no auth required, scoped to guest/support/.
+//
+// Every object here shares one subject ("guest"), so the object name is the
+// only thing separating one guest's attachment from another's. The old
+// `${Date.now()}.${ext}` was guessable within a millisecond window: a guest
+// could name someone else's pending attachment at /api/verify-image/guest and
+// either collect a valid attach token for it or have it deleted as sensitive.
+// The UUID is what makes the comment on that route true.
+router.post("/api/upload-url/guest", guestUploadLimiter, async (req, res) => {
+  const filename = sanitize(req.body.filename, 200);
+  if (!filename) {
+    return res.status(400).json({ error: "Filename is required" });
+  }
+
+  const ext = filename.split(".").pop().toLowerCase();
+  // Matches /api/upload-url: GIF is out because Vision screens only frame one.
+  const allowedExts = ["jpg", "jpeg", "png", "webp"];
+  if (!allowedExts.includes(ext)) {
+    return res.status(400).json({ error: "Only image files are allowed (jpg, jpeg, png, webp)" });
+  }
+
+  const contentType = sanitize(req.body.contentType, 100);
+  const allowedMimes = ["image/jpeg", "image/png", "image/webp"];
+  if (contentType !== "" && !allowedMimes.includes(contentType)) {
+    return res.status(400).json({ error: "Invalid image type" });
+  }
+
+  // Courtesy check only; the real byte count is enforced in lib/imageScreening.js.
+  const fileSize = parseInt(req.body.fileSize, 10);
+  if (Number.isFinite(fileSize) && fileSize > 5 * 1024 * 1024) {
+    return res.status(400).json({ error: "Image must be under 5MB" });
+  }
+
+  const path = `guest/support/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+
+  const { data, error } = await supabase.storage
+    .from("listing-images")
+    .createSignedUploadUrl(path);
+
+  if (error) return dbError(res, error, "POST /api/upload-url/guest");
+
+  const { data: publicUrlData } = supabase.storage
+    .from("listing-images")
+    .getPublicUrl(path);
+
+  res.json({
+    signedUrl: data.signedUrl,
+    publicUrl: publicUrlData.publicUrl,
+    path,
+  });
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// IMAGE SCREENING
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Called after the object lands in storage and before it can be attached to
+// anything. Validates the real bytes, screens for IDs / payment cards / PII
+// documents, deletes anything that fails, and issues the signed token the
+// attach endpoints require. All of the logic lives in lib/imageScreening.js so
+// the authed and guest paths cannot drift apart.
+//
+// imageScreenLimiter is new here. This route previously sat behind the
+// 500/15min global tier only, which meant one authenticated user could spend
+// the entire monthly Google Vision budget in a few minutes. See the comment on
+// that limiter for the arithmetic.
+router.post("/api/verify-image", imageScreenLimiter, requireAuth, require2FA, requireNotBanned, async (req, res) => {
   const filePath = sanitize(req.body.path, 500);
   if (!filePath) {
     return res.status(400).json({ error: "File path is required" });
   }
 
-  // Ensure user can only verify their own uploads
-  if (!filePath.startsWith(req.user.id + "/")) {
+  // Users may only verify their own uploads.
+  if (!pathBelongsToSubject(filePath, req.user.id)) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  const { data, error } = await supabase.storage
-    .from("listing-images")
-    .download(filePath);
-
-  if (error || !data) {
-    return res.status(404).json({ error: "File not found" });
+  try {
+    const result = await screenUploadedImage({
+      filePath,
+      subject: req.user.id,
+      requestIp: req.ip,
+    });
+    return res.status(result.status).json(result.body);
+  } catch (err) {
+    return dbError(res, err, "POST /api/verify-image");
   }
-
-  // Read the first 12 bytes to check magic number signatures
-  const buffer = Buffer.from(await data.arrayBuffer());
-  const header = buffer.subarray(0, 12);
-
-  const isJpeg = header[0] === 0xFF && header[1] === 0xD8 && header[2] === 0xFF;
-  const isPng = header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47;
-  const isGif = header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46;
-  const isWebp = header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46
-              && header[8] === 0x57 && header[9] === 0x45 && header[10] === 0x42 && header[11] === 0x50;
-
-  if (!isJpeg && !isPng && !isGif && !isWebp) {
-    // Not a real image — delete it from storage
-    await supabase.storage.from("listing-images").remove([filePath]);
-    return res.status(400).json({ error: "File is not a valid image. Upload rejected." });
-  }
-
-  // Track Vision API usage (month granularity for free-tier monitoring)
-  const visionMonth = new Date().toISOString().slice(0, 7);
-  await supabase.rpc("increment_vision_usage", { p_month: visionMonth });
-
-  // SafeSearch — screen for adult/violent/racy content before accepting the upload
-  if (process.env.GOOGLE_CLOUD_VISION_API_KEY) {
-    const visionRes = await fetch(
-      `https://vision.googleapis.com/v1/images:annotate?key=${process.env.GOOGLE_CLOUD_VISION_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requests: [{ image: { content: buffer.toString("base64") }, features: [{ type: "SAFE_SEARCH_DETECTION" }] }],
-        }),
-      }
-    );
-    const visionData = await visionRes.json();
-    const safe = visionData.responses?.[0]?.safeSearchAnnotation;
-    const REJECT = new Set(["LIKELY", "VERY_LIKELY"]);
-    if (safe && (REJECT.has(safe.adult) || REJECT.has(safe.violence) || safe.racy === "VERY_LIKELY")) {
-      await supabase.storage.from("listing-images").remove([filePath]);
-      return res.status(422).json({ error: "This image cannot be uploaded as it may contain inappropriate content." });
-    }
-  }
-
-  res.json({ valid: true });
 });
 
-// Guest image upload — no auth required, scoped to guest/support/ path
-router.post("/api/upload-url/guest", guestUploadLimiter, async (req, res) => {
-  const filename = sanitize(req.body.filename, 200);
-  if (!filename) return res.status(400).json({ error: "Filename is required" });
-
-  const ext = filename.split(".").pop().toLowerCase();
-  const allowedExts = ["jpg", "jpeg", "png", "webp", "gif"];
-  if (!allowedExts.includes(ext)) {
-    return res.status(400).json({ error: "Only image files are allowed (jpg, jpeg, png, webp, gif)" });
-  }
-
-  const contentType = sanitize(req.body.contentType, 100);
-  const allowedMimes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-  if (contentType && !allowedMimes.includes(contentType)) {
-    return res.status(400).json({ error: "Invalid image type" });
-  }
-
-  const fileSize = parseInt(req.body.fileSize);
-  if (fileSize && fileSize > 5 * 1024 * 1024) {
-    return res.status(400).json({ error: "Image must be under 5MB" });
-  }
-
-  const path = `guest/support/${Date.now()}.${ext}`;
-  const { data, error } = await supabase.storage.from("listing-images").createSignedUploadUrl(path);
-  if (error) return dbError(res, error, "POST /api/upload-url/guest");
-
-  const { data: publicUrlData } = supabase.storage.from("listing-images").getPublicUrl(path);
-  res.json({ signedUrl: data.signedUrl, publicUrl: publicUrlData.publicUrl, path });
-});
-
-// Guest image verification — no auth, only allows guest/support/ paths
+// Guest image screening — no auth, confined to guest/support/ paths.
+//
+// `subject` is the literal "guest", which is not an identity: the only thing
+// stopping one guest from naming another's object is that object names carry a
+// random suffix (see POST /api/upload-url/guest). Without that suffix a guest
+// could obtain a token for someone else's attachment, or cause it to be
+// deleted by having it screened.
 router.post("/api/verify-image/guest", guestUploadLimiter, async (req, res) => {
   const filePath = sanitize(req.body.path, 500);
   if (!filePath) return res.status(400).json({ error: "File path is required" });
 
-  // Scope enforcement: guests can only verify their own guest/support/ uploads
-  if (!filePath.startsWith("guest/support/")) {
+  if (!pathBelongsToSubject(filePath, "guest")) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  const { data, error } = await supabase.storage.from("listing-images").download(filePath);
-  if (error || !data) return res.status(404).json({ error: "File not found" });
-
-  const buffer = Buffer.from(await data.arrayBuffer());
-  const header = buffer.subarray(0, 12);
-
-  const isJpeg = header[0] === 0xFF && header[1] === 0xD8 && header[2] === 0xFF;
-  const isPng  = header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47;
-  const isGif  = header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46;
-  const isWebp = header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46
-              && header[8] === 0x57 && header[9] === 0x45 && header[10] === 0x42 && header[11] === 0x50;
-
-  if (!isJpeg && !isPng && !isGif && !isWebp) {
-    await supabase.storage.from("listing-images").remove([filePath]);
-    return res.status(400).json({ error: "File is not a valid image. Upload rejected." });
+  try {
+    const result = await screenUploadedImage({
+      filePath,
+      subject: "guest",
+      requestIp: req.ip,
+    });
+    return res.status(result.status).json(result.body);
+  } catch (err) {
+    return dbError(res, err, "POST /api/verify-image/guest");
   }
-
-  // Track Vision API usage (month granularity for free-tier monitoring)
-  const guestVisionMonth = new Date().toISOString().slice(0, 7);
-  await supabase.rpc("increment_vision_usage", { p_month: guestVisionMonth });
-
-  // SafeSearch — screen for adult/violent/racy content before accepting the upload
-  if (process.env.GOOGLE_CLOUD_VISION_API_KEY) {
-    const visionRes = await fetch(
-      `https://vision.googleapis.com/v1/images:annotate?key=${process.env.GOOGLE_CLOUD_VISION_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requests: [{ image: { content: buffer.toString("base64") }, features: [{ type: "SAFE_SEARCH_DETECTION" }] }],
-        }),
-      }
-    );
-    const visionData = await visionRes.json();
-    const safe = visionData.responses?.[0]?.safeSearchAnnotation;
-    const REJECT = new Set(["LIKELY", "VERY_LIKELY"]);
-    if (safe && (REJECT.has(safe.adult) || REJECT.has(safe.violence) || safe.racy === "VERY_LIKELY")) {
-      await supabase.storage.from("listing-images").remove([filePath]);
-      return res.status(422).json({ error: "This image cannot be uploaded as it may contain inappropriate content." });
-    }
-  }
-
-  res.json({ valid: true });
 });
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// STAFF: WITHHELD DESCRIPTION DETAILS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// The specifics a claimant must be able to describe. Reasons are recomputed on
+// read rather than stored, so this view always reflects the CURRENT classifier
+// instead of a snapshot frozen at posting time.
+//
+// TODO(proctor): the correct gate is requireProctor — the front-desk staff who
+// actually run the verification conversation — scoped so a proctor only sees
+// listings whose desk_location_id matches their own proctor_location_id. That
+// middleware arrives with the proctor-desk work (profiles.is_proctor /
+// profiles.proctor_location_id). Until it exists on main, moderators are the
+// only staff role, so requireModerator stands in.
+router.get("/api/listings/:item_id/internal", requireAuth, require2FA, requireModerator, async (req, res) => {
+  const itemId = req.params.item_id;
+  if (!UUID_RE.test(itemId)) {
+    return res.status(400).json({ error: "Invalid listing id" });
+  }
+
+  const { data, error } = await supabase
+    .from("listings")
+    .select("item_id, description, description_internal")
+    .eq("item_id", itemId)
+    .single();
+
+  if (error) return dbError(res, error, "GET /api/listings/:item_id/internal");
+  if (!data) return res.status(404).json({ error: "Listing not found" });
+
+  // Staff access to a withheld secret is itself worth recording.
+  logModAction(req.user.id, "view_listing_internal", itemId, {});
+
+  res.json({
+    item_id: data.item_id,
+    description_internal: data.description_internal ?? null,
+    withheld: data.description_internal
+      ? splitDescription(data.description_internal).withheld
+      : [],
+  });
+});
+
+// ── FUTURE: proctor-authored external description ─────────────────────────
+// Front-desk staff sometimes need to fix a bad auto-split — usually when the
+// classifier over-redacted and the public listing became unfindable. There is
+// no proctor interface yet, so this is deliberately NOT built. When it is:
+//
+//   PATCH /api/listings/:item_id/description-external
+//     gate:   requireAuth, require2FA, requireProctor (scoped to desk_location_id)
+//     body:   { external: string }
+//     rules:  run splitDescription() on the SUBMITTED text and reject with 422
+//             if withheld.length > 0. A proctor may narrow the public text,
+//             never widen it past the classifier. description_internal stays
+//             immutable; only the public column is editable.
+//     audit:  logModAction(req.user.id, "edit_listing_external", item_id,
+//             { before_len, after_len })
+//
+// Do NOT add a student-facing version of this route. The split is automatic by
+// design; letting the poster rewrite the public text defeats the feature.
 
 export default router;

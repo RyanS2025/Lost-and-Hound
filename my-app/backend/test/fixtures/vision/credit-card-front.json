@@ -1,0 +1,16 @@
+{
+  "responses": [
+    {
+      "fullTextAnnotation": {
+        "text": "VISA\n4526 0181 5908 3012\nVALID THRU 08/28\nCARDHOLDER NAME\nCHASE"
+      },
+      "safeSearchAnnotation": {
+        "adult": "VERY_UNLIKELY",
+        "spoof": "UNLIKELY",
+        "medical": "VERY_UNLIKELY",
+        "violence": "VERY_UNLIKELY",
+        "racy": "UNLIKELY"
+      }
+    }
+  ]
+}

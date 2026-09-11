@@ -1,0 +1,12 @@
+{
+  "responses": [
+    {
+      "labelAnnotations": [
+        {
+          "description": "Identity document",
+          "score": 0.91
+        }
+      ]
+    }
+  ]
+}

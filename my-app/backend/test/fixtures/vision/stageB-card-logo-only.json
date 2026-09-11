@@ -1,0 +1,12 @@
+{
+  "responses": [
+    {
+      "logoAnnotations": [
+        {
+          "description": "Visa",
+          "score": 0.78
+        }
+      ]
+    }
+  ]
+}

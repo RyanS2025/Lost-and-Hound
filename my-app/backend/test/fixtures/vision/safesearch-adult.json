@@ -1,0 +1,16 @@
+{
+  "responses": [
+    {
+      "fullTextAnnotation": {
+        "text": ""
+      },
+      "safeSearchAnnotation": {
+        "adult": "LIKELY",
+        "spoof": "UNLIKELY",
+        "medical": "VERY_UNLIKELY",
+        "violence": "VERY_UNLIKELY",
+        "racy": "UNLIKELY"
+      }
+    }
+  ]
+}

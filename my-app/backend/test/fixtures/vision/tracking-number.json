@@ -1,0 +1,16 @@
+{
+  "responses": [
+    {
+      "fullTextAnnotation": {
+        "text": "SHIP TO\nTRACKING 1Z999AA10123456784\nUPS GROUND"
+      },
+      "safeSearchAnnotation": {
+        "adult": "VERY_UNLIKELY",
+        "spoof": "UNLIKELY",
+        "medical": "VERY_UNLIKELY",
+        "violence": "VERY_UNLIKELY",
+        "racy": "UNLIKELY"
+      }
+    }
+  ]
+}

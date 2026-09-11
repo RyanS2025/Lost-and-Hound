@@ -1,0 +1,22 @@
+{
+  "responses": [
+    {
+      "labelAnnotations": [
+        {
+          "description": "Credit card",
+          "score": 0.93
+        },
+        {
+          "description": "Payment card",
+          "score": 0.87
+        }
+      ],
+      "logoAnnotations": [
+        {
+          "description": "Visa",
+          "score": 0.81
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "responses": [
+    {
+      "labelAnnotations": [
+        {
+          "description": "Receipt",
+          "score": 0.95
+        },
+        {
+          "description": "Paper",
+          "score": 0.9
+        },
+        {
+          "description": "Text",
+          "score": 0.88
+        }
+      ]
+    }
+  ]
+}

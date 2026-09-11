@@ -1,0 +1,16 @@
+{
+  "responses": [
+    {
+      "fullTextAnnotation": {
+        "text": "CAFE 617\n4526018159083012\nSUBTOTAL 9.25\nTAX 0.58\nTOTAL 9.83"
+      },
+      "safeSearchAnnotation": {
+        "adult": "VERY_UNLIKELY",
+        "spoof": "UNLIKELY",
+        "medical": "VERY_UNLIKELY",
+        "violence": "VERY_UNLIKELY",
+        "racy": "UNLIKELY"
+      }
+    }
+  ]
+}

@@ -17,3 +17,31 @@ jobs:
         run: |
           npm ci
           npm run lint
+
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Guards for the sensitive-content screening work. Each one protects a
+      # specific way the feature silently stops working.
+      - name: Splitter copies are byte-identical
+        run: bash scripts/check-splitter-sync.sh
+      - name: No description_internal leak paths
+        run: bash scripts/check-internal-leak.sh
+
+      - name: Install backend deps
+        working-directory: my-app/backend
+        run: npm ci
+      # Every backend file, not just the entrypoint: `node --check` parses one
+      # file without resolving its imports, so checking server.js alone missed
+      # a duplicate `export const` in middleware/ that stopped the app booting.
+      - name: Syntax check
+        working-directory: my-app/backend
+        run: find . -name "*.js" -not -path "./node_modules/*" -print0 | xargs -0 -n1 node --check
+      - name: Unit tests
+        working-directory: my-app/backend
+        run: npm test

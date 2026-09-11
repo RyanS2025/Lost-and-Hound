@@ -1,0 +1,24 @@
+{
+  "responses": [
+    {
+      "labelAnnotations": [
+        {
+          "description": "Lanyard",
+          "score": 0.94
+        },
+        {
+          "description": "Textile",
+          "score": 0.88
+        },
+        {
+          "description": "Fashion accessory",
+          "score": 0.81
+        },
+        {
+          "description": "Strap",
+          "score": 0.78
+        }
+      ]
+    }
+  ]
+}

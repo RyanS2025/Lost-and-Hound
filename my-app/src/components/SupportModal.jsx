@@ -17,6 +17,7 @@ import SupportFAQ from "./SupportFAQ";
 import { useAuth } from "../AuthContext";
 import { useDemo } from "../contexts/DemoContext";
 import { stripInvisible } from "../utils/profanityFilter";
+import RedactedImageTile from "./RedactedImageTile";
 
 const TICKET_TYPES = ["Support", "Bug Report", "Feedback"];
 
@@ -195,7 +196,9 @@ export default function SupportModal({ open, onClose }) {
   };
 
   // ── Image handling ────────────────────────────────────────
-  const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+  // GIF is out to match the server: Vision screens only the first frame, so an
+  // animated GIF could hide an ID card at frame 40.
+  const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
   const handleImageFile = async (e) => {
     let file = e.target.files[0];
@@ -215,7 +218,7 @@ export default function SupportModal({ open, onClose }) {
       }
       setImageConverting(false);
     }
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) { setError("Only JPG, PNG, WebP, and GIF images are allowed."); return; }
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) { setError("Only JPG, PNG, and WebP images are allowed."); return; }
     if (file.size > 5 * 1024 * 1024) { setError("Image must be under 5 MB."); return; }
     const reader = new FileReader();
     reader.onload = (ev) => setImage({ file, dataUrl: ev.target.result });
@@ -228,22 +231,45 @@ export default function SupportModal({ open, onClose }) {
     setSubmitting(true);
     setError("");
     let imageUrl = undefined;
+    let uploadToken = undefined;
+    let imageRedacted = false;
     if (image?.file) {
       try {
         const uploadData = await apiFetch("/api/upload-url", { method: "POST", body: JSON.stringify({ filename: image.file.name, contentType: image.file.type, fileSize: image.file.size, folder: "support" }) });
         const putRes = await fetch(uploadData.signedUrl, { method: "PUT", headers: { "Content-Type": image.file.type }, body: image.file });
-        if (putRes.ok) {
-          const verify = await apiFetch("/api/verify-image", { method: "POST", body: JSON.stringify({ path: uploadData.path }) });
-          if (verify?.valid) imageUrl = uploadData.publicUrl;
+        if (!putRes.ok) throw new Error("Upload failed");
+        const verify = await apiFetch("/api/verify-image", { method: "POST", body: JSON.stringify({ path: uploadData.path }) });
+        if (verify?.valid) {
+          imageUrl = uploadData.publicUrl;
+          uploadToken = verify.uploadToken;
         }
-      } catch {
-        setError("Image upload failed. Please try again or remove the image.");
-        setSubmitting(false);
-        return;
+      } catch (err) {
+        const code = err?.body?.code;
+        if (code === "IMAGE_BLOCKED") {
+          // The ticket still needs to reach support — someone reporting a
+          // problem with their Husky Card should not be blocked from asking
+          // for help just because they attached a photo of it.
+          imageRedacted = true;
+          uploadToken = err.body.redactionToken;
+          imageUrl = undefined;
+        } else if (code === "SCREENING_PAUSED") {
+          // Capacity for the month is spent. Send the ticket without the
+          // attachment rather than blocking someone from reaching support.
+          imageUrl = undefined;
+          uploadToken = undefined;
+        } else if (code === "SCREENING_UNAVAILABLE") {
+          setError("We couldn't check your image right now. Please try again in a moment, or remove it.");
+          setSubmitting(false);
+          return;
+        } else {
+          setError("Image upload failed. Please try again or remove the image.");
+          setSubmitting(false);
+          return;
+        }
       }
     }
     try {
-      const data = await apiFetch("/api/support", { method: "POST", body: JSON.stringify({ ticketType, name: userName || undefined, category, subject: subject.trim(), description: description.trim(), image_url: imageUrl }) });
+      const data = await apiFetch("/api/support", { method: "POST", body: JSON.stringify({ ticketType, name: userName || undefined, category, subject: subject.trim(), description: description.trim(), image_url: imageUrl, upload_token: uploadToken, image_redacted: imageRedacted }) });
       setSubmittedTicketCode(data?.ticketCode || null);
       setSubmitted(true);
       myTicketsCacheRef.current = null; // invalidate cache so next visit re-fetches fresh
@@ -419,9 +445,11 @@ export default function SupportModal({ open, onClose }) {
                   </Box>
 
                   {/* Image */}
-                  {selectedTicket.image_url && (
+                  {selectedTicket.image_url ? (
                     <Box component="img" src={selectedTicket.image_url} alt="attachment" sx={{ maxWidth: "100%", maxHeight: 200, borderRadius: 1.5, objectFit: "contain", border: `1px solid ${BRAND.border}`, display: "block", mb: 2 }} />
-                  )}
+                  ) : selectedTicket.image_redacted ? (
+                    <Box sx={{ height: 140, mb: 2 }}><RedactedImageTile variant="card" /></Box>
+                  ) : null}
 
                   {/* On small screens, show inline replies instead of the panel */}
                   {isSmall && (

@@ -25,6 +25,8 @@ import MapPinPicker from "../components/MapPinPicker";
 import { CAMPUSES } from "../constants/campuses";
 import { DEFAULT_TIME_ZONE, formatRelativeDate } from "../utils/timezone";
 import LeaderboardSidebar from "../components/LeaderboardSidebar";
+import RedactedImageTile from "../components/RedactedImageTile";
+import { splitDescription, EMPTY_EXTERNAL_FALLBACK, REASON_LABELS } from "../utils/descriptionSplitter";
 
 // --- Constants ---
 const CATEGORIES = ["All", "Husky Card", "Jacket", "Wallet/Purse", "Bag", "Keys", "Electronics", "Other"];
@@ -39,7 +41,13 @@ const LISTING_TYPE_LABELS = { found: "Found", lost: "Lost" };
 const LISTING_TYPE_COLORS = { found: "#0891b2", lost: "#4f46e5" };
 
 // --- Character limits ---
-const LIMITS = { title: 50, found_at: 50, description: 250 };
+// description was 250. At that length students write telegraphically, and
+// telegraphic text is nearly all specifics — so after the auto-sorter takes
+// the identifying clauses out, the public half often landed under 100
+// characters. More room means the generic framing the feed actually needs
+// (colour, item type, where it was found) survives the split.
+// Keep in sync with sanitize(req.body.description, 400) in routes/listings.js.
+const LIMITS = { title: 50, found_at: 50, description: 400 };
 
 function parseCoordinates(coordStr) {
   if (!coordStr || typeof coordStr !== "string") return null;
@@ -160,7 +168,9 @@ function ItemCard({ item, onClick, isDark = false, timeZone = DEFAULT_TIME_ZONE,
       }}>
         {item.image_url
           ? <img src={item.image_url} alt={item.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          : <UploadIcon sx={{ color: "#c4a8a7", fontSize: 28 }} />
+          : item.image_redacted
+            ? <RedactedImageTile variant="thumb" isDark={isDark} sx={{ borderRadius: 0, border: "none" }} />
+            : <UploadIcon sx={{ color: "#c4a8a7", fontSize: 28 }} />
         }
       </Box>
       <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -232,7 +242,20 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
     importance: 2, description: "", image: null, pin: null,
   });
   const [submitting, setSubmitting] = useState(false);
+  // Pure and synchronous over at most 400 characters, so no debounce: a timer
+  // would make the panel lag the cursor for no benefit. This runs the SAME
+  // module the server runs — scripts/check-splitter-sync.sh keeps the two
+  // copies byte-identical, so the preview cannot promise something the server
+  // will not do.
+  const descriptionSplit = useMemo(
+    () => splitDescription(form.description, { category: form.category, title: form.title }),
+    [form.description, form.category, form.title]
+  );
+
   const [uploadError, setUploadError] = useState("");
+  // Separate from uploadError: a hidden photo is a SUCCESSFUL post with a
+  // caveat, and showing it in the red error Snackbar would read as a failure.
+  const [uploadNotice, setUploadNotice] = useState("");
   const [showMap, setShowMap] = useState(false);
   const [flyTo, setFlyTo] = useState(null);
   // Controls whether the user is reporting something they found or something they lost.
@@ -286,18 +309,26 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
     setSubmitting(true);
 
     let image_url = null;
+    let uploadToken = null;
+    let imageRedacted = false;
+    let photosPaused = false;
 
     if (form.image?.file) {
       try {
         const file = form.image.file;
 
-        // Client-side validation: check MIME type and size
-        const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+        // GIF is gone from this list: Vision only reads the first frame, so an
+        // animated GIF could hide an ID card after frame one.
+        const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
         if (!allowedTypes.includes(file.type)) {
+          // Previously this bailed silently, leaving the user staring at a
+          // form that had simply stopped responding.
+          setUploadError("That file type isn't supported. Use a JPG, PNG, or WebP.");
           setSubmitting(false);
           return;
         }
         if (file.size > 5 * 1024 * 1024) {
+          setUploadError("That image is over 5 MB. Please choose a smaller photo.");
           setSubmitting(false);
           return;
         }
@@ -317,27 +348,45 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           body: file,
         });
 
-        if (uploadRes.ok) {
-          // Verify the uploaded file is actually an image (magic byte check)
-          const verify = await apiFetch("/api/verify-image", {
-            method: "POST",
-            body: JSON.stringify({ path: uploadData.path }),
-          });
-          if (verify?.valid) {
-            image_url = uploadData.publicUrl;
-          }
+        if (!uploadRes.ok) throw new Error("Upload failed");
+
+        // Screening: magic bytes, then Google Vision for adult content and for
+        // IDs, payment cards and personal documents. Returns the signed token
+        // that POST /api/listings requires before it will attach an image.
+        const verify = await apiFetch("/api/verify-image", {
+          method: "POST",
+          body: JSON.stringify({ path: uploadData.path }),
+        });
+        if (verify?.valid) {
+          image_url = uploadData.publicUrl;
+          uploadToken = verify.uploadToken;
         }
       } catch (err) {
-        const msg = err?.message || "";
-        if (msg.includes("inappropriate content")) {
-          setUploadError("Inappropriate image detected — your image was removed.");
-        } else if (msg.includes("not a valid image")) {
-          setUploadError("File upload is not a valid image.");
+        const code = err?.body?.code;
+
+        if (code === "IMAGE_BLOCKED") {
+          // Deliberately NOT an abort. The photo is gone, but the listing is
+          // still worth posting — a lost Husky Card with no photo still needs
+          // to reach the feed. The post goes up with a "photo hidden" tile.
+          imageRedacted = true;
+          uploadToken = err.body.redactionToken;
+          image_url = null;
+        } else if (code === "SCREENING_PAUSED") {
+          // Screening capacity for the month is spent. Post without the photo
+          // and say so plainly — but do NOT set imageRedacted, which would put
+          // a "this looked like an ID" tile on a photo nobody ever examined.
+          image_url = null;
+          uploadToken = null;
+          photosPaused = true;
+        } else if (code === "SCREENING_UNAVAILABLE") {
+          setUploadError("We couldn't check your photo right now. Please try again in a moment, or post without a photo.");
+          setSubmitting(false);
+          return;
         } else {
-          setUploadError("Image upload failed. Please try again.");
+          setUploadError(err?.message || "Image upload failed. Please try again.");
+          setSubmitting(false);
+          return;
         }
-        setSubmitting(false);
-        return;
       }
     }
 
@@ -352,6 +401,8 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           importance: form.importance,
           description: form.description,
           image_url,
+          upload_token: uploadToken,
+          image_redacted: imageRedacted,
           // Send the listing type so the backend can store it.
           listing_type: listingType,
           lat: form.pin?.lat ?? null,
@@ -360,6 +411,14 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
       });
 
       onAdd(data);
+
+      if (imageRedacted) {
+        // A separate, warning-toned notice. Reusing the error Snackbar here
+        // would read as "your post failed", which is the opposite of true.
+        setUploadNotice("Your post is up, but the photo was hidden — it looked like an ID, bank card, or personal document. We never saved it.");
+      } else if (photosPaused) {
+        setUploadNotice("Your post is up, but photos are paused right now. Add colour, brand and where you found it to the description — the front desk can match it without a picture.");
+      }
       onClose();
       setForm({ title: "", category: "Other", location_id: "", found_at: "", importance: 2, description: "", image: null, pin: null });
       setProfaneFields({ title: false, found_at: false, description: false });
@@ -541,6 +600,8 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
           helperText={profaneFields.description ? "Cannot use that word" : `${stripInvisible(form.description).length}/${LIMITS.description}`}
         />
 
+        <DescriptionPreview split={descriptionSplit} isDark={isDark} />
+
         {/* Map pin */}
         <Box sx={{ mb: 2 }}>
           <Button
@@ -587,6 +648,19 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
 
         <Box sx={{ mb: 3 }}>
           <ImageUpload image={form.image} onChange={v => set("image", v)} isDark={isDark} />
+
+        {form.category === "Husky Card" && (
+          // Turns a confusing rejection into expected behaviour. A photo of the
+          // card itself will always be blocked, and that is the single most
+          // common thing someone posting this category reaches for.
+          <Typography
+            variant="caption"
+            sx={{ color: isDark ? "#d8a5a2" : "#A84D48", display: "block", mt: -1, mb: 2, lineHeight: 1.5 }}
+          >
+            Don&apos;t photograph the card itself — we&apos;ll hide it. Take a picture of the
+            sleeve or lanyard instead.
+          </Typography>
+        )}
         </Box>
 
         <Button
@@ -607,7 +681,107 @@ function NewItemModal({ open, onClose, onAdd, isDark = false }) {
         {uploadError}
       </Alert>
     </Snackbar>
+    <Snackbar
+      open={!!uploadNotice}
+      autoHideDuration={10000}
+      onClose={() => setUploadNotice("")}
+      anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+    >
+      <Alert severity="warning" onClose={() => setUploadNotice("")} sx={{ width: "100%" }}>
+        {uploadNotice}
+      </Alert>
+    </Snackbar>
     </>
+  );
+}
+
+// --- DescriptionPreview ---
+// Shows the student exactly what the feed will show, as they type.
+//
+// Read-only by design. The split is the security boundary, and letting the
+// poster hand-edit the public text would hand that boundary back to the person
+// we already know cannot be relied on to withhold specifics. It is a mirror,
+// not an input — note there is no TextField anywhere below.
+function DescriptionPreview({ split, isDark }) {
+  if (!split.internal) return null;
+
+  const isEmpty = split.external === "";
+  const count = split.withheld.length;
+
+  return (
+    <Paper
+      variant="outlined"
+      sx={{
+        borderRadius: 2,
+        p: 2,
+        mb: 2,
+        background: isDark ? "#232324" : "#fdf7f7",
+        borderColor: isDark ? "rgba(255,255,255,0.14)" : "#ecdcdc",
+      }}
+    >
+      <Typography
+        variant="caption"
+        fontWeight={800}
+        letterSpacing={0.5}
+        sx={{ color: isDark ? "#B8BABD" : "#a07070", display: "block", mb: 0.75 }}
+      >
+        WHAT EVERYONE ELSE WILL SEE
+      </Typography>
+
+      <Typography
+        variant="body2"
+        sx={{
+          whiteSpace: "pre-wrap",
+          lineHeight: 1.6,
+          color: isEmpty
+            ? (isDark ? "#818384" : "text.disabled")
+            : (isDark ? "#E8E6E3" : "inherit"),
+          fontStyle: isEmpty ? "italic" : "normal",
+        }}
+      >
+        {isEmpty ? EMPTY_EXTERNAL_FALLBACK : split.external}
+      </Typography>
+
+      {count > 0 && (
+        <>
+          <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", mt: 1.5 }}>
+            {split.withheld.map((id) => (
+              <Chip
+                key={id}
+                size="small"
+                label={REASON_LABELS[id] || id}
+                sx={{
+                  height: 22,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  background: isDark ? "#343536" : "#f5eded",
+                  color: "#A84D48",
+                }}
+              />
+            ))}
+          </Box>
+          <Typography
+            variant="caption"
+            sx={{ color: isDark ? "#B8BABD" : "text.secondary", display: "block", mt: 1, lineHeight: 1.5 }}
+          >
+            {count} {count === 1 ? "detail" : "details"} kept private — only Curry front-desk
+            staff see these. They use them to check a claimant really owns the item.
+          </Typography>
+        </>
+      )}
+
+      {isEmpty && (
+        // There is no edit route for a listing, so an over-redacted post is
+        // permanently unfindable. This nudge is the only chance to fix it.
+        <Typography
+          variant="caption"
+          sx={{ color: isDark ? "#d8a5a2" : "#A84D48", display: "block", mt: 1.5, fontWeight: 700, lineHeight: 1.5 }}
+        >
+          Add a line about the colour and what kind of item it is, so people can spot it on
+          the feed.
+        </Typography>
+      )}
+    </Paper>
   );
 }
 
@@ -702,6 +876,10 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
     .filter(i =>
       i.title?.toLowerCase().includes(search.toLowerCase()) ||
       i.locations?.name?.toLowerCase().includes(search.toLowerCase()) ||
+      // Matches the PUBLIC description only. Withheld verification details are
+      // deliberately unsearchable: a search that matched them would be a free
+      // oracle — type "dolphin keychain", see which listing surfaces, walk up
+      // to the desk and describe it. That is exactly what the split prevents.
       i.description?.toLowerCase().includes(search.toLowerCase())
     )
     .sort((a, b) => {
@@ -764,7 +942,7 @@ export default function FeedPage({ effectiveTheme = "light", timeZone = DEFAULT_
         {/* Search + Campus filter */}
         <Box sx={{ display: "flex", gap: 1.5, mb: 2, alignItems: "center", flexDirection: { xs: "column", sm: "row" } }}>
           <TextField
-            fullWidth placeholder="Search items, locations, descriptions..."
+            fullWidth placeholder="Search by item, colour, brand, or building"
             value={search} onChange={e => setSearch(e.target.value)}
             onKeyDown={dismissKeyboardOnEnter}
             InputProps={{

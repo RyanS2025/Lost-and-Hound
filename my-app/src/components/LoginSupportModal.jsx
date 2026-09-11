@@ -13,6 +13,7 @@ import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import SupportFAQ from "./SupportFAQ";
 import { dismissKeyboard, dismissKeyboardOnEnter } from "../utils/keyboard";
 import { stripInvisible } from "../utils/profanityFilter";
+import RedactedImageTile from "./RedactedImageTile";
 
 const STATUS_LABEL = { open: "Open", in_progress: "In Progress", resolved: "Resolved", closed: "Closed" };
 const STATUS_SX = {
@@ -167,7 +168,10 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
   const canSubmit =
     ticketType && stripInvisible(name) && email.trim() && category && stripInvisible(subject) && stripInvisible(description) && !submitting && !imageConverting;
 
-  const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+  // GIF is out to match the server: Vision screens only the first frame, so an
+  // animated GIF could hide an ID card at frame 40. Leaving it here just moved
+  // the rejection to a 400 from /api/upload-url/guest.
+  const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
   const handleImageFile = async (e) => {
     let file = e.target.files[0];
@@ -190,7 +194,7 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
     }
 
     if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      setError("Only JPG, PNG, WebP, and GIF images are allowed.");
+      setError("Only JPG, PNG, and WebP images are allowed.");
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
@@ -209,6 +213,8 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
     setError("");
 
     let imageUrl = undefined;
+    let uploadToken = undefined;
+    let imageRedacted = false;
 
     // Upload image if one was attached (Bug Report only)
     if (image?.file) {
@@ -246,16 +252,34 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ path: uploadData.path }),
         });
-        if (!verifyRes.ok) {
-          const body = await verifyRes.json().catch(() => ({}));
-          setError(body.error || "Image verification failed. Please use a valid JPG, PNG, or WebP.");
-          setSubmitting(false);
-          return;
-        }
-        const verifyData = await verifyRes.json();
-        if (verifyData?.valid) imageUrl = uploadData.publicUrl;
+        const verifyData = await verifyRes.json().catch(() => ({}));
 
-        if (!imageUrl) {
+        if (!verifyRes.ok) {
+          if (verifyData.code === "IMAGE_BLOCKED") {
+            // Previously ANY verify failure aborted the whole ticket. Someone
+            // who attaches a photo of their ID to a support request still
+            // needs the request to reach us; only the photo is dropped.
+            imageRedacted = true;
+            uploadToken = verifyData.redactionToken;
+            imageUrl = undefined;
+          } else if (verifyData.code === "SCREENING_PAUSED") {
+            // Capacity spent for the month — send the ticket without the
+            // attachment rather than blocking someone from reaching support.
+            imageUrl = undefined;
+            uploadToken = undefined;
+          } else if (verifyData.code === "SCREENING_UNAVAILABLE") {
+            setError("We couldn't check your image right now. Please try again in a moment, or remove it.");
+            setSubmitting(false);
+            return;
+          } else {
+            setError(verifyData.error || "Image verification failed. Please use a valid JPG, PNG, or WebP.");
+            setSubmitting(false);
+            return;
+          }
+        } else if (verifyData?.valid) {
+          imageUrl = uploadData.publicUrl;
+          uploadToken = verifyData.uploadToken;
+        } else {
           setError("Image could not be verified. Please try a different file.");
           setSubmitting(false);
           return;
@@ -279,6 +303,8 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
           subject: subject.trim(),
           description: description.trim(),
           image_url: imageUrl,
+          upload_token: uploadToken,
+          image_redacted: imageRedacted,
         }),
       });
       if (!res.ok) {
@@ -536,14 +562,16 @@ export default function LoginSupportModal({ open, onClose, effectiveTheme = "lig
                 </Box>
 
                 {/* Image */}
-                {statusResult.image_url && (
+                {statusResult.image_url ? (
                   <Box
                     component="img"
                     src={statusResult.image_url}
                     alt="attachment"
                     sx={{ maxWidth: "100%", maxHeight: 200, borderRadius: 1.5, objectFit: "contain", border: `1px solid ${styles.border}`, display: "block", mb: 2 }}
                   />
-                )}
+                ) : statusResult.image_redacted ? (
+                  <Box sx={{ height: 140, mb: 2 }}><RedactedImageTile variant="card" /></Box>
+                ) : null}
 
                 {/* Mobile only: inline chat (desktop uses the sliding panel) */}
                 {isSmall && (

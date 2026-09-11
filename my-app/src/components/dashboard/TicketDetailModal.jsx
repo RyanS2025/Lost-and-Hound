@@ -17,6 +17,7 @@ import {
   formatDateTime,
   formatRelativeDate,
 } from "../../utils/timezone";
+import RedactedImageTile from "../RedactedImageTile";
 import {
   TICKET_STATUS_CONFIG,
   TICKET_STATUS_CONFIG_DARK,
@@ -213,10 +214,13 @@ export default function TicketDetailModal({ ticket, onClose, onUpdateStatus, onD
             </Box>
 
             {/* Image attachment */}
-            {ticket.image_url && (
+            {(ticket.image_url || ticket.image_redacted) && (
               <Box sx={{ mb: 2.5 }}>
                 <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary", textTransform: "uppercase", letterSpacing: 0.5, display: "block", mb: 0.75 }}>Attachment</Typography>
-                <Box component="img" src={ticket.image_url} alt="Attachment" sx={{ maxWidth: "100%", maxHeight: 280, borderRadius: 2, objectFit: "contain", border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid #ecdcdc", display: "block" }} />
+                {ticket.image_url
+                  ? <Box component="img" src={ticket.image_url} alt="Attachment" sx={{ maxWidth: "100%", maxHeight: 280, borderRadius: 2, objectFit: "contain", border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid #ecdcdc", display: "block" }} />
+                  : <Box sx={{ height: 160, maxWidth: 320 }}><RedactedImageTile variant="hero" isDark={isDark} /></Box>
+                }
               </Box>
             )}
 

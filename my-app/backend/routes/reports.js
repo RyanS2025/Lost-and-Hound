@@ -1,5 +1,6 @@
 import express from "express";
 import { supabase } from "../lib/supabase.js";
+import { STAFF_LISTING_COLUMNS, LISTING_LOCATION_EMBED } from "./listings.js";
 import { sanitize, profanityCheck, UUID_RE, dbError, logModAction } from "../lib/validation.js";
 import { sendPushNotification } from "../lib/pushNotifications.js";
 import { requireAuth, require2FA, requireModerator, requireNotBanned } from "../middleware/auth.js";
@@ -96,7 +97,9 @@ router.get("/api/reports", requireAuth, require2FA, requireModerator, async (req
   if (listingIds.length > 0) {
     const { data: listingsData } = await supabase
       .from("listings")
-      .select("*, locations!listings_location_id_fkey(name, coordinates, campus)")
+      // Staff projection: this route is gated by requireModerator above, and
+      // the moderator UI shows the withheld details alongside the public text.
+      .select(`${STAFF_LISTING_COLUMNS}, ${LISTING_LOCATION_EMBED}`)
       .in("item_id", listingIds);
     (listingsData || []).forEach((l) => { listingMap[l.item_id] = l; });
   }

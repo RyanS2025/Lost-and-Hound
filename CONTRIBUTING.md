@@ -95,11 +95,28 @@ Visit `http://localhost:5173` — the frontend proxies API calls to `localhost:3
 ### 4. Run tests
 
 ```bash
-cd my-app
-npx playwright test --config=tests/playwright.config.js
+# Backend unit tests — Node's built-in runner, no extra dependencies
+cd my-app/backend && npm test
+
+# Browser tests
+cd my-app && npx playwright test --config=tests/playwright.config.js
+
+# Guards that also run in CI
+bash scripts/check-location-embeds.sh   # ambiguous locations embeds
+bash scripts/check-splitter-sync.sh     # the two descriptionSplitter copies must match
+bash scripts/check-internal-leak.sh     # listings.description_internal must not reach clients
 ```
 
-Tests use mocked Supabase auth — no real API calls.
+Tests use mocked Supabase auth — no real API calls, and no API keys needed.
+
+Two things that will waste your time otherwise:
+
+- **If the browser tests fail in ways that make no sense**, check that nothing
+  else is already serving port 5173: `lsof -nP -iTCP:5173 -sTCP:LISTEN`. The
+  config reuses an existing server, so another project's dev server will be
+  tested instead of this one, and every selector fails.
+- **8 tests in `signup.spec.js`, `login.spec.js` and `navigation.spec.js` fail
+  on `main`** as of September 2026. Pre-existing — not something you broke.
 
 ---
 
@@ -139,6 +156,11 @@ Never commit `.env` files. If you add a new env var:
 1. Add it to the relevant `.env.example` with a comment
 2. Mention it in your PR description
 3. Tell a core team member so they can set it in Railway
+
+Both `.env.example` files are tracked by git, so step 1 shows up in your diff.
+They used to be swallowed by the `.env.*` ignore rules, which meant edits to
+them were invisible and `cp my-app/backend/.env.example ...` above failed on a
+fresh clone.
 
 ---
 

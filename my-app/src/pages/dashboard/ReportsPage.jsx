@@ -40,8 +40,51 @@ import {
 } from "../../components/dashboard/dashboardConstants";
 import { EmptySection } from "../../components/dashboard/SupportTicketsSection";
 import SectionPageHeader from "../../components/dashboard/SectionPageHeader";
+import RedactedImageTile from "../../components/RedactedImageTile";
 
 // ── Listing Modal ────────────────────────────────────────────
+// --- WithheldDetails ---
+// The specifics the auto-sorter kept off the public feed. This is what the
+// Curry front desk asks a claimant to describe, so a moderator reviewing a
+// theft report needs to see it alongside the public text.
+//
+// Rows posted before the auto-sorter have no internal text at all — they were
+// deliberately not backfilled — so the falsy branch is the common case at
+// launch, not an error state.
+function WithheldDetails({ listing, isDark }) {
+  return (
+    <Box
+      sx={{
+        mt: 1.5,
+        p: 1.5,
+        borderRadius: 2,
+        background: isDark ? "#3a2f22" : "#fff3cd",
+        border: isDark ? "1px solid rgba(245,158,11,0.5)" : "1px solid #ffc107",
+      }}
+    >
+      <Typography
+        variant="caption"
+        fontWeight={800}
+        sx={{ letterSpacing: 0.5, display: "block", mb: 0.5, color: isDark ? "#f5c76e" : "#7a5b00" }}
+      >
+        WITHHELD DETAILS (STAFF ONLY)
+      </Typography>
+      {listing.description_internal ? (
+        <Typography
+          variant="body2"
+          sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.6, fontSize: 13, color: isDark ? "#E8E6E3" : "#5c4400" }}
+        >
+          {listing.description_internal}
+        </Typography>
+      ) : (
+        <Typography variant="body2" sx={{ fontSize: 13, color: isDark ? "#B8BABD" : "text.disabled", fontStyle: "italic" }}>
+          No withheld details on file (posted before the auto-sorter).
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
 function DashboardListingModal({ listing, open, onClose, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
   if (!listing) return null;
   const pinCoords = (listing.lat && listing.lng)
@@ -72,6 +115,8 @@ function DashboardListingModal({ listing, open, onClose, isDark = false, timeZon
 
         {listing.image_url
           ? <Box component="img" src={listing.image_url} alt={listing.title} sx={{ width: "100%", height: 200, objectFit: "cover", borderRadius: 2, mb: 2, border: isDark ? "1px solid rgba(255,255,255,0.16)" : "1.5px solid #ecdcdc" }} />
+          : listing.image_redacted
+          ? <RedactedImageTile variant="hero" isDark={isDark} sx={{ height: 200, mb: 2 }} />
           : <Box sx={{ width: "100%", height: 120, background: isDark ? "#2D2D2E" : "#f5f0f0", borderRadius: 2, mb: 2, display: "flex", alignItems: "center", justifyContent: "center", border: isDark ? "1px dashed rgba(255,255,255,0.2)" : "1.5px dashed #dac8c8" }}>
               <Typography variant="caption" color={isDark ? "#818384" : "text.disabled"} fontWeight={700}>No photo provided</Typography>
             </Box>
@@ -103,6 +148,7 @@ function DashboardListingModal({ listing, open, onClose, isDark = false, timeZon
           <Typography variant="body2" color={isDark ? "#B8BABD" : "text.secondary"} lineHeight={1.65} sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
             {listing.description}
           </Typography>
+          <WithheldDetails listing={listing} isDark={isDark} />
         </Box>
       </Box>
     </Modal>
@@ -142,9 +188,12 @@ function PostDetail({ listing, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
   return (
     <>
       <Paper variant="outlined" sx={{ borderRadius: 2, borderColor: isDark ? "rgba(255,255,255,0.16)" : "#ecdcdc", background: isDark ? "#232324" : "#fdf7f7", overflow: "hidden" }}>
-        {listing.image_url && (
-          <Box component="img" src={listing.image_url} alt={listing.title} sx={{ width: "100%", height: { xs: 140, sm: 180 }, objectFit: "cover" }} />
-        )}
+        {listing.image_url
+          ? <Box component="img" src={listing.image_url} alt={listing.title} sx={{ width: "100%", height: { xs: 140, sm: 180 }, objectFit: "cover" }} />
+          : listing.image_redacted
+            ? <RedactedImageTile variant="card" isDark={isDark} sx={{ height: { xs: 140, sm: 180 }, borderRadius: 0, border: "none" }} />
+            : null
+        }
         <Box sx={{ p: { xs: 1.5, sm: 2 } }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.75, flexWrap: "wrap" }}>
             <Typography fontWeight={800} fontSize={{ xs: 14, sm: 16 }}>{listing.title}</Typography>
@@ -164,6 +213,7 @@ function PostDetail({ listing, isDark = false, timeZone = DEFAULT_TIME_ZONE }) {
             <>
               <Typography variant="caption" fontWeight={800} color={isDark ? "#B8BABD" : "#a07070"} sx={{ letterSpacing: 0.5, display: "block", mb: 0.5 }}>DESCRIPTION</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6, fontSize: 13 }}>{listing.description}</Typography>
+              <WithheldDetails listing={listing} isDark={isDark} />
             </>
           )}
           <Button size="small" onClick={() => setModalOpen(true)}

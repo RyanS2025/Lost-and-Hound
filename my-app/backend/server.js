@@ -1,7 +1,17 @@
+// MUST be the first import. ESM evaluates every imported module before this
+// file's body runs, and ./lib/supabase.js reads process.env at module scope —
+// so a `dotenv.config()` call further down loads the .env file too late to be
+// of any use to it. The side-effect form runs during import evaluation, in
+// declaration order, which is early enough.
+//
+// On Railway there is no .env file and dotenv quietly does nothing; the
+// platform's injected variables are already in process.env. This only changes
+// behaviour for local development, where it makes my-app/backend/.env work.
+import "dotenv/config";
+
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import cron from "node-cron";
 import path from "path";
@@ -25,8 +35,6 @@ import supportRouter from "./routes/support.js";
 import dashboardRouter from "./routes/dashboard.js";
 import pushRouter from "./routes/push.js";
 import financesRouter from "./routes/finances.js";
-
-dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();

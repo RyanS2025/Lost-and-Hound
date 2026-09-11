@@ -21,6 +21,7 @@ import ItemDetailModal from "../components/ItemDetailModal";
 import { CAMPUSES } from "../constants/campuses";
 import apiFetch from "../utils/apiFetch";
 import { DEFAULT_TIME_ZONE, formatRelativeDate } from "../utils/timezone";
+import RedactedImageTile from "../components/RedactedImageTile";
 
 setOptions({
   key: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
@@ -147,7 +148,9 @@ function SidePanelContent({ isDark, radius, setRadius, nearbyItems, mapInstanceR
                 }}>
                   {item.image_url
                     ? <img src={item.image_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    : <Typography variant="caption" sx={{ color: isDark ? "#818384" : "#ccc", fontSize: 18 }}>📦</Typography>
+                    : item.image_redacted
+                      ? <RedactedImageTile variant="thumb" isDark={isDark} sx={{ borderRadius: 0, border: "none" }} />
+                      : <Typography variant="caption" sx={{ color: isDark ? "#818384" : "#ccc", fontSize: 18 }}>📦</Typography>
                   }
                 </Box>
                 <Box sx={{ flex: 1, minWidth: 0 }}>

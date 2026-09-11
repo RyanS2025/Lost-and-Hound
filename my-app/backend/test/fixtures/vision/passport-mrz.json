@@ -1,0 +1,16 @@
+{
+  "responses": [
+    {
+      "fullTextAnnotation": {
+        "text": "PASSPORT\nUNITED STATES OF AMERICA\nP<USASPECIMEN<<JANE<Q<<<<<<<<<<<<<<<<<<<<<<<\n0000000000USA0000000F0000000<<<<<<<<<<<<<<00"
+      },
+      "safeSearchAnnotation": {
+        "adult": "VERY_UNLIKELY",
+        "spoof": "UNLIKELY",
+        "medical": "VERY_UNLIKELY",
+        "violence": "VERY_UNLIKELY",
+        "racy": "UNLIKELY"
+      }
+    }
+  ]
+}

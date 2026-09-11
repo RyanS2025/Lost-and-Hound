@@ -4,7 +4,9 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "build": "cd .. && npm install --cache /tmp/npm-frontend && npx vite build",
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
   },
   "keywords": [],
   "author": "",
