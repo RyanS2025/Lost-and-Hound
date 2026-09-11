@@ -294,6 +294,12 @@ BEGIN
   EXECUTE format('GRANT SELECT (%s) ON public.listings TO anon, authenticated', cols);
 END $$;
 
+-- Again, and not redundantly: the reload in section 5 ran before these grants
+-- existed. PostgREST caches privileges alongside the schema, so without a
+-- second reload it can keep honouring the table-level SELECT it cached earlier
+-- until that cache expires on its own.
+NOTIFY pgrst, 'reload schema';
+
 -- Verify: this must return zero rows. Any row is a role that can still read a
 -- withheld column directly through PostgREST.
 SELECT grantee, column_name
