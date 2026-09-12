@@ -49,8 +49,9 @@ let warnedAboutFallbackSecret = false;
  * hand-managed in the Railway dashboard and a missing variable means the
  * security fix silently does not work. The service-role key is already
  * required for the process to boot, is already secret, and is stable across
- * restarts. Read lazily because dotenv.config() runs after imports in
- * server.js.
+ * restarts. Resolved at call time against an injectable env rather than cached
+ * at module load, so the unit tests and imageScreening.js can supply their own
+ * without the real environment being present.
  */
 export function resolveUploadSecret(env = process.env) {
   const explicit = env.UPLOAD_TOKEN_SECRET;
